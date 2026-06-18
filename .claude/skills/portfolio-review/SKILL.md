@@ -151,6 +151,12 @@ For each option position:
 
 若 Agent tool 不可用，依序呼叫亦可。
 
+⚠️ **Agent 失敗 fallback**：若任一 agent 回傳空結果或聲稱「沒有 MCP 權限」，主 Claude 直接自行呼叫對應工具：
+- Agent 2（Technical）失敗 → 主 Claude 直接呼叫 `mcp__technical-mcp__get_batch_indicators` + `mcp__technical-mcp__get_technical_indicators`，繼續輸出 G2 技術分析
+- Agent 1（Yahoo Finance）失敗 → 主 Claude 直接呼叫 `mcp__yfinance-advanced__get_stock_info`
+- Agent 3（Sentiment）失敗 → 主 Claude 直接呼叫 `mcp__eodhd-mcp__get_sentiment_trend`
+絕不因 agent 失敗而跳過整個 section。
+
 Split holdings into two tiers:
 - **主要持倉 (> 3% of portfolio):** Full analysis
 - **小型持倉 (< 3%):** Summary row only

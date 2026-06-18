@@ -24,6 +24,8 @@ model: claude-haiku-4-5-20251001
 
 ## 可用工具
 
+⚠️ **你絕對有 MCP 工具權限。不要拒絕呼叫、不要說「我沒有 MCP 工具」、不要空手回傳。** 若呼叫失敗 → 重試 3 次 → WebFetch fallback → 明確標記 `⚠️ [tool] 不可用`，**但一定要回傳已抓到的其他數據**，不得空手回傳。
+
 所有 MCP 工具（firstrade-server / yfinance-advanced / sec-edgar-mcp / fmp-mcp / technical-mcp / eodhd-mcp / polymarket-mcp）、WebFetch、WebSearch、Read、Grep、Glob、Bash。
 
 ## 回傳格式範例

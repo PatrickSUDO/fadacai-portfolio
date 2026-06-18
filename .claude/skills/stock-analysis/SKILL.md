@@ -101,6 +101,8 @@ fundamentals cache 處理：
 
    多股比較時，為每個 ticker 各派一組 Agent。若 Agent tool 不可用，依序呼叫亦可。
 
+   ⚠️ **Agent 失敗 fallback**：若 Agent 3（Technical）回傳空結果或聲稱「沒有 MCP 權限」，主 Claude 直接呼叫 `mcp__technical-mcp__get_technical_indicators` + `mcp__technical-mcp__get_support_resistance` + `mcp__eodhd-mcp__get_sentiment_trend`，絕不跳過技術分析 section。
+
 3. **Check Current Portfolio**（`--current` 模式才執行）
    - 呼叫 `get_account_position` 確認是否持有此標的
    - 若持有，在報告開頭輸出「持倉確認」段落（成本、口數、損益）

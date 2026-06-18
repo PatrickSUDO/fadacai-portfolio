@@ -231,6 +231,19 @@ Agent(
 - Strategies: LEAPS (stock replacement, deep ITM delta 0.72-0.85), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated
 
+### 執行底層邏輯：Portfolio as a Business（強制濾鏡）
+任何 Verdict / Action / 倉位建議都先過這套濾鏡（源 `research/新手開局.md`，操作規範 `feedback/realized-pnl-business-model.md`，Step 0a 已含必讀）：
+- **績效看 Realized PnL，不看 Unrealized** — 只認列獲利、虧損掛庫存；目標 Realized ≈ 4× |未實現虧損|。反過來 = 爆倉訊號要 flag。
+- **Swing Risk 首要監測**（= 帳上最高未實現利潤 + 潛在回吐；Options = Premium + 未實現利潤）；肥利潤未落袋要主動提示系統性落袋。
+- **Offsetting 沖銷失誤而非利潤；禁「砍 loser 加碼 winner」**（四錯：認列虧損 / 過度暴險 / Beta 失衡 / 分散化打折）。
+- **Rolling → Adjusted Risk → Risk-Free State**：落袋用 Adjusted Risk 視角（新倉真實風險 = size − 累積已認列），不是「賣了就少賺」。
+- **Pre-emptive（非止損式）風險管理 + Scenario Planning**；慎用 Put/SPY 對沖（漲了變反向認列虧損 = Double-Kill）。
+- **定位先行**；**主動組合支數 14–18（理想 14–16），>18 砍一進一不淨增**，>30 無益。
+- **分桶**：每倉位歸 🔵信念桶（讓它 run、只在 thesis 破或 >10% 才動）或 🟢認列循環桶（高 β/週期/肥利潤 → 系統性 harvest）；疑問時歸認列。
+- **兩層候補**：🟡L1 On-Deck（thesis 驗證+觸發明確，補空位只從 L1 拉）/ 🔵L2 Research Pool（需修復或擴 Universe）；砍倉依砍因歸層（組合理由→L1，thesis 破→L2）。
+- **機會成本閘門（桶間升級/降級/部署皆強制）**：新倉須明顯優於最弱在倉名額才進 — 相關 beta 門檻最高（須擠掉弱倉、不淨增），無相關 hedge/填缺口門檻較低；14–18 上緣時砍一進一。
+- **即時 roster（信念/認列/L1/L2 名單）權威來源 = `plan.md`「組合架構 v2」**；改動 roster 同步更新該節。
+
 ## MCP Tools Available
 - `mcp__firstrade-server__*` — live Firstrade account data (positions, balance, history, quotes, watchlists)
   - `get_account_position` — real-time stock + options positions (replaces current-position.md)
