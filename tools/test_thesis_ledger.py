@@ -16,7 +16,7 @@ def empty_ledger():
 
 def base_add_kwargs(**over):
     kw = dict(
-        ticker="MU",
+        ticker="2330",
         slug="memory-cycle",
         thesis="DRAM 進入漲價週期，FY26 毛利率 > 40%",
         falsification=["次季 ASP 不再漲", "HBM3E 指引下修>10%"],
@@ -43,10 +43,10 @@ class SlugAndId(unittest.TestCase):
         self.assertEqual(tl.normalize_slug("dram-pricing"), "dram-pricing")
 
     def test_make_id_joins_ticker_and_slug(self):
-        self.assertEqual(tl.make_id("MU", "Memory Cycle"), "MU:memory-cycle")
+        self.assertEqual(tl.make_id("2330", "Memory Cycle"), "2330:memory-cycle")
 
     def test_make_id_uppercases_ticker(self):
-        self.assertEqual(tl.make_id("mu", "memory-cycle"), "MU:memory-cycle")
+        self.assertEqual(tl.make_id("2330", "memory-cycle"), "2330:memory-cycle")
 
 
 class TrigramSimilarity(unittest.TestCase):
@@ -67,14 +67,14 @@ class AddInsert(unittest.TestCase):
         data = empty_ledger()
         res = tl.add_thesis(data, **base_add_kwargs())
         self.assertEqual(res["action"], "inserted")
-        self.assertEqual(res["id"], "MU:memory-cycle")
+        self.assertEqual(res["id"], "2330:memory-cycle")
         self.assertEqual(len(data["theses"]), 1)
 
     def test_inserted_entry_has_expected_fields(self):
         data = empty_ledger()
         tl.add_thesis(data, **base_add_kwargs())
         e = data["theses"][0]
-        self.assertEqual(e["ticker"], "MU")
+        self.assertEqual(e["ticker"], "2330")
         self.assertEqual(e["slug"], "memory-cycle")
         self.assertEqual(e["status"], "pending")
         self.assertEqual(e["trigger"]["type"], "event")
@@ -134,7 +134,7 @@ class DueAndExpire(unittest.TestCase):
     def test_pending_with_trigger_today_is_due(self):
         data = self._ledger_with(("2026-06-25", "pending"))
         res = tl.due_theses(data, asof="2026-06-25")
-        self.assertEqual([e["id"] for e in res["due"]], ["MU:t0"])
+        self.assertEqual([e["id"] for e in res["due"]], ["2330:t0"])
 
     def test_pending_with_past_trigger_is_due(self):
         data = self._ledger_with(("2026-06-20", "pending"))
@@ -154,7 +154,7 @@ class DueAndExpire(unittest.TestCase):
     def test_pending_past_expiry_window_is_auto_expired(self):
         data = self._ledger_with(("2026-06-25", "pending"))
         res = tl.due_theses(data, asof="2026-07-30")  # 35 days later
-        self.assertEqual([e["id"] for e in res["expired"]], ["MU:t0"])
+        self.assertEqual([e["id"] for e in res["expired"]], ["2330:t0"])
         self.assertEqual(data["theses"][0]["status"], "expired")
         self.assertEqual(res["due"], [])  # expired not also reported as due
 
@@ -179,7 +179,7 @@ class Resolve(unittest.TestCase):
     def test_resolve_sets_status_and_appends_history(self):
         data = self._one()
         res = tl.resolve_thesis(
-            data, entry_id="MU:memory-cycle", verdict="passed",
+            data, entry_id="2330:memory-cycle", verdict="passed",
             actual="ASP +8% QoQ，毛利率 42%", note="右峰兌現",
             next_action="HOLD，加碼門檻 $XXX", asof="2026-06-26",
         )
@@ -196,7 +196,7 @@ class Resolve(unittest.TestCase):
     def test_resolve_unknown_id_errors(self):
         data = self._one()
         res = tl.resolve_thesis(
-            data, entry_id="MU:nope", verdict="passed", actual="x",
+            data, entry_id="2330:nope", verdict="passed", actual="x",
             note="y", next_action="z", asof="2026-06-26",
         )
         self.assertEqual(res["action"], "not_found")
@@ -205,7 +205,7 @@ class Resolve(unittest.TestCase):
         data = self._one()
         with self.assertRaises(ValueError):
             tl.resolve_thesis(
-                data, entry_id="MU:memory-cycle", verdict="maybe",
+                data, entry_id="2330:memory-cycle", verdict="maybe",
                 actual="x", note="y", next_action="z", asof="2026-06-26",
             )
 
@@ -215,7 +215,7 @@ class Reschedule(unittest.TestCase):
         data = empty_ledger()
         tl.add_thesis(data, **base_add_kwargs())
         res = tl.reschedule(
-            data, entry_id="MU:memory-cycle", to="2026-06-27",
+            data, entry_id="2330:memory-cycle", to="2026-06-27",
             reason="財報延期", asof="2026-06-25",
         )
         self.assertEqual(res["action"], "rescheduled")
@@ -231,7 +231,7 @@ class Merge(unittest.TestCase):
         tl.add_thesis(data, **base_add_kwargs(slug="memory-cycle"))
         tl.add_thesis(data, **base_add_kwargs(slug="dram-pricing"))
         tl.resolve_thesis(
-            data, entry_id="MU:dram-pricing", verdict="partial",
+            data, entry_id="2330:dram-pricing", verdict="partial",
             actual="x", note="y", next_action="z", asof="2026-06-10",
         )
         # back to pending so both exist; we only care history carries over
@@ -240,23 +240,23 @@ class Merge(unittest.TestCase):
 
     def test_merge_removes_source_and_adds_alias(self):
         data = self._two()
-        res = tl.merge(data, from_id="MU:dram-pricing", into_id="MU:memory-cycle",
+        res = tl.merge(data, from_id="2330:dram-pricing", into_id="2330:memory-cycle",
                        asof="2026-06-11")
         self.assertEqual(res["action"], "merged")
         ids = [e["id"] for e in data["theses"]]
-        self.assertEqual(ids, ["MU:memory-cycle"])
+        self.assertEqual(ids, ["2330:memory-cycle"])
         self.assertIn("dram-pricing", data["theses"][0]["aliases"])
 
     def test_merge_carries_history(self):
         data = self._two()
-        tl.merge(data, from_id="MU:dram-pricing", into_id="MU:memory-cycle",
+        tl.merge(data, from_id="2330:dram-pricing", into_id="2330:memory-cycle",
                  asof="2026-06-11")
         self.assertTrue(any(h["verdict"] == "partial"
                             for h in data["theses"][0]["history"]))
 
     def test_after_merge_old_slug_add_redirects(self):
         data = self._two()
-        tl.merge(data, from_id="MU:dram-pricing", into_id="MU:memory-cycle",
+        tl.merge(data, from_id="2330:dram-pricing", into_id="2330:memory-cycle",
                  asof="2026-06-11")
         res = tl.add_thesis(data, **base_add_kwargs(
             slug="dram-pricing", trigger_date="2026-09-01", asof="2026-06-12"))
@@ -269,16 +269,16 @@ class Supersede(unittest.TestCase):
         data = empty_ledger()
         tl.add_thesis(data, **base_add_kwargs(slug="memory-cycle"))
         res = tl.supersede(
-            data, entry_id="MU:memory-cycle", new_slug="hbm-capacity",
+            data, entry_id="2330:memory-cycle", new_slug="hbm-capacity",
             thesis="HBM 產能成為瓶頸，2027 供不應求",
             falsification=["HBM4 量產提前"], trigger_type="date",
             trigger_date="2026-09-01", source="briefing", asof="2026-06-15",
         )
         self.assertEqual(res["action"], "superseded")
-        old = tl._find(data, "MU:memory-cycle")
-        new = tl._find(data, "MU:hbm-capacity")
+        old = tl._find(data, "2330:memory-cycle")
+        new = tl._find(data, "2330:hbm-capacity")
         self.assertEqual(old["status"], "superseded")
-        self.assertEqual(old["superseded_by"], "MU:hbm-capacity")
+        self.assertEqual(old["superseded_by"], "2330:hbm-capacity")
         self.assertEqual(new["status"], "pending")
 
 
@@ -290,7 +290,7 @@ class Stats(unittest.TestCase):
         for slug, status in verdicts:
             tl.add_thesis(data, **base_add_kwargs(slug=slug))
             if status in tl.VALID_VERDICTS:
-                tl.resolve_thesis(data, entry_id=f"MU:{slug}", verdict=status,
+                tl.resolve_thesis(data, entry_id=f"2330:{slug}", verdict=status,
                                   actual="x", note="y", next_action="z",
                                   asof="2026-06-26")
             else:
@@ -329,7 +329,7 @@ class FileIO(unittest.TestCase):
         tl.add_thesis(data, **base_add_kwargs())
         tl.save_ledger(self.path, data)
         again = tl.load_ledger(self.path)
-        self.assertEqual(again["theses"][0]["id"], "MU:memory-cycle")
+        self.assertEqual(again["theses"][0]["id"], "2330:memory-cycle")
 
     def test_save_is_atomic_no_temp_left(self):
         data = empty_ledger()
@@ -366,7 +366,7 @@ class CLI(unittest.TestCase):
     def _add(self, slug="memory-cycle", thesis="DRAM 漲價週期毛利率 > 40%",
              trigger_date="2026-06-25"):
         return self.run_cli(
-            "add", "--ticker", "MU", "--slug", slug, "--thesis", thesis,
+            "add", "--ticker", "2330", "--slug", slug, "--thesis", thesis,
             "--falsification", "次季 ASP 不再漲", "--trigger-type", "event",
             "--trigger-date", trigger_date, "--event", "earnings",
             "--metric", "ASP QoQ", "--source", "briefing", "--asof", "2026-05-31",
@@ -385,7 +385,7 @@ class CLI(unittest.TestCase):
 
     def test_resolve_unknown_id_exits_code_3(self):
         proc = self.run_cli(
-            "resolve", "--id", "MU:nope", "--verdict", "passed",
+            "resolve", "--id", "2330:nope", "--verdict", "passed",
             "--actual", "x", "--note", "y", "--next-action", "z",
             "--asof", "2026-06-26",
         )
@@ -400,7 +400,7 @@ class CLI(unittest.TestCase):
 
     def test_full_lifecycle_add_due_resolve_stats(self):
         self._add()
-        self.run_cli("resolve", "--id", "MU:memory-cycle", "--verdict", "passed",
+        self.run_cli("resolve", "--id", "2330:memory-cycle", "--verdict", "passed",
                      "--actual", "ASP +8%", "--note", "ok", "--next-action",
                      "HOLD", "--asof", "2026-06-26")
         proc = self.run_cli("stats")
@@ -415,7 +415,7 @@ class CLI(unittest.TestCase):
 
         # ── 新呼叫：帶完整 impact 旗標 ──────────────────────────────────────
         proc = self.run_cli(
-            "resolve", "--id", "MU:memory-cycle",
+            "resolve", "--id", "2330:memory-cycle",
             "--verdict", "partial",
             "--actual", "AI revenue +6%，GM 壓縮",
             "--note", "基本面 OK，多重 GM re-rate",
@@ -431,7 +431,7 @@ class CLI(unittest.TestCase):
         # 讀回 JSON，確認 history[-1] 有 9 鍵
         with open(self.path) as f:
             data = json.load(f)
-        entry = next(e for e in data["theses"] if e["id"] == "MU:memory-cycle")
+        entry = next(e for e in data["theses"] if e["id"] == "2330:memory-cycle")
         self.assertEqual(entry["status"], "partial")
         h = entry["history"][-1]
         self.assertEqual(h["verdict"], "partial")
@@ -444,7 +444,7 @@ class CLI(unittest.TestCase):
         """向後相容：舊呼叫（無 impact 旗標）exit 0，history 中 4 鍵為 None。"""
         self._add()
         proc = self.run_cli(
-            "resolve", "--id", "MU:memory-cycle",
+            "resolve", "--id", "2330:memory-cycle",
             "--verdict", "passed",
             "--actual", "ASP +8%", "--note", "ok", "--next-action", "HOLD",
             "--asof", "2026-06-26",
@@ -453,7 +453,7 @@ class CLI(unittest.TestCase):
 
         with open(self.path) as f:
             data = json.load(f)
-        entry = next(e for e in data["theses"] if e["id"] == "MU:memory-cycle")
+        entry = next(e for e in data["theses"] if e["id"] == "2330:memory-cycle")
         h = entry["history"][-1]
         self.assertIsNone(h.get("fair_value_before"))
         self.assertIsNone(h.get("fair_value_after"))

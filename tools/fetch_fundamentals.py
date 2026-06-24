@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """
-fetch_fundamentals.py — Cache per-holding EODHD fundamentals snapshot + earnings base-rate.
+fetch_fundamentals.py — Cache per-holding 台股 fundamentals snapshot + earnings base-rate.
 
-Source: EODHD REST API (fundamentals/{ticker} + calendar/earnings)
+Source: FinMind v4 data API（TaiwanStockInfo / TaiwanStockFinancialStatement /
+        TaiwanStockPER / TaiwanStockMonthRevenue / 分析師目標價 等）。
 Output:
   briefing-out/cache/fundamentals-snapshot.json
-    {status, generated_at, tickers: {TICKER: {snapshot: {...}, base_rate: {...}}}, errors: []}
+    {status, generated_at, tickers: {代號: {snapshot: {...}, base_rate: {...}}}, errors: []}
 TTL:
-  24 hours (fundamentals / analyst PT / technicals are stable intraday)
+  24 hours (基本面 / 分析師目標價 / 技術面 盤中相對穩定)
+
+⚠️ 整合接縫：下方 `fetch_*` 與欄位 mapping 原型沿用三方 REST 的 section 命名
+   （Highlights / Valuation / AnalystRatings…），實際接 FinMind 時需把這些 section
+   對應到 FinMind dataset 回應欄位（如 本益比→TaiwanStockPER.PER、季成長→
+   TaiwanStockFinancialStatement、月營收→TaiwanStockMonthRevenue）。A4 自建估值數學
+   （own_fwdEPS / CAGR / decel / margin）與 cache schema 為市場無關，原封保留。
 
 Ticker source priority:
   1. ROOT/journal/<latest>.md  (parse holdings table — same logic as earnings_history.py)
-  2. FUNDAMENTALS_TICKERS env var (comma-separated)
+  2. FUNDAMENTALS_TICKERS env var (comma-separated 4 碼代號)
   3. abort with warning if both empty
 
 Usage:
@@ -40,27 +47,27 @@ JOURNAL_DIR = ROOT / "journal"
 
 # ── Config ─────────────────────────────────────────────────────────────────
 CACHE_TTL_HOURS = 24
-TICKERS_DELAY = 0.4          # polite delay between EODHD API calls
-EODHD_BASE = "https://eodhd.com/api"
+TICKERS_DELAY = 0.4          # polite delay between FinMind API calls
+FINMIND_BASE = "https://api.finmindtrade.com/api/v4"
 
-# EODHD fundamentals sections to fetch (filter= keeps payload small)
+# 概念性 fundamentals sections（接 FinMind 時對應到各 dataset，見 module docstring 整合接縫）
 FUNDAMENTALS_FILTER = ",".join([
     "General::Name", "General::Sector", "General::Industry",
     "Highlights", "Valuation", "AnalystRatings", "Technicals",
-    # P2: yearly income statement (totalRevenue/netIncome time series for CAGR)
+    # 年度損益表（營收/淨利 時間序列 → CAGR）
     "Financials::Income_Statement::yearly",
-    # P2: shares outstanding (needed for own_fwdEPS = rev × margin ÷ shares)
+    # 流通在外股數（own_fwdEPS = rev × margin ÷ shares）
     "SharesStats::SharesOutstanding",
-    # P4: analyst forward consensus (A3 anchor fwdEPS + EPS revision momentum)
-    "Earnings::Trend",
+    # 賣方前瞻共識（A3 錨 fwdEPS + EPS 修正動能）+ 月營收
+    "Earnings::Trend", "MonthlyRevenue",
 ])
 
-# Low-EPS-base tickers where avg_surprise_pct is unreliable (see README / CLAUDE.md)
-LOW_EPS_BASE_TICKERS = {"AMD", "CRDO", "ONTO", "LITE", "BE", "MDB"}
+# 低 EPS 基期股：avg_surprise_pct 不可靠（see README / CLAUDE.md），改用 beat 次數
+LOW_EPS_BASE_TICKERS = {"3661", "6488", "3035", "8299"}
 
-# A4 self-built anchor: AI leader tickers use target PEG 1.5 vs 1.0 for others
+# A4 自建錨：AI/半導體龍頭目標 PEG 1.5，其餘 1.0
 # (mirrors the rule in briefing/SKILL.md Section 8.5 and stock-analysis three-anchor table)
-AI_LEADERS = {"NVDA", "AVGO", "CRWD", "AMD"}
+AI_LEADERS = {"2330", "2454", "3661", "3017", "3037"}
 
 # ── A4 self-valuation projection constants ──────────────────────────────────
 TERMINAL_GROWTH = 0.08       # long-term terminal growth rate (fade target)
@@ -86,7 +93,7 @@ def load_env() -> None:
 
 
 # ── Ticker discovery (identical to earnings_history.py) ─────────────────────
-TICKER_RE = re.compile(r"^\|\s*([A-Z]{1,5})\s*\|")
+TICKER_RE = re.compile(r"^\|\s*(\d{4})\b")
 
 
 def journals_newest_first() -> list[Path]:
@@ -161,13 +168,13 @@ def atomic_write(path: Path, data: dict) -> None:
     tmp.replace(path)
 
 
-# ── EODHD REST client (inline — no cross-repo import) ───────────────────────
-def _eodhd_get(endpoint: str, params: dict | None = None, token: str = "") -> dict | list:
-    """Simple EODHD REST call with raise_for_status."""
+# ── FinMind REST client (inline — no cross-repo import) ───────────────────────
+def _finmind_get(endpoint: str, params: dict | None = None, token: str = "") -> dict | list:
+    """Simple FinMind REST call with raise_for_status."""
     p = params or {}
     p["api_token"] = token
     p["fmt"] = "json"
-    resp = requests.get(f"{EODHD_BASE}/{endpoint}", params=p, timeout=30)
+    resp = requests.get(f"{FINMIND_BASE}/{endpoint}", params=p, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -202,7 +209,7 @@ _FORWARD_PERIOD_LABELS = {"0q": "curr_q", "+1q": "next_q", "0y": "curr_fy", "+1y
 
 
 def _extract_forward_estimates(trend_raw: dict) -> dict:
-    """Reshape EODHD Earnings::Trend → {next_q/curr_fy/next_fy/curr_q} consensus.
+    """Reshape FinMind Earnings::Trend → {next_q/curr_fy/next_fy/curr_q} consensus.
 
     The section is keyed by fiscal date and carries many historical 0q/0y rows;
     for each forward period code we keep only the entry with the latest date.
@@ -249,8 +256,8 @@ def _extract_forward_estimates(trend_raw: dict) -> dict:
 
 # ── Fundamentals snapshot ───────────────────────────────────────────────────
 def fetch_snapshot(sym_us: str, token: str) -> dict:
-    """Fetch compact fundamentals for one ticker (EODHD format, e.g. 'MU.US')."""
-    data = _eodhd_get(f"fundamentals/{sym_us}", params={"filter": FUNDAMENTALS_FILTER}, token=token)
+    """Fetch compact fundamentals for one ticker (FinMind data_id, e.g. '2330')."""
+    data = _finmind_get(f"fundamentals/{sym_us}", params={"filter": FUNDAMENTALS_FILTER}, token=token)
     if not isinstance(data, dict):
         return {"error": "unexpected response"}
 
@@ -261,7 +268,7 @@ def fetch_snapshot(sym_us: str, token: str) -> dict:
         return _safe_float(hl.get(key))
 
     # ── P2: yearly income statement time series ──────────────────────────────
-    # EODHD filter "Financials::Income_Statement::yearly" may come back as a
+    # FinMind filter "Financials::Income_Statement::yearly" may come back as a
     # flat key OR nested; handle both shapes gracefully.
     yearly_raw = (
         data.get("Financials::Income_Statement::yearly")                         # flat-key path
@@ -339,10 +346,10 @@ HIGH_IMPACT_QUARTERS = 8
 
 
 def fetch_base_rate(sym_us: str, token: str, ticker_plain: str) -> dict:
-    """Fetch trailing 8Q EPS beat base-rate from EODHD calendar/earnings."""
+    """Fetch trailing 8Q EPS beat base-rate from FinMind calendar/earnings."""
     from_date = (date.today() - timedelta(days=HIGH_IMPACT_QUARTERS * 100 + 120)).isoformat()
     to_date = (date.today() + timedelta(days=120)).isoformat()
-    data = _eodhd_get(
+    data = _finmind_get(
         "calendar/earnings",
         params={"symbols": sym_us, "from": from_date, "to": to_date},
         token=token,
@@ -405,7 +412,7 @@ def compute_self_valuation(
     """Compute the A4 self-built anchor: own_fwdEPS = projected_revenue × net_margin ÷ shares.
 
     Independence guarantee for A4: NO analyst estimate used in own_fwdEPS. Revenue from
-    historical EODHD income statement; margin from trailing (or 2-year trend if steadily
+    historical FinMind income statement; margin from trailing (or 2-year trend if steadily
     rising); growth projection = CAGR faded toward terminal with bounded macro nudge.
 
     own_target_price = own_fwdEPS × base_FairPE, where base_FairPE = median(A1,A2,A3).
@@ -415,7 +422,7 @@ def compute_self_valuation(
     stays fully independent of these analyst numbers.
 
     Args:
-        sym: Plain ticker string (e.g. "MU") — used for AI_LEADERS lookup.
+        sym: Plain 代號 string (e.g. "2330") — used for AI_LEADERS lookup.
         highlights: The highlights dict from fetch_snapshot() (same ticker).
         financials: The financials dict from fetch_snapshot() (revenue_yearly, etc.).
         forward_estimates: The forward_estimates dict from fetch_snapshot() (consensus
@@ -641,12 +648,12 @@ def main() -> int:
         print("✅ fundamentals-snapshot.json fresh, skipping")
         return 0
 
-    token = os.environ.get("EODHD_API_TOKEN", "").strip()
+    token = os.environ.get("FINMIND_TOKEN", "").strip()
     if not token:
-        print("⚠️  EODHD_API_TOKEN not set — skipping fundamentals cache")
+        print("⚠️  FINMIND_TOKEN not set — skipping fundamentals cache")
         empty = {
             "status": "skipped",
-            "reason": "EODHD_API_TOKEN_missing",
+            "reason": "FINMIND_TOKEN_missing",
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
             "tickers": {},
             "errors": [],
@@ -668,13 +675,13 @@ def main() -> int:
             atomic_write(SNAP_FILE, empty)
         return 0
 
-    print(f"🔄 fetching EODHD fundamentals for {len(tickers)} tickers...")
+    print(f"🔄 fetching FinMind fundamentals for {len(tickers)} tickers...")
 
     result: dict = {}
     errors: list = []
 
     for i, sym in enumerate(tickers):
-        sym_us = f"{sym}.US"
+        sym_us = sym  # 台股代號（FinMind data_id），無後綴
         if dry_run:
             print(f"[DRY-RUN] would fetch {sym_us}")
             continue
@@ -694,7 +701,7 @@ def main() -> int:
             )
             print(f"  ✓ {sym}: PE={snapshot['highlights'].get('pe_ratio')} "
                   f"PEG={snapshot['highlights'].get('peg_ratio')} "
-                  f"PT=${snapshot['highlights'].get('wall_street_target')} "
+                  f"PT=NT${snapshot['highlights'].get('wall_street_target')} "
                   f"beat={base_rate['beats']}/{base_rate['quarters_counted']} "
                   f"| {sv_note}")
         except requests.HTTPError as e:

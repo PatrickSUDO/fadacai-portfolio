@@ -24,7 +24,7 @@ Track trades and compare execution against the investment plan.
 ### 0b. 倉位取得與 journal 判斷（auto 例外）
 1. 若 action 是 `auto` → **無論今天是否已偵測，都重新執行完整偵測**（這是 auto 的主要功能）
 2. 若 action 是 `log`/`review`/`summary`：
-   - 呼叫 `mcp__firstrade-server__get_account_position` 取得即時持倉
+   - 呼叫 `mcp__shioaji-server__get_account_position` 取得即時持倉
    - 檢查 `journal/YYYY-MM-DD.md`（今天日期）是否已存在
    - **若已存在** → 跳過偵測，使用即時持倉進入主流程
    - **若不存在** → 執行完整偵測（見下方 Auto-Detect）
@@ -37,7 +37,7 @@ Track trades and compare execution against the investment plan.
 
 **倉位變動自動偵測（後減前）：**
 
-1. 呼叫 `mcp__firstrade-server__get_account_position` 取得即時持倉（後 = 最新倉位）
+1. 呼叫 `mcp__shioaji-server__get_account_position` 取得即時持倉（後 = 最新倉位）
 2. 找到 `journal/` 目錄下**最新的** `.md` 檔案（前 = 上次快照）
 3. 解析「前」檔案的倉位表格：
    - 現股：從「現股持倉」或 Stocks 表格提取 {ticker: quantity}

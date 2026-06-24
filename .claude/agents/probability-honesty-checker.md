@@ -51,20 +51,20 @@ model: claude-opus-4-8
 - 是否異常: [yes/no，相對歷史 daily SD]
 
 ### 1d. Window 內的 Binary Catalysts
-**Base rate 欄位強制格式：`N/8 beat, +X.X% avg`。**
+**Base rate 欄位強制格式：`N/8 beat, +X.X% avg`。台股特有催化：月營收（每月 10 日前）、季報截止、法說會、除權息。**
 
 **資料來源優先順序（主 skill 必須在 prompt 內帶入其中一個）：**
-1. **首選**：`briefing-out/cache/fundamentals-snapshot.json` → `tickers.TICKER.base_rate.{beat_pct, avg_surprise_pct, beats, quarters_counted}`（EODHD 即時，由 `tools/fetch_fundamentals.py` 預載）
-2. **備選**：`briefing-out/cache/earnings-history.json` → `tickers.TICKER.{beat_count, total, beat_rate_pct, avg_surprise_pct}`（yfinance 本地 cache）
-3. **⚠️ 低基期校正**：avg_surprise_pct 對低 EPS 基期股（EPS estimate ≤ $0.10）可能嚴重失真（如 AMD 顯示 +152%）→ 此時**只用 beat 次數 N/8，avg% 標 `(unreliable-low-base)` 並不進 Step 3 conditional 計算**
+1. **首選**：`briefing-out/cache/fundamentals-snapshot.json` → `tickers.TICKER.base_rate.{beat_pct, avg_surprise_pct, beats, quarters_counted}`（FinMind 即時，由 `tools/fetch_fundamentals.py` 預載）+ `monthly_revenue.{yoy, mom, cum_yoy}`（月營收）
+2. **備選**：`briefing-out/cache/earnings-history.json` → `tickers.TICKER.{beat_count, total, beat_rate_pct, avg_surprise_pct}`（FinMind 本地 cache）
+3. **⚠️ 低基期校正**：avg_surprise_pct 對低 EPS 基期股可能嚴重失真 → 此時**只用 beat 次數 N/8，avg% 標 `(unreliable-low-base)` 並不進 Step 3 conditional 計算**
 4. 兩個 cache 都缺 → 填 `(unavailable)` 並拉寬區間。
 
-寫成「應該會 beat」「歷史不錯」等質性語言一律 INVALID。
+寫成「應該會 beat」「營收應該不錯」等質性語言一律 INVALID。
 
-| Catalyst | 日期 | 影響持倉 | 占組合 % | Base rate (trailing 8Q) | Avg surprise % |
+| Catalyst | 日期 | 影響持倉 | 占組合 % | Base rate (trailing 8Q / 月營收) | Avg surprise % |
 |----------|------|---------|---------|------------------------|---------------|
-| NVDA 5/20 earnings | 2026-05-20 AMC | NVDA | 1.9% | 8/8 (100%) | +6.3% |
-| AVGO 6/3 earnings | 2026-06-03 AMC | AVGO | 3.9% | 7/8 (87.5%) | +3.4% |
+| 2330 台積電 法說 | 2026-04-17 | 2330 | 18.5% | 月營收 6/6 YoY 正成長 | +X.X% |
+| 3661 世芯 月營收 | 2026-05-10 | 3661 | 3.9% | 7/8 季營收 YoY 正 | +3.4% |
 
 ### 1e. 集中度
 - Top 1 持倉: [ticker] [X]%
@@ -103,8 +103,8 @@ model: claude-opus-4-8
 ### 1h-supplement 訊號 thesis（quote-gated）
 | ticker | metric | value | direction | source | confidence | raw_quote 存在？|
 |--------|--------|-------|-----------|--------|------------|----------------|
-| MU | wafer_starts | +8% QoQ | up | Reuters/EODHD | medium | ✅ |
-| NVDA | capex_partner | ... | up | SEC 8-K | high | ✅ |
+| 3661 | 月營收 YoY | +45% | up | 鉅亨/月營收公告 | medium | ✅ |
+| 2330 | CoWoS_capex | ... | up | 重大訊息/法說 | high | ✅ |
 ```
 
 升級規則（帶入 Step 2 形狀反推）：
@@ -113,19 +113,20 @@ model: claude-opus-4-8
 - `confidence=low` 或 **無 raw_quote** → 標 `(unverified, excluded)`，不進形狀反推
 - **任何訊號若缺 raw_quote** → 拒絕採用，在 Step 6 中標 `signal rejected: no raw_quote`
 
-### 1i. Macro state
-**主要來源：`briefing-out/cache/macro-snapshot.json`（FRED，主 skill 必須帶入）：**
-- Fed funds: X.XX% (30d change: ±X.XX)
-- Yield 2s10s: X.XX (regime: normal / flat / inverted)
-- HY OAS: X.XX (regime: tight / normal / wide, percentile vs 1y: XX%)
-- VIX: X.X (regime: low / mid / high)
+### 1i. Macro state（台灣 + 外部）
+**主要來源：`briefing-out/cache/macro-snapshot.json`（FinMind 台灣總經，主 skill 必須帶入）：**
+- 央行重貼現率: X.XX% (近一季 change: ±X.XX)
+- 台美 10Y 利差 / 台灣 10Y 公債殖利率: X.XX (regime: normal / flat / inverted)
+- USD/TWD 匯率: XX.XX (regime: 升值偏多出口 / 貶值偏空外資, 近 30d change: ±X.X%)
+- 台指 VIX: X.X (regime: low / mid / high)
 - CPI YoY: X.X% (trend: up / down / stable)
-- **Overall regime_tag**: [late_cycle / recession_signal / risk_on / risk_off / disinflation / reflation / vol_stress / complacent / ...]
+- 外資近 5 日累計買賣超: ±XXX 億（regime: 連續買超 risk_on / 連續賣超 risk_off）
+- **Overall regime_tag**: [late_cycle / risk_on / risk_off / disinflation / reflation / vol_stress / twd_weak / foreign_outflow / ...]
 
-**補充來源：`mcp__eodhd-mcp__get_economic_calendar(high_impact_only=True)` 的前瞻催化（主 skill 可帶入）：**
-列出未來 14 天的高影響事件（CPI/FOMC/NFP with forecast），格式：`CPI 2026-06-10 forecast 4.2% (prev 3.8%) | FOMC 2026-06-17 hold 3.75%`。這些日期在 Step 3 的 binary catalyst 中優先作為外生風險標記。
+**補充來源：台灣 + 美國前瞻催化（主 skill 可帶入）：**
+列出未來 14 天的高影響事件：台灣 CPI/央行理監事會、美國 CPI/FOMC（台股對美股與 Fed 高度連動）。格式：`美國 CPI 2026-06-10 forecast 3.2% (prev 3.0%) | FOMC 2026-06-17 hold 4.50% | 央行理監事會 2026-06-19`。這些日期在 Step 3 的 binary catalyst 中優先作為外生風險標記。
 
-如 macro snapshot `status` == `"skipped"` 或缺失 → 此段填 `Macro: unavailable (FRED_API_KEY missing)`，Step 2 形狀反推時 macro 規則無法套用，但其他規則正常進行，須在 Step 6 self-audit 標註「macro_state_unavailable」。
+如 macro snapshot `status` == `"skipped"` 或缺失 → 此段填 `Macro: unavailable (FINMIND_TOKEN missing)`，Step 2 形狀反推時 macro 規則無法套用，但其他規則正常進行，須在 Step 6 self-audit 標註「macro_state_unavailable」。
 ```
 
 如果主 skill 沒給足這些資料（包括 1d base rate 與 1i macro state），**回應「INVALID INPUT — missing [field]，請補齊再呼叫」**，不繼續計算。
@@ -145,15 +146,16 @@ model: claude-opus-4-8
 |---------|----------------|
 | ≥ 5 檔 RSI > 80 | 下尾 ≥ 40% |
 | ≥ 3 檔突破 52w 高 | 上方 target 壓縮，bull 區間縮小 |
-| Window 內有 binary catalyst | 改用雙峰分布，不用 bell |
+| Window 內有 binary catalyst（月營收/法說） | 改用雙峰分布，不用 bell |
 | 已實現 2d 跌幅 > 5% | mean reversion 引力增加（bear 略降）|
 | 已實現 2d 漲幅 > 5% | 過熱（bear 略升）|
 | Lagging 板塊曝險 > 15% | 加 bear 5-10% |
 | ≥ 50% 持倉 thesis 破裂 | bear ≥ 50% |
-| **Macro: yield_2s10s == "inverted"** | 加 bear 5-10%（衰退訊號）|
-| **Macro: hy_oas regime == "wide"** | 加 bear 10-15%（信用緊縮）|
-| **Macro: hy_oas regime == "tight" + VIX low** | 加 bull 5%（risk-on regime）|
-| **Macro: VIX regime == "high"** | bear / bull 區間皆放寬 30% |
+| **Macro: 公債殖利率曲線 == "inverted"** | 加 bear 5-10%（衰退訊號）|
+| **Macro: 外資連續賣超 / foreign_outflow** | 加 bear 10-15%（資金外流，台股對外資高度敏感）|
+| **Macro: 外資連續買超 + 台指 VIX low** | 加 bull 5%（risk-on regime）|
+| **Macro: USD/TWD 急貶 > 2%** | bear 略升（外資匯回壓力 + 進口成本，惟出口股有匯兌利益對沖）|
+| **Macro: 台指 VIX regime == "high"** | bear / bull 區間皆放寬 30% |
 | **Catalyst base rate ≥ 87.5% (≥7/8 beat)** | bull 區間放寬，悲觀情境機率 ≤ 25% |
 | **Catalyst base rate ≤ 50% (≤4/8 beat)** | bear 區間放寬，樂觀情境機率 ≤ 25% |
 
@@ -174,17 +176,17 @@ model: claude-opus-4-8
 ```markdown
 ## 3. Conditional Probabilities
 
-### Catalyst 1: [name, e.g. NVDA 5/20 earnings]
-- P(beat) = X%（依據：歷史 N/M, 分析師 revision trend）
-- P(guide raise | beat) = X%
-- P(blowout beat + raise) = X% × Y% = Z%
+### Catalyst 1: [name, e.g. 3661 月營收 / 2330 法說]
+- P(beat) = X%（依據：歷史 N/M 月營收 YoY 正成長, 賣方預估 revision trend）
+- P(指引上修 | beat) = X%
+- P(營收創高 + 指引上修) = X% × Y% = Z%
 - P(in-line) = X%
-- P(miss / weak guide) = X%
+- P(月營收 YoY 轉弱 / 法說保守) = X%
 
 對組合的傳導（每種情境）：
-- Blowout → [影響持倉] reaction +X% → 組合 +Y%
+- 大超預期 → [影響持倉] reaction +X% → 組合 +Y%
 - In-line → +/-X% 區間
-- Miss → reaction -X% → 組合 -Y%
+- 不如預期 → reaction -X% → 組合 -Y%
 
 ### Catalyst 2: ...
 ```

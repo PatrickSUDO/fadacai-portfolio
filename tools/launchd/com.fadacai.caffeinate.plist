@@ -4,12 +4,12 @@
 <dict>
   <key>Label</key><string>com.fadacai.caffeinate</string>
 
-  <!-- Fires right after the 16:59 pmset wake. caffeinate -u asserts user
-       activity for 5520s (= 92 min), holding the Mac fully awake from 16:59
-       through 18:31 so the briefing's 17:00 / 17:30 / 18:30 (CET/CEST) send
-       windows all execute instead of being deferred by a short dark-wake.
+  <!-- Fires right after the 13:59 pmset wake. caffeinate -u asserts user
+       activity for 5520s (= 92 min), holding the Mac fully awake from 13:59
+       through 15:31 so the briefing's 14:00 (Asia/Taipei，台股收盤後) send
+       window executes instead of being deferred by a short dark-wake.
        No StandardOut/ErrPath on purpose: caffeinate is silent, and pointing a
-       log into ~/Desktop would add another TCC dependency. -->
+       log into the project dir would add another TCC dependency. -->
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/caffeinate</string>
@@ -20,11 +20,11 @@
 
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>1</integer></dict>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>2</integer></dict>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>3</integer></dict>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>4</integer></dict>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>5</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>1</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>2</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>3</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>4</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>59</integer><key>Weekday</key><integer>5</integer></dict>
   </array>
 </dict>
 </plist>

@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-fetch_macro.py — Fetch FRED macro indicators with TTL cache.
+fetch_macro.py — Fetch 台灣總經 indicators (FinMind) with TTL cache.
 
-Datasets:
-  DFF              fed_funds      Effective Fed Funds Rate (daily)
-  CPIAUCSL         cpi_yoy        CPI All Urban (monthly, computed YoY)
-  T10Y2Y           yield_2s10s    10Y - 2Y Treasury spread
-  BAMLH0A0HYM2     hy_oas         ICE BofA US High Yield OAS
-  VIXCLS           vix            CBOE VIX
+以 FinMind v4 data API 抓台灣總經序列，組成 briefing 的 zero-latency macro 層。
+逐序列容錯：任一 dataset 抓不到只標 partial，不影響其他序列。
+
+Series（FinMind dataset → 內部 name）:
+  TaiwanExchangeRate (USD)        usd_twd        新台幣對美元匯率（外資動向 / 出口）
+  InterestRate (CBC)              cbc_rate       央行重貼現率
+  TaiwanCPI                       cpi_yoy        消費者物價指數 YoY（主計總處）
+  TaiwanGovBondYield (10Y)        bond_10y       10 年期公債殖利率（殖利率曲線/利率環境）
+  外資買賣超 + 台指 VIX 由 chip-server / 其他來源補（見 briefing skill），非本檔職責。
+
+註：FinMind 部分總經 dataset 命名會調整，本檔以「逐序列 try + partial 容錯」設計，
+    某 dataset 名稱失效時該序列降級為 unavailable，不致整體失敗。
 
 Output: briefing-out/cache/macro-snapshot.json
 TTL:    24h (skip refresh if cache fresher)
@@ -17,7 +23,7 @@ Usage:
   python3 tools/fetch_macro.py --force      # force refresh
 
 Env:
-  FRED_API_KEY    required (free at https://fred.stlouisfed.org/docs/api/api_key.html)
+  FINMIND_TOKEN   required (free at https://finmindtrade.com/)
   DRY_RUN=1       print what would be fetched, don't write
 """
 
@@ -29,7 +35,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Use certifi CA bundle when available (fixes SSL in launchd environments)
@@ -45,15 +51,15 @@ CACHE_DIR = ROOT / "briefing-out" / "cache"
 CACHE_FILE = CACHE_DIR / "macro-snapshot.json"
 
 # ── Config ─────────────────────────────────────────────────────────────────
-FRED_SERIES = {
-    "DFF": "fed_funds",
-    "CPIAUCSL": "cpi_yoy",
-    "T10Y2Y": "yield_2s10s",
-    "BAMLH0A0HYM2": "hy_oas",
-    "VIXCLS": "vix",
-}
+# (dataset, data_id, internal_name)；data_id 為空字串代表該 dataset 不需 data_id。
+FINMIND_SERIES = [
+    ("TaiwanExchangeRate", "USD", "usd_twd"),
+    ("InterestRate", "CBC", "cbc_rate"),
+    ("TaiwanCPI", "", "cpi_yoy"),
+    ("TaiwanGovBondYield", "10Y", "bond_10y"),
+]
 CACHE_TTL_HOURS = 24
-FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
+FINMIND_URL = "https://api.finmindtrade.com/api/v4/data"
 
 
 # ── .env loader (stdlib only) ───────────────────────────────────────────────
@@ -83,41 +89,35 @@ def with_retry(fn, label: str, max_retries: int = 3):
     return None
 
 
-# ── FRED fetch ──────────────────────────────────────────────────────────────
-def fetch_series(series_id: str, api_key: str, limit: int = 400) -> list:
-    """Return list of {date, value} dicts, newest first."""
-    params = urllib.parse.urlencode({
-        "series_id": series_id,
-        "api_key": api_key,
-        "file_type": "json",
-        "sort_order": "desc",
-        "limit": limit,
-    })
-    url = f"{FRED_URL}?{params}"
+# ── FinMind fetch ──────────────────────────────────────────────────────────
+def fetch_series(dataset: str, data_id: str, token: str, days: int = 800) -> list:
+    """Return FinMind data rows (list of dicts), oldest→newest as API returns."""
+    start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    params = {"dataset": dataset, "start_date": start, "token": token}
+    if data_id:
+        params["data_id"] = data_id
+    url = f"{FINMIND_URL}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url)
-    with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as resp:
-        data = json.loads(resp.read())
-    obs = []
-    for row in data.get("observations", []):
-        if row.get("value") in (".", None, ""):
-            continue
-        try:
-            obs.append({"date": row["date"], "value": float(row["value"])})
-        except (ValueError, KeyError):
-            continue
-    return obs
+    with urllib.request.urlopen(req, timeout=25, context=_SSL_CTX) as resp:
+        payload = json.loads(resp.read())
+    if payload.get("status") != 200:
+        raise RuntimeError(payload.get("msg", "FinMind error"))
+    return payload.get("data", [])
 
 
-# ── Regime computation ─────────────────────────────────────────────────────
-def percentile(value: float, sample: list) -> float:
-    """0-100 percentile of `value` within `sample`."""
-    if not sample:
-        return 50.0
-    below = sum(1 for s in sample if s < value)
-    return round(100 * below / len(sample), 1)
+def _num(row: dict, *keys):
+    """Pick first present numeric field from candidate keys."""
+    for k in keys:
+        if k in row and row[k] not in (None, "", "."):
+            try:
+                return float(row[k])
+            except (TypeError, ValueError):
+                continue
+    return None
 
 
-def classify_vix(v: float) -> str:
+# ── Regime computation（台灣訊號）─────────────────────────────────────────
+def classify_twvix(v: float) -> str:
     if v < 15:
         return "low"
     if v < 25:
@@ -125,86 +125,44 @@ def classify_vix(v: float) -> str:
     return "high"
 
 
-def classify_2s10s(v: float) -> str:
-    if v < 0:
+def classify_bond_curve(short_rate, long_yield) -> str:
+    """以重貼現率(短) vs 10Y 公債殖利率(長)近似殖利率曲線。"""
+    if short_rate is None or long_yield is None:
+        return "unknown"
+    spread = long_yield - short_rate
+    if spread < 0:
         return "inverted"
-    if v < 0.5:
+    if spread < 0.3:
         return "flat"
     return "normal"
 
 
-def classify_hy_oas(value: float, sample_1y: list) -> tuple[str, float]:
-    pct = percentile(value, sample_1y)
-    if pct < 33:
-        regime = "tight"
-    elif pct < 67:
-        regime = "normal"
-    else:
-        regime = "wide"
-    return regime, pct
-
-
-def cpi_yoy_from_index(obs: list) -> tuple[float, str, list]:
-    """Compute current YoY %, trend, and 24-month YoY series for context.
-
-    obs is newest-first. Returns (current_yoy_pct, trend, yoy_series_newest_first).
-    """
-    if len(obs) < 13:
-        return (0.0, "stable", [])
-    yoy_series = []
-    for i in range(len(obs) - 12):
-        cur = obs[i]["value"]
-        prev = obs[i + 12]["value"]
-        if prev > 0:
-            yoy_series.append({
-                "date": obs[i]["date"],
-                "value": round(100 * (cur - prev) / prev, 2),
-            })
-    current = yoy_series[0]["value"] if yoy_series else 0.0
-    # trend: slope of recent 6 months
-    if len(yoy_series) >= 6:
-        recent = [yoy_series[i]["value"] for i in range(6)]
-        # newest-first, so trend = recent[0] - recent[-1]
-        delta = recent[0] - recent[-1]
-        if delta > 0.2:
-            trend = "up"
-        elif delta < -0.2:
-            trend = "down"
-        else:
-            trend = "stable"
-    else:
-        trend = "stable"
-    return current, trend, yoy_series[:24]
+def classify_twd(change_30d_pct) -> str:
+    if change_30d_pct is None:
+        return "stable"
+    if change_30d_pct > 1.5:
+        return "twd_weak"      # 貶值（USD/TWD 上升），外資匯出壓力
+    if change_30d_pct < -1.5:
+        return "twd_strong"    # 升值，利出口/外資流入
+    return "stable"
 
 
 def compute_regime_tag(series: dict) -> str:
-    """Combine 5 dimensions into a single regime label."""
     parts = []
-
-    # Yield curve
-    yc = series.get("yield_2s10s", {}).get("regime")
-    if yc == "inverted":
+    curve = series.get("bond_curve_regime")
+    if curve == "inverted":
         parts.append("recession_signal")
-    elif yc == "flat":
+    elif curve == "flat":
         parts.append("late_cycle")
-    else:
+    elif curve == "normal":
         parts.append("normal_cycle")
 
-    # HY credit
-    hy = series.get("hy_oas", {}).get("regime")
-    if hy == "tight":
+    twd = series.get("usd_twd", {}).get("regime")
+    if twd == "twd_weak":
+        parts.append("foreign_outflow_risk")
+    elif twd == "twd_strong":
         parts.append("risk_on")
-    elif hy == "wide":
-        parts.append("risk_off")
 
-    # VIX
-    vix = series.get("vix", {}).get("regime")
-    if vix == "high":
-        parts.append("vol_stress")
-    elif vix == "low" and "risk_on" in parts:
-        parts.append("complacent")
-
-    # CPI
     cpi_trend = series.get("cpi_yoy", {}).get("trend")
     if cpi_trend == "down":
         parts.append("disinflation")
@@ -246,9 +204,9 @@ def main() -> int:
     force = "--force" in sys.argv
     dry_run = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "yes")
 
-    api_key = os.environ.get("FRED_API_KEY", "").strip()
-    if not api_key:
-        print("⚠️  FRED_API_KEY missing, writing skipped status to cache")
+    token = os.environ.get("FINMIND_TOKEN", "").strip()
+    if not token:
+        print("⚠️  FINMIND_TOKEN missing, writing skipped status to cache")
         if not dry_run:
             write_skipped("no_api_key")
         return 0
@@ -257,87 +215,82 @@ def main() -> int:
         print(f"✅ macro cache fresh (< {CACHE_TTL_HOURS}h), skipping")
         return 0
 
-    print(f"🔄 fetching {len(FRED_SERIES)} FRED series...")
-    series_data: dict = {}
+    print(f"🔄 fetching {len(FINMIND_SERIES)} FinMind 台灣總經 series...")
+    raw: dict = {}
     errors: list = []
-
-    # Fetch all series
-    raw_obs: dict = {}
-    for series_id, name in FRED_SERIES.items():
+    for dataset, data_id, name in FINMIND_SERIES:
         if dry_run:
-            print(f"[DRY-RUN] would fetch FRED {series_id} → {name}")
+            print(f"[DRY-RUN] would fetch FinMind {dataset}/{data_id or '-'} → {name}")
             continue
-        obs = with_retry(lambda sid=series_id: fetch_series(sid, api_key),
-                         f"FRED {series_id}", max_retries=3)
-        if obs is None or len(obs) == 0:
-            errors.append(series_id)
+        rows = with_retry(lambda d=dataset, i=data_id: fetch_series(d, i, token),
+                          f"FinMind {dataset}", max_retries=3)
+        if not rows:
+            errors.append(name)
             continue
-        raw_obs[name] = obs
+        raw[name] = rows
 
     if dry_run:
         print("[DRY-RUN] complete, no write")
         return 0
 
-    # Process each series into snapshot format
-    # 1. fed_funds (daily, take latest)
-    if "fed_funds" in raw_obs:
-        obs = raw_obs["fed_funds"]
-        latest = obs[0]
-        # 30d change = latest vs ~30 days ago
-        prev_30d = next((o["value"] for o in obs if
-                         (datetime.strptime(latest["date"], "%Y-%m-%d") -
-                          datetime.strptime(o["date"], "%Y-%m-%d")).days >= 30),
-                        latest["value"])
-        series_data["fed_funds"] = {
-            "value": round(latest["value"], 2),
-            "date": latest["date"],
-            "prev_30d": round(prev_30d, 2),
-            "change_30d": round(latest["value"] - prev_30d, 2),
+    series_data: dict = {}
+
+    # usd_twd: 取 spot 賣出近值 + 30d 變動
+    if "usd_twd" in raw:
+        rows = raw["usd_twd"]
+        latest = rows[-1]
+        rate = _num(latest, "spot_sell", "spot_buy", "cash_sell", "close")
+        prev_30 = rows[max(0, len(rows) - 22)]
+        prev_rate = _num(prev_30, "spot_sell", "spot_buy", "cash_sell", "close")
+        chg = round((rate - prev_rate) / prev_rate * 100, 2) if (rate and prev_rate) else None
+        series_data["usd_twd"] = {
+            "value": round(rate, 3) if rate else None,
+            "date": latest.get("date"),
+            "change_30d_pct": chg,
+            "regime": classify_twd(chg),
         }
 
-    # 2. cpi_yoy (compute from index)
-    if "cpi_yoy" in raw_obs:
-        cur_yoy, trend, yoy_series = cpi_yoy_from_index(raw_obs["cpi_yoy"])
-        prev_yoy = yoy_series[1]["value"] if len(yoy_series) > 1 else cur_yoy
-        series_data["cpi_yoy"] = {
-            "value": cur_yoy,
-            "date": yoy_series[0]["date"] if yoy_series else raw_obs["cpi_yoy"][0]["date"],
-            "prev": prev_yoy,
-            "trend": trend,
+    # cbc_rate: 央行重貼現率
+    short_rate = None
+    if "cbc_rate" in raw:
+        rows = raw["cbc_rate"]
+        latest = rows[-1]
+        short_rate = _num(latest, "interest_rate", "value", "rediscount_rate")
+        series_data["cbc_rate"] = {
+            "value": round(short_rate, 3) if short_rate else None,
+            "date": latest.get("date"),
         }
 
-    # 3. yield_2s10s
-    if "yield_2s10s" in raw_obs:
-        obs = raw_obs["yield_2s10s"]
-        latest = obs[0]
-        series_data["yield_2s10s"] = {
-            "value": round(latest["value"], 2),
-            "date": latest["date"],
-            "regime": classify_2s10s(latest["value"]),
+    # cpi_yoy: 取最新 YoY + 趨勢（FinMind 若直接給 YoY 用之，否則由 index 推算）
+    if "cpi_yoy" in raw:
+        rows = raw["cpi_yoy"]
+        latest = rows[-1]
+        cur = _num(latest, "YoY", "yoy", "cpi_yoy")
+        if cur is None:  # 由指數推 YoY
+            idx_now = _num(latest, "value", "cpi", "index")
+            idx_prev = _num(rows[max(0, len(rows) - 13)], "value", "cpi", "index")
+            cur = round((idx_now - idx_prev) / idx_prev * 100, 2) if (idx_now and idx_prev) else None
+        prev = _num(rows[max(0, len(rows) - 2)], "YoY", "yoy", "cpi_yoy")
+        trend = "stable"
+        if cur is not None and prev is not None:
+            if cur - prev > 0.2:
+                trend = "up"
+            elif cur - prev < -0.2:
+                trend = "down"
+        series_data["cpi_yoy"] = {"value": cur, "date": latest.get("date"), "trend": trend}
+
+    # bond_10y: 10 年期公債殖利率
+    long_yield = None
+    if "bond_10y" in raw:
+        rows = raw["bond_10y"]
+        latest = rows[-1]
+        long_yield = _num(latest, "yield", "value", "interest_rate")
+        series_data["bond_10y"] = {
+            "value": round(long_yield, 3) if long_yield else None,
+            "date": latest.get("date"),
         }
 
-    # 4. hy_oas
-    if "hy_oas" in raw_obs:
-        obs = raw_obs["hy_oas"]
-        latest = obs[0]
-        sample_1y = [o["value"] for o in obs[:252]]
-        regime, pct = classify_hy_oas(latest["value"], sample_1y)
-        series_data["hy_oas"] = {
-            "value": round(latest["value"], 2),
-            "date": latest["date"],
-            "regime": regime,
-            "pct_1y": pct,
-        }
-
-    # 5. vix
-    if "vix" in raw_obs:
-        obs = raw_obs["vix"]
-        latest = obs[0]
-        series_data["vix"] = {
-            "value": round(latest["value"], 2),
-            "date": latest["date"],
-            "regime": classify_vix(latest["value"]),
-        }
+    series_data["bond_curve_regime"] = classify_bond_curve(short_rate, long_yield)
 
     regime_tag = compute_regime_tag(series_data)
     status = "ok" if not errors else "partial"
@@ -348,10 +301,10 @@ def main() -> int:
         "series": series_data,
         "regime_tag": regime_tag,
         "errors": errors,
+        "note": "台指 VIX 與外資買賣超由 chip-server / briefing skill 另補",
     }
     atomic_write(CACHE_FILE, snapshot)
-    print(f"✅ macro cache refreshed ({len(series_data)}/{len(FRED_SERIES)} series, "
-          f"regime={regime_tag})")
+    print(f"✅ macro cache refreshed ({len(series_data)} fields, regime={regime_tag})")
     if errors:
         print(f"⚠️  errors on: {', '.join(errors)}")
     return 0

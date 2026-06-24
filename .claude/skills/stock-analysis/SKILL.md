@@ -31,7 +31,7 @@ Generate a standardized research report for one or more stock tickers.
 fundamentals cache 處理：
 - TICKER 在 cache 且 mtime < 30h → **使用**，供三錨點估值 + probability agent 1d/1h
 - TICKER 不在 cache 或 mtime > 30h → **先跑 `python3 tools/fetch_fundamentals.py --ticker TICKER`**（單票 fetch + merge 進 cache，含 A4 `self_valuation`），再讀 cache。**這樣 cache miss/stale 也能取得 A4**，不再直接標 `(self-val N/A)`。Agent 3 仍同批抓 `get_fundamentals_snapshot` + `get_earnings_history` 作即時三錨點交叉（fetch_fundamentals 失敗時的 fallback）。
-- 只有 `fetch_fundamentals --ticker` **真的失敗**（EODHD 無資料/token 缺）才標 `(self-val N/A)`。
+- 只有 `fetch_fundamentals --ticker` **真的失敗**（FinMind 無資料/token 缺）才標 `(self-val N/A)`。
 - `pe_ratio == 0.0 / null` → 丟棄 A1 錨；`peg_ratio == 0.0 / null` → 丟棄 A2 錨，標 `(anchor unavailable)`
 
 這些 cache 資料用於：
@@ -49,12 +49,12 @@ fundamentals cache 處理：
 ---
 
 ## Arguments
-- Single ticker: `/stock-analysis PLTR`
-- Multiple tickers for comparison: `/stock-analysis DCO AIR`
-- With specific focus: `/stock-analysis TEAM options` (include options strategy suggestions)
-- With portfolio context: `/stock-analysis MU --current` (activates plan.md + positions)
-- With Codex second opinion: `/stock-analysis MU --codex` or `/stock-analysis MU --2nd`
-- Combined: `/stock-analysis MU --current --codex`
+- Single ticker: `/stock-analysis 3661 世芯-KW`
+- Multiple tickers for comparison: `/stock-analysis 3034 聯詠 3661 世芯-KW`
+- With specific focus: `/stock-analysis 2454 聯發科 options` (include options strategy suggestions)
+- With portfolio context: `/stock-analysis 3661 世芯-KW --current` (activates plan.md + positions)
+- With Codex second opinion: `/stock-analysis 3661 世芯-KW --codex` or `/stock-analysis 3661 世芯-KW --2nd`
+- Combined: `/stock-analysis 3661 世芯-KW --current --codex`
 
 ## Workflow
 
@@ -62,30 +62,30 @@ fundamentals cache 處理：
 
 2. **Gather Data** using MCP tools and WebSearch:
 
-   **Primary: Yahoo Finance MCP**
-   - `mcp__yfinance-advanced__get_stock_info` — fundamentals, analyst targets, margins, PE ratios
-   - `mcp__yfinance-advanced__get_financial_statement` (income_stmt) — revenue, earnings trends
-   - `mcp__yfinance-advanced__get_recommendations` (recommendations) — analyst consensus
-   - `mcp__yfinance-advanced__get_yahoo_finance_news` — recent headlines
-   - `mcp__yfinance-advanced__get_historical_stock_prices` (period=6mo) — price trend
+   **Primary: FinMind MCP**
+   - `mcp__finmind-server__get_stock_info` — fundamentals, analyst targets, margins, PE ratios
+   - `mcp__finmind-server__get_financial_statement` (income_stmt) — revenue, earnings trends
+   - `mcp__finmind-server__get_recommendations` (recommendations) — analyst consensus
+   - `mcp__finmind-server__get_finmind_finance_news` — recent headlines
+   - `mcp__finmind-server__get_historical_stock_prices` (period=6mo) — price trend
 
-   **Secondary: SEC EDGAR MCP** (for deeper analysis)
-   - `mcp__sec-edgar-mcp__get_financials` (statement_type="all") — official SEC financial data
-   - `mcp__sec-edgar-mcp__get_insider_transactions` (days=90) — insider buying/selling
-   - `mcp__sec-edgar-mcp__get_recent_filings` (days=60) — recent 8-K, 10-K/Q filings
-   - `mcp__sec-edgar-mcp__get_segment_data` — revenue breakdown by geography/product
+   **Secondary: 公開資訊觀測站 MOPS MCP** (for deeper analysis)
+   - `mcp__mops-server__get_financials` (statement_type="all") — official MOPS financial data
+   - `mcp__mops-server__get_insider_transactions` (days=90) — insider buying/selling
+   - `mcp__mops-server__get_recent_filings` (days=60) — recent 重訊, 季報/年報
+   - `mcp__mops-server__get_segment_data` — revenue breakdown by geography/product
 
    **Technical: Technical Indicators MCP**
    - `mcp__technical-mcp__get_technical_indicators` — RSI, MACD, Bollinger Bands, ATR, momentum score, trend
    - `mcp__technical-mcp__get_support_resistance` — support/resistance levels, 52-week range
 
-   **Sentiment: EODHD MCP**
-   - `mcp__eodhd-mcp__get_news_sentiment` — news with AI sentiment scores
-   - `mcp__eodhd-mcp__get_sentiment_trend` — 30-day sentiment trajectory
+   **Sentiment: FinMind MCP**
+   - `mcp__cnyes-news__get_news_sentiment` — news with AI sentiment scores
+   - `mcp__cnyes-news__get_sentiment_trend` — 30-day sentiment trajectory
 
-   **Tertiary: FMP MCP** (free tier, supplementary)
-   - `mcp__fmp-mcp__getStockPeers` — peer companies for comparison
-   - `mcp__fmp-mcp__getCompanyProfile` — company profile (fallback if yfinance incomplete)
+   **Tertiary: twse MCP** (free tier, supplementary)
+   - `mcp__twse-server__getStockPeers` — peer companies for comparison
+   - `mcp__twse-server__getCompanyProfile` — company profile (fallback if FinMind incomplete)
 
    **Supplementary: WebSearch** (if MCP data is insufficient)
    - Search: "[TICKER] stock analysis 2026"
@@ -95,13 +95,13 @@ fundamentals cache 處理：
 
    使用 Agent tool 平行派遣以下 3 組子代理（每組指定 subagent_type: "data-collector"，自動使用 Haiku 4.5 純數據收集）：
 
-   - **Agent 1 — Yahoo Finance**（subagent_type: "data-collector"）：`get_stock_info` + `get_financial_statement` + `get_recommendations` + `get_yahoo_finance_news` + `get_historical_stock_prices`
-   - **Agent 2 — SEC EDGAR**（subagent_type: "data-collector"）：`get_financials`（all）+ `get_insider_transactions`（90d）+ `get_recent_filings`（60d）+ `get_segment_data`
-   - **Agent 3 — Technical + Sentiment + EODHD Fundamentals**（subagent_type: "data-collector"）：`get_technical_indicators` + `get_support_resistance` + `get_sentiment_trend` + `get_news_sentiment`（ticker format: TICKER.US）；**若 fundamentals cache miss 或 mtime > 30h**，同批加抓 `mcp__eodhd-mcp__get_fundamentals_snapshot(TICKER.US)` + `mcp__eodhd-mcp__get_earnings_history(TICKER.US)`（不額外 round-trip）
+   - **Agent 1 — FinMind**（subagent_type: "data-collector"）：`get_stock_info` + `get_financial_statement` + `get_recommendations` + `get_finmind_finance_news` + `get_historical_stock_prices`
+   - **Agent 2 — 公開資訊觀測站 MOPS**（subagent_type: "data-collector"）：`get_financials`（all）+ `get_insider_transactions`（90d）+ `get_recent_filings`（60d）+ `get_segment_data`
+   - **Agent 3 — Technical + Sentiment + FinMind Fundamentals**（subagent_type: "data-collector"）：`get_technical_indicators` + `get_support_resistance` + `get_sentiment_trend` + `get_news_sentiment`（ticker format: 純 4 碼代號）；**若 fundamentals cache miss 或 mtime > 30h**，同批加抓 `mcp__cnyes-news__get_fundamentals_snapshot(TICKER)` + `mcp__cnyes-news__get_earnings_history(TICKER)`（不額外 round-trip）
 
    多股比較時，為每個 ticker 各派一組 Agent。若 Agent tool 不可用，依序呼叫亦可。
 
-   ⚠️ **Agent 失敗 fallback**：若 Agent 3（Technical）回傳空結果或聲稱「沒有 MCP 權限」，主 Claude 直接呼叫 `mcp__technical-mcp__get_technical_indicators` + `mcp__technical-mcp__get_support_resistance` + `mcp__eodhd-mcp__get_sentiment_trend`，絕不跳過技術分析 section。
+   ⚠️ **Agent 失敗 fallback**：若 Agent 3（Technical）回傳空結果或聲稱「沒有 MCP 權限」，主 Claude 直接呼叫 `mcp__technical-mcp__get_technical_indicators` + `mcp__technical-mcp__get_support_resistance` + `mcp__cnyes-news__get_sentiment_trend`，絕不跳過技術分析 section。
 
 3. **Check Current Portfolio**（`--current` 模式才執行）
    - 呼叫 `get_account_position` 確認是否持有此標的
@@ -147,15 +147,15 @@ python3 tools/thesis_ledger.py add --ticker TICKER --slug <slug> \
 
 4b. **訊號擷取 & Thesis 候選（Signal Extraction，stock-analysis 預設開）**
 
-> 目的：從 news body + SEC 8-K + 財報逐字稿抽**已量化陳述**，用以補強/修正 thesis 機率分布輸入（Step 0e）。
+> 目的：從 news body + 重大訊息 + 財報逐字稿抽**已量化陳述**，用以補強/修正 thesis 機率分布輸入（Step 0e）。
 
 **反幻覺門檻（必守）：** 每個 signal 必須附 `raw_quote`（≤120 字逐字引用）；無 quote → 無 signal；只有 narrative → 明寫「無可量化信號（only narrative）」。
 
 **資料管道優先順序：**
-1. SEC 8-K（Agent 2 `analyze_8k` / `get_recent_filings` 14d 內）→ `confidence: high`
-2. 財報逐字稿（`mcp__fmp-mcp__getEarningsTranscript` 最新一份，取 capex/ASP/wafer/utilization 句）→ `confidence: high`；僅財報後 30 天內
-3. EODHD raw news body（`news-articles.json` Step 0.67，或 `mcp__eodhd-mcp__get_news` 即時抓）→ `confidence: medium`
-4. FMP segment（`mcp__fmp-mcp__getRevenueProductSegmentation`）→ `confidence: medium`（有數字才算）
+1. 重大訊息（Agent 2 `analyze_8k` / `get_recent_filings` 14d 內）→ `confidence: high`
+2. 財報逐字稿（`mcp__twse-server__getEarningsTranscript` 最新一份，取 capex/ASP/wafer/utilization 句）→ `confidence: high`；僅財報後 30 天內
+3. FinMind raw news body（`news-articles.json` Step 0.67，或 `mcp__cnyes-news__get_news` 即時抓）→ `confidence: medium`
+4. twse segment（`mcp__twse-server__getRevenueProductSegmentation`）→ `confidence: medium`（有數字才算）
 
 **訊號 record（Claude 輸出，不寫 JSON cache）：**
 ```
@@ -185,12 +185,12 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 ### §4b 訊號擷取
 | metric | value | dir | source | confidence | raw_quote（首 80 字） |
 |--------|-------|-----|--------|------------|----------------------|
-| wafer_starts | +8% QoQ | up | Reuters/EODHD | medium | "...逐字引用..." |
+| wafer_starts | +8% QoQ | up | Reuters/FinMind | medium | "...逐字引用..." |
 
 THESIS 候選：[若有 high/medium conf 訊號]
 - slug: wafer-starts-bit-growth → 已登錄 thesis_ledger
 [若無]
-- 無可量化信號（only narrative news，無 SEC 8-K / 逐字稿量化句）
+- 無可量化信號（only narrative news，無 重大訊息 / 逐字稿量化句）
 ```
 
 4. **Generate Report** for each ticker:
@@ -249,20 +249,20 @@ Use `mcp__technical-mcp__get_technical_indicators` and `mcp__technical-mcp__get_
 - RSI < 30 + near support: potential entry opportunity
 - High ATR regime: wider stop-loss needed, consider smaller position
 
-### SEC EDGAR Insights
+### 公開資訊觀測站 MOPS Insights
 - Insider Trading (90 days): net buying/selling activity
-- Recent Filings: any material 8-K events, 10-K/Q highlights
+- Recent Filings: any material 重訊 events, 10-K/Q highlights
 - Revenue Segments: geographic/product breakdown (if available)
 
 ### 市場情緒 (Sentiment)
-Use `mcp__eodhd-mcp__get_sentiment_trend` and `mcp__eodhd-mcp__get_news_sentiment`.
+Use `mcp__cnyes-news__get_sentiment_trend` and `mcp__cnyes-news__get_news_sentiment`.
 
 - Sentiment trend: improving / declining / stable (30-day trajectory)
 - 7-day vs 30-day average sentiment comparison
 - Recent news headlines with sentiment polarity scores
 - Flag strongly negative sentiment (< -0.3) as risk factor
 
-### Peer Comparison (FMP)
+### Peer Comparison (twse)
 - Top 5 peers by market cap similarity
 
 ### Investment Context（獨立分析）
@@ -273,7 +273,7 @@ Use `mcp__eodhd-mcp__get_sentiment_trend` and `mcp__eodhd-mcp__get_news_sentimen
 ### 配置計畫定位（`--current` 模式才輸出）
 - 此標的是否在 plan.md 待建倉/加碼清單中？
 - 與現有持倉是否重疊？
-- 計畫建議的進場方式：現股 vs Bull Put Spread vs LEAPS（引用計畫原文）
+- 計畫建議的進場方式：現股 vs Bull Put Spread vs 個股期貨（引用計畫原文）
 - 建議倉位佔帳戶 %
 
 ### 第一性檢查（必填，在 Verdict 之前）
@@ -284,7 +284,7 @@ Use `mcp__eodhd-mcp__get_sentiment_trend` and `mcp__eodhd-mcp__get_news_sentimen
 
 | 錨點 | 值 | 說明 |
 |------|----|------|
-| A1 市場 PE | EODHD `pe_ratio` | 0.0/null → N/A |
+| A1 市場 PE | FinMind `pe_ratio` | 0.0/null → N/A |
 | A2 PEG 錨 | `peg_ratio × growth%`（AI龍頭 PEG基準=1.5，其餘=1.0） | 0.0/null → N/A |
 | A3 分析師錨 | `wall_street_target ÷ fwdEPS`；fwdEPS 優先 `forward_estimates.curr_fy.eps_avg`（真實共識）→ `next_fy.eps_avg` → `eps_ttm×(1+growth)` 近似 | 任一缺 → N/A |
 | **A4 自建錨（分歧）** | `self_valuation.own_target_price`（cache miss/stale 已由 `fetch_fundamentals.py --ticker` 補抓）| `unavailable`（真失敗才）→ `(self-val N/A)`；`low` → `⚠️低信心`；**A4 不進 median，不進 EV — 僅做分歧 flag** |
@@ -292,12 +292,12 @@ Use `mcp__eodhd-mcp__get_sentiment_trend` and `mcp__eodhd-mcp__get_news_sentimen
 - **基準 Fair PE** = median(A1, A2, A3)（A4 排除在外）；**樂觀** = max × 1.25（上限 current_PE × 1.25）；**悲觀** = min × 0.70
 - **FwdEPS 情境**：基準=analyst 共識 fwdEPS（`forward_estimates.curr_fy.eps_avg`，缺則 next_fy，再缺才用 `eps_ttm×(1+growth)` 近似；cache `self_valuation.a3_fwdeps_source` 已標來源）；樂觀=基準×(1+min(avg_surprise%,15%))；悲觀=基準×(1−5%/10%)
 - **EPS 修正動能**：`forward_estimates` 另帶 `eps_revision_30d_pct` + `revisions_up/down_30d`，30 日共識上修=guidance 偏正領先訊號，供 thesis/P3 引用（非估值輸入）
-- stock-analysis 單股深度**每次都做 DCF 交叉**，改用**自建 `tools/simple_dcf.py`**（FMP free tier 無 getDCFValuation）：把 Agent 1 yfinance 已抓的數字餵進去——
+- stock-analysis 單股深度**每次都做 DCF 交叉**，改用**自建 `tools/simple_dcf.py`**（twse free tier 無 getDCFValuation）：把 Agent 1 FinMind 已抓的數字餵進去——
   ```bash
   python3 tools/simple_dcf.py --fcf <freeCashflow> --shares <sharesOutstanding> \
     --cash <totalCash> --debt <totalDebt> --growth <forward EPS/rev 成長小數> [--wacc 0.10] [--terminal 0.03]
   ```
-  回 `intrinsic_value_per_share`。FCF≤0 → 工具自動回 N/A（標 `DCF 不適用（FCF 為負）`）。**DCF 僅 sanity flag，不進 EV**；高成長股 terminal 佔比常 >70%（工具會回 `terminal_pct_of_ev`），偏離大時註明「假設敏感、參考性低」。FMP getDCFValuation 僅作備援（通常 402）。
+  回 `intrinsic_value_per_share`。FCF≤0 → 工具自動回 N/A（標 `DCF 不適用（FCF 為負）`）。**DCF 僅 sanity flag，不進 EV**；高成長股 terminal 佔比常 >70%（工具會回 `terminal_pct_of_ev`），偏離大時註明「假設敏感、參考性低」。twse getDCFValuation 僅作備援（通常 402）。
 
 - **機率分布：**
 
@@ -365,7 +365,7 @@ raw data 必須是 fact 數值，**不能** 是 derived label。技術面只給 
 - Trailing PE：XX / Forward PE：XX / PEG：X.X / P/S：X.X / EV/EBITDA：XX
 - Forward EPS：$X.XX / FY 估算 EPS：$X.XX
 - 分析師 median PT：$XXX
-- EODHD earnings base rate：N/8 beat, avg_surprise X.X%（或 unreliable-low-base）
+- FinMind earnings base rate：N/8 beat, avg_surprise X.X%（或 unreliable-low-base）
 - Market Cap：$XXB
 
 **最近財報（fact，含日期）：**
@@ -385,7 +385,7 @@ raw data 必須是 fact 數值，**不能** 是 derived label。技術面只給 
 
 **分析師共識：** [N] strong buy / [N] buy / [N] hold / [N] sell / [N] strong sell；median PT $XXX；high $XXX / low $XXX
 
-**內部人交易（90 天）：** [N] 筆 Form 4，[X 筆 buy / X 筆 sell]，金額摘要 — 不寫「警訊」「正常」分類
+**內部人交易（90 天）：** [N] 筆 內部人持股申報，[X 筆 buy / X 筆 sell]，金額摘要 — 不寫「警訊」「正常」分類
 
 **技術面（fact only，不分類）：**
 - RSI(14)：XX.X（純數字，不標 OB/oversold）
@@ -434,7 +434,7 @@ raw data 必須是 fact 數值，**不能** 是 derived label。技術面只給 
 - Verdict 必須有可量化條件
 - 不假設 Claude 已說過什麼
 - 用客觀數據與你自己的 mental model 從 raw 數值自行 derive interpretation
-- 若 ticker 在 ±48h earnings window，特別考慮「earnings sell-on-news」vs「thesis 破裂」的根因區分
+- 若 ticker 在 ±48h 財報/月營收窗口，特別考慮「earnings sell-on-news」vs「thesis 破裂」的根因區分
 
 請以繁體中文回覆，控制在 700 字內。
 

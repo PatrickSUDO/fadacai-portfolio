@@ -23,13 +23,13 @@ model: claude-opus-4-8
 
 呼叫以下 MCP 取數據（可平行）：
 
-1. `mcp__firstrade-server__get_account_position` — 持倉
-2. `mcp__firstrade-server__get_account_balance` — 帳戶總值 + 現金
+1. `mcp__shioaji-server__get_account_position` — 持倉
+2. `mcp__shioaji-server__get_account_balance` — 帳戶總值 + 現金
 3. `mcp__technical-mcp__get_batch_indicators(所有持倉, period=3mo)` — RSI / momentum / trend
 4. `mcp__technical-mcp__get_sector_rotation(period=3mo)` — leading / lagging
-5. `mcp__yfinance-advanced__get_stock_info(top 11 by MV)` — 52w high/low、fundamentals
-6. `mcp__fmp-mcp__getEarningsCalendar(today, today+horizon)` — binary catalysts in window
-7. （平行 agent）`mcp__eodhd-mcp__get_sentiment_trend(top 8 by MV, days=30)` — 7d/30d sentiment
+5. `mcp__finmind-server__get_stock_info(top 11 by MV)` — 52w high/low、fundamentals
+6. `mcp__twse-server__getEarningsCalendar(today, today+horizon)` — binary catalysts in window
+7. （平行 agent）`mcp__cnyes-news__get_sentiment_trend(top 8 by MV, days=30)` — 7d/30d sentiment
 
 ### Step 2: 整理成 8 項 Input Enumeration
 

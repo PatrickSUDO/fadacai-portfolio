@@ -2,13 +2,14 @@
 """
 earnings_history.py — Cache trailing 8Q earnings beat-rate + next dates per ticker.
 
-Source: yfinance Ticker(sym).earnings_dates (12-row DataFrame, newest-first)
+Source: yfinance Ticker(sym+'.TW'/'.TWO').earnings_dates（台股季財報）
+        + FinMind TaiwanStockMonthRevenue（月營收，建議補強）
 Output:
   briefing-out/cache/earnings-history.json   trailing 8Q beat/miss/surprise per ticker
-  briefing-out/cache/earnings-dates.json     next earnings per ticker (with timing BMO/AMC)
+  briefing-out/cache/earnings-dates.json     next 財報/月營收 per ticker (with timing 盤前/盤後)
 TTL:
   history: 7 days (trailing 8Q stable within a week)
-  dates:   24 hours (next date may flip BMO/AMC or get confirmed)
+  dates:   24 hours (next date may flip 盤前/盤後 or get confirmed)
 
 Ticker source priority:
   1. ROOT/journal/<latest>.md  (parse holdings table)
@@ -45,7 +46,7 @@ JOURNAL_DIR = ROOT / "journal"
 # ── Config ─────────────────────────────────────────────────────────────────
 CACHE_HIST_TTL_HOURS = 24 * 7  # 7 days
 CACHE_DATES_TTL_HOURS = 24
-TICKERS_PER_FETCH_DELAY = 0.3   # be polite to yfinance
+TICKERS_PER_FETCH_DELAY = 0.3   # be polite to yfinance（台股 .TW）
 
 
 # ── .env loader ─────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ def load_env():
 
 
 # ── Ticker discovery ───────────────────────────────────────────────────────
-TICKER_RE = re.compile(r"^\|\s*([A-Z]{1,5})\s*\|")
+TICKER_RE = re.compile(r"^\|\s*(\d{4})\b")
 
 
 def journals_newest_first() -> list[Path]:
@@ -148,17 +149,31 @@ def _safe_float(v) -> float | None:
 
 
 def _timing(ts) -> str:
-    """Return 'BMO' (before 12:00 ET) or 'AMC' (after) based on timestamp hour."""
+    """台股財報/月營收多於收盤後公布，統一回 '盤後'（盤前公布回 '盤前'）。"""
     if ts is None or pd.isna(ts):
         return "?"
     h = ts.hour
-    return "BMO" if h < 12 else "AMC"
+    return "盤前" if h < 9 else "盤後"
+
+
+def _yf_symbol(sym: str) -> str:
+    """台股 4 碼代號 → yfinance symbol。預設上市 .TW；若需上櫃改 .TWO。
+    （上櫃代號清單可由 twse-server / FinMind 補；此處預設 .TW，抓不到再退 .TWO。）"""
+    return f"{sym}.TW"
 
 
 def fetch_ticker_data(sym: str) -> tuple[dict | None, dict | None]:
-    """Return (history_record, next_date_record), each may be None on failure."""
-    t = yf.Ticker(sym)
+    """Return (history_record, next_date_record), each may be None on failure.
+
+    以 yfinance `.TW`(上市)/`.TWO`(上櫃) 抓台股季財報日期與 EPS beat。台股月營收
+    （每月 10 日前，台股特有最高頻 catalyst）建議改由 FinMind TaiwanStockMonthRevenue
+    補強——本檔保留 yfinance 季財報路徑作為零相依 fallback。"""
+    t = yf.Ticker(_yf_symbol(sym))
     df = t.earnings_dates
+    if (df is None or getattr(df, "empty", True)):
+        # 上市抓不到 → 試上櫃 .TWO
+        t = yf.Ticker(f"{sym}.TWO")
+        df = t.earnings_dates
     if df is None or df.empty:
         return None, None
 

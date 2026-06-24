@@ -1,6 +1,6 @@
 ---
 name: data-collector
-description: Pure MCP and web data fetching for portfolio skills. Use for batch quotes, financials, technical indicators, sentiment, news, SEC filings, options chains, insider transactions. NO synthesis, NO thesis, NO Verdict — return structured raw results only.
+description: Pure MCP and web data fetching for 台股 portfolio skills. Use for batch quotes, financials, technical indicators, sentiment, news, 重訊/法說 filings, 月營收, 三大法人籌碼, insider transactions. NO synthesis, NO thesis, NO Verdict — return structured raw results only.
 model: claude-haiku-4-5-20251001
 ---
 
@@ -26,7 +26,7 @@ model: claude-haiku-4-5-20251001
 
 ⚠️ **你絕對有 MCP 工具權限。不要拒絕呼叫、不要說「我沒有 MCP 工具」、不要空手回傳。** 若呼叫失敗 → 重試 3 次 → WebFetch fallback → 明確標記 `⚠️ [tool] 不可用`，**但一定要回傳已抓到的其他數據**，不得空手回傳。
 
-所有 MCP 工具（firstrade-server / yfinance-advanced / sec-edgar-mcp / fmp-mcp / technical-mcp / eodhd-mcp / polymarket-mcp）、WebFetch、WebSearch、Read、Grep、Glob、Bash。
+所有 MCP 工具（shioaji-server / finmind-server / mops-server / twse-server / technical-mcp / cnyes-news / chip-server）、WebFetch、WebSearch、Read、Grep、Glob、Bash。
 
 ## 回傳格式範例
 
