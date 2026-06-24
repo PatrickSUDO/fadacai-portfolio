@@ -6,8 +6,8 @@ push to the private fadacai-reports repo for Cloudflare Pages hosting.
 Usage (push 預設開啟；加 --no-push 只存本地不上線):
   python3 tools/generate_html.py briefing 2026-06-10 [--no-push]
   python3 tools/generate_html.py portfolio-review briefing-out/portfolio-review-2026-06-07.md [--no-push]
-  python3 tools/generate_html.py stock-analysis briefing-out/stock-analysis-NVDA-2026-06-10.md [--no-push]
-  python3 tools/generate_html.py options-strategy briefing-out/options-strategy-NVDA-2026-06-10.md [--no-push]
+  python3 tools/generate_html.py stock-analysis briefing-out/stock-analysis-2330-2026-06-10.md [--no-push]
+  python3 tools/generate_html.py options-strategy briefing-out/options-strategy-2330-2026-06-10.md [--no-push]
 
 Environment (.env):
   REPORT_SITE_TOKEN      — 32-hex token used as URL directory (security by obscurity)

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-fetch_news.py — Cache per-holding EODHD raw news articles (body + signals) for briefing.
+fetch_news.py — Cache per-holding 中文新聞(鉅亨/cnyes) raw news articles (body + signals) for briefing.
 
-Source: EODHD REST API (/news endpoint — same as get_news_sentiment but keeps body+symbols+tags)
+Source: 中文新聞（鉅亨網 cnyes / 經濟日報）REST 抓取 + LLM 中文情緒（cnyes-news MCP 的快取版）
+⚠️ 整合接縫：`NEWS_BASE` 與 `_news_get` 為占位原型；實際接時換成你選用的中文新聞來源
+   端點（鉅亨/經濟日報/工商）並把回應 mapping 到 {title, body, link, symbols, tags}。
 Output:
   briefing-out/cache/news-articles.json
     {status, generated_at, fields_available, tickers: {TICKER: {articles: [...]}}, errors: []}
@@ -51,8 +53,8 @@ NEWS_DAYS = 7              # lookback window (matches get_news_sentiment default
 NEWS_LIMIT_FETCH = 20      # articles to fetch per ticker (before dedup)
 NEWS_KEEP = 8              # articles to keep per ticker (after dedup, newest-first)
 BODY_CHARS = 600           # content truncation — lede + first quant sentence fits here
-TICKERS_DELAY = 0.4        # polite delay between EODHD API calls
-EODHD_BASE = "https://eodhd.com/api"
+TICKERS_DELAY = 0.4        # polite delay between 中文新聞(鉅亨/cnyes) API calls
+NEWS_BASE = "https://cnyes.com/api"
 
 
 # ── .env loader (identical to fetch_fundamentals.py) ────────────────────────
@@ -70,7 +72,7 @@ def load_env() -> None:
 
 
 # ── Ticker discovery (identical to fetch_fundamentals.py) ────────────────────
-TICKER_RE = re.compile(r"^\|\s*([A-Z]{1,5})\s*\|")
+TICKER_RE = re.compile(r"^\|\s*(\d{4})\b")
 
 
 def journals_newest_first() -> list[Path]:
@@ -145,13 +147,13 @@ def atomic_write(path: Path, data: dict) -> None:
     tmp.replace(path)
 
 
-# ── EODHD REST client (inline — no cross-repo import) ──────────────────────
-def _eodhd_get(endpoint: str, params: dict | None = None, token: str = "") -> dict | list:
-    """Simple EODHD REST call with raise_for_status."""
+# ── 中文新聞(鉅亨/cnyes) REST client (inline — no cross-repo import) ──────────────────────
+def _news_get(endpoint: str, params: dict | None = None, token: str = "") -> dict | list:
+    """Simple 中文新聞(鉅亨/cnyes) REST call with raise_for_status."""
     p = params or {}
     p["api_token"] = token
     p["fmt"] = "json"
-    resp = requests.get(f"{EODHD_BASE}/{endpoint}", params=p, timeout=30)
+    resp = requests.get(f"{NEWS_BASE}/{endpoint}", params=p, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -184,7 +186,7 @@ def dedup_articles(articles: list[dict]) -> list[dict]:
 
 # ── News fetch for one ticker ───────────────────────────────────────────────
 def fetch_news_articles(sym_us: str, token: str) -> tuple[list[dict], list[str]]:
-    """Fetch, dedup, and truncate raw EODHD news articles for one ticker.
+    """Fetch, dedup, and truncate raw 中文新聞(鉅亨/cnyes) news articles for one ticker.
 
     Returns:
         (articles_list, fields_detected)
@@ -192,7 +194,7 @@ def fetch_news_articles(sym_us: str, token: str) -> tuple[list[dict], list[str]]
         — the P3 body-mining gate checks 'content' in fields_available.
     """
     date_from = (date.today() - timedelta(days=NEWS_DAYS)).isoformat()
-    raw_data = _eodhd_get("news", params={
+    raw_data = _news_get("news", params={
         "s": sym_us,
         "from": date_from,
         "limit": NEWS_LIMIT_FETCH,
@@ -213,7 +215,7 @@ def fetch_news_articles(sym_us: str, token: str) -> tuple[list[dict], list[str]]
     for a in raw_data:
         content_raw = a.get("content") or ""
         sentiment = a.get("sentiment") or {}
-        # EODHD /news has no "source" field — derive from link hostname
+        # 中文新聞(鉅亨/cnyes) /news has no "source" field — derive from link hostname
         link = a.get("link", "")
         source = a.get("source", "") or urlparse(link).netloc.removeprefix("www.")
         articles.append({
@@ -247,12 +249,12 @@ def main() -> int:
         print("✅ news-articles.json fresh, skipping")
         return 0
 
-    token = os.environ.get("EODHD_API_TOKEN", "").strip()
+    token = os.environ.get("FINMIND_TOKEN", "").strip()
     if not token:
-        print("⚠️  EODHD_API_TOKEN not set — skipping news cache")
+        print("⚠️  FINMIND_TOKEN not set — skipping news cache")
         empty = {
             "status": "skipped",
-            "reason": "EODHD_API_TOKEN_missing",
+            "reason": "FINMIND_TOKEN_missing",
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
             "fields_available": [],
             "tickers": {},
@@ -277,7 +279,7 @@ def main() -> int:
         return 0
 
     print(
-        f"🔄 fetching EODHD news for {len(tickers)} tickers "
+        f"🔄 fetching 中文新聞(鉅亨/cnyes) news for {len(tickers)} tickers "
         f"(7d lookback, up to {NEWS_KEEP}/ticker after dedup)..."
     )
 
@@ -286,7 +288,7 @@ def main() -> int:
     all_fields: set[str] = set()
 
     for i, sym in enumerate(tickers):
-        sym_us = f"{sym}.US"
+        sym_us = sym  # 台股 4 碼代號，無後綴
         if dry_run:
             print(f"[DRY-RUN] would fetch news for {sym_us}")
             continue

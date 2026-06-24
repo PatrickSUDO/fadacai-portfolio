@@ -1,16 +1,16 @@
-# Portfolio — Claude Code 投資研究與組合管理框架
+# Portfolio — Claude Code 台股投資研究與組合管理框架
 
-一套建構在 **Claude Code skills + MCP servers** 之上的美股投資研究與組合管理工作區。把日報、組合檢視、個股深度分析、選擇權策略、交易日誌等流程，全部封裝成可重複執行的 slash command，並用一套**第一性原理紀律**（可驗證 thesis → 證偽條件 → 機率分布 + EV）約束每一個投資結論，避免淪為 narrative。
+一套建構在 **Claude Code skills + MCP servers** 之上的台股投資研究與組合管理工作區。把日報、組合檢視、個股深度分析、台指期/選擇權策略、交易日誌等流程，全部封裝成可重複執行的 slash command，並用一套**第一性原理紀律**（可驗證 thesis → 證偽條件 → 機率分布 + EV）約束每一個投資結論，避免淪為 narrative。
 
-- **使用對象**：自行操作美股/選擇權、想用 LLM 輔助但要求紀律與可驗證性的個人投資人 / quant
+- **使用對象**：自行操作台股（上市/上櫃）與台指期/選擇權、想用 LLM 輔助但要求紀律與可驗證性的個人投資人 / quant
 - **輸出語言**：全繁體中文
-- **券商整合**：透過 `firstrade-server` MCP 取即時持倉（以 Firstrade 為參考整合，可替換成你自己的券商 MCP）
-- **資料來源**：7 個 MCP server（即時報價、SEC、技術指標、情緒/基本面、預測市場等）+ FRED 總經 + EODHD 基本面 REST 快取
-- **可選自動化**：launchd 每個 NYSE 交易日定時產生並推送日報到 Telegram + Email
+- **券商整合**：透過 `shioaji-server` MCP 取即時持倉（以永豐金 Shioaji 為參考整合，可替換成富邦 neo / 元大 / 你自己的券商 MCP）
+- **資料來源**：7 個 MCP server（即時報價、公開資訊觀測站 MOPS、技術指標、新聞情緒、籌碼面等）+ 台灣總經 + FinMind 基本面 REST 快取
+- **可選自動化**：launchd 每個 TWSE 交易日定時產生並推送日報到 Telegram + Email
 
 > ⚠️ **非投資建議。** 本專案是分析與紀律工具，所有輸出僅供研究參考；你需自行承擔所有交易決策與風險，並自備所有 API key / 券商憑證。詳見文末免責聲明。
 
-> 📦 自寫的兩個 MCP server（`technical` 技術指標、`eodhd` 情緒）已獨立開源於 **[fadacai-mcp-servers](https://github.com/PatrickSUDO/fadacai-mcp-servers)**。
+> 📦 自寫的兩個 MCP server（`technical` 技術指標、`chip` 籌碼面）已獨立開源於 **[fadacai-mcp-servers](https://github.com/PatrickSUDO/fadacai-mcp-servers)**。
 
 ---
 
@@ -18,7 +18,7 @@
 
 ```mermaid
 flowchart TD
-    User(["👤 User<br/>L2 Margin Broker"])
+    User(["👤 User<br/>台股 + 台指期/選擇權"])
 
     Hook["🔔 SessionStart Hook<br/>journal/YYYY-MM-DD.md 存在？<br/>✅ 已存在 → 略過 ｜ ⚡ 不存在 → gap-fill"]
 
@@ -29,7 +29,7 @@ flowchart TD
         direction LR
         B["/briefing<br/>quick · full · deep · telegram"]
         PR["/portfolio-review"]
-        SA["/stock-analysis TICKER"]
+        SA["/stock-analysis 代號"]
         OS["/options-strategy"]
         TJ["/trade-journal"]
         MH["/mcp-health"]
@@ -45,22 +45,21 @@ flowchart TD
     subgraph Models ["🤖 AI Model 分流（Cost Optimization）"]
         HAIKU["🟡 Haiku 4.5<br/>data-collector subagent<br/>mcp-health · trade-journal log<br/>純機械 · no synthesis"]
         SONNET["🔵 Sonnet 4.6<br/>日常分析合成<br/>briefing quick+telegram<br/>todo · journal review"]
-        OPUS["🟠 Opus 4.8<br/>中等深度合成<br/>briefing full<br/>options-strategy"]
-        FABLE["🔴 Fable 5<br/>最強旗艦 · 重推理<br/>portfolio-review · ev-check<br/>briefing deep · stock-analysis<br/>長 context · 機率/EV"]
+        OPUS["🟠 Opus 4.8<br/>旗艦推理 · 重綜合<br/>portfolio-review · ev-check<br/>briefing deep/full · stock-analysis<br/>options-strategy · 機率/EV"]
     end
 
-    s0e --> SONNET & OPUS & FABLE
+    s0e --> SONNET & OPUS
     Skills -->|"subagent_type: data-collector"| HAIKU
 
     subgraph MCP ["🔌 7 MCP Servers — 外部即時數據"]
         direction LR
-        FT["🏦 firstrade-server<br/>positions · balance · history"]
-        YF["📈 yfinance-advanced<br/>quotes · options · financials · news"]
-        SEC["📋 sec-edgar-mcp<br/>SEC filings · insider Form 4 · 8-K"]
-        FMP["💹 fmp-mcp<br/>peers · market movers"]
+        FT["🏦 shioaji-server<br/>持倉 · 餘額 · 成交 · 報價"]
+        YF["📈 finmind-server<br/>報價 · 法人 · 財報 · 月營收"]
+        SEC["📋 mops-server<br/>重訊 · 法說 · 月營收 · 內部人"]
+        FMP["💹 twse-server<br/>同類股 · 漲跌排行 · 產業"]
         TECH["📊 technical-mcp<br/>RSI · MACD · ATR · S/R levels"]
-        EODHD["💬 eodhd-mcp<br/>AI 情緒分析 −1→+1"]
-        PM["🎲 polymarket-mcp<br/>預測市場概率"]
+        NEWS["💬 cnyes-news<br/>中文新聞全文 + 情緒 −1→+1"]
+        CHIP["🎲 chip-server<br/>三大法人 · 融資券 · 期貨未平倉"]
     end
 
     HAIKU -->|平行呼叫（Retry 3x）| MCP
@@ -81,9 +80,9 @@ flowchart TD
     CODEX["🤖 Codex（opt-in）<br/>--codex flag<br/>B1 獨立第一性分析<br/>B2 機會掃描 · B3 輪動"]
     SONNET & OPUS -->|opt-in| CODEX
 
-    subgraph AutoSend ["📲 每日自動推送（ET 11:30）"]
+    subgraph AutoSend ["📲 每日自動推送（台灣時間 14:00 收盤後）"]
         direction LR
-        LAUNCHD["⏰ launchd<br/>com.fadacai.briefing<br/>NYSE 交易日才跑<br/>週五加 --codex"]
+        LAUNCHD["⏰ launchd<br/>com.fadacai.briefing<br/>TWSE 交易日才跑<br/>週五加 --codex"]
         RUNNER["🔧 briefing_runner.sh<br/>~/.local/bin/<br/>TCC-safe wrapper"]
         OUT_FILES["📄 briefing-out/<br/>YYYY-MM-DD-full.md<br/>YYYY-MM-DD-telegram.txt"]
         TG["📱 Telegram Bot<br/>emoji 純文字 < 1500 字"]
@@ -96,7 +95,7 @@ flowchart TD
     OUT_FILES --> TG & EMAIL
     TG & EMAIL --> SENDLOG
 
-    OUT["📊 繁體中文報告<br/>Verdict · EV · 口數 · 觸發條件"]
+    OUT["📊 繁體中文報告<br/>Verdict · EV · 口數/張數 · 觸發條件"]
     SONNET --> OUT
     OPUS --> OUT
 ```
@@ -136,28 +135,33 @@ claude
 
 | Server | 取得方式 | 需要 key？ |
 |--------|----------|:---------:|
-| `firstrade-server` | 第三方 [morristai/firstrade-mcp](https://github.com/morristai/firstrade-mcp) + 你自己的憑證 shim（**勿把券商帳密 commit 進任何 repo**） | ✅ 券商登入 |
-| `yfinance-advanced` | PyPI 套件 [`yfinance-mcp`](https://pypi.org/project/yfinance-mcp/)，`uvx yfinance-mcp` 直接啟動，免 clone | ❌ |
-| `sec-edgar-mcp` | PyPI 套件 [`sec-edgar-mcp`](https://pypi.org/project/sec-edgar-mcp/)，`uvx sec-edgar-mcp` 直接啟動，免 clone | ❌（需填 email 作 user-agent） |
-| `fmp-mcp` | [Financial-Modeling-Prep-MCP-Server](https://github.com/imbenrabi/Financial-Modeling-Prep-MCP-Server)，**npm 無套件**，需 clone + build；建議放在 project 以外的獨立資料夾 | ✅ FMP token（free tier） |
-| `technical-mcp` | 姊妹 repo [fadacai-mcp-servers `/technical`](https://github.com/PatrickSUDO/fadacai-mcp-servers/tree/main/technical) | ❌（用 yfinance） |
-| `eodhd-mcp` | 姊妹 repo [fadacai-mcp-servers `/eodhd`](https://github.com/PatrickSUDO/fadacai-mcp-servers/tree/main/eodhd) | ✅ EODHD token |
-| `polymarket-mcp` | PyPI 套件 [`polymarket-mcp`](https://pypi.org/project/polymarket-mcp/)，`uvx polymarket-mcp` 直接啟動，免 clone | ❌ |
+| `shioaji-server` | 永豐金 [Shioaji API](https://sinotrade.github.io/) 包成 MCP（**勿把券商帳密 / API Key commit 進任何 repo**），或替換成你自己券商的 MCP | ✅ 券商 API Key/Secret |
+| `finmind-server` | [FinMind](https://finmindtrade.com/) 台股資料 API 包成 MCP（`pip install FinMind`）；報價/法人/財報/月營收 | ⭕ 免費 token（高頻需付費） |
+| `mops-server` | 公開資訊觀測站 [MOPS](https://mops.twse.com.tw/) 爬取/開放 API 包成 MCP；重訊、法說會、月營收、財報、內部人持股 | ❌ |
+| `twse-server` | [證交所](https://openapi.twse.com.tw/) + [櫃買](https://www.tpex.org.tw/openapi/) 開放 API 包成 MCP；同類股、漲跌排行、產業分類 | ❌ |
+| `technical-mcp` | 姊妹 repo [fadacai-mcp-servers `/technical`](https://github.com/PatrickSUDO/fadacai-mcp-servers/tree/main/technical)（OHLC 來源改 FinMind/yfinance `.TW`） | ❌ |
+| `cnyes-news` | [鉅亨網](https://news.cnyes.com/) / 經濟日報新聞抓取 + LLM 中文情緒包成 MCP | ⭕ 視來源 |
+| `chip-server` | 姊妹 repo [fadacai-mcp-servers `/chip`](https://github.com/PatrickSUDO/fadacai-mcp-servers/tree/main/chip)；三大法人買賣超、融資融券、期貨未平倉（大額交易人）、借券 | ❌（用 TWSE/TAIFEX 開放資料） |
 
-**Claude Code 註冊指令（`/path/to/fadacai-mcp-servers` 替換成你自己的路徑）：**
+**Claude Code 註冊指令（`/path/to/...` 替換成你自己的路徑）：**
 
 ```bash
-# uvx 直接啟動（免 clone）
-claude mcp add yfinance-advanced -- uvx yfinance-mcp
-claude mcp add sec-edgar-mcp --env SEC_EDGAR_USER_AGENT="Your Name your@email.com" -- uvx sec-edgar-mcp
-claude mcp add polymarket-mcp -- uvx polymarket-mcp
+# FinMind（clone 後 uv sync，或 pip install FinMind 後自寫 server）
+claude mcp add finmind-server --env FINMIND_TOKEN=xxxx -- uv --directory /path/to/finmind-server run server.py
+
+# 公開資訊觀測站 MOPS / 證交所開放 API
+claude mcp add mops-server -- uv --directory /path/to/mops-server run server.py
+claude mcp add twse-server -- uv --directory /path/to/twse-server run server.py
 
 # fadacai-mcp-servers（clone 後 uv sync）
 claude mcp add technical -- uv --directory /path/to/fadacai-mcp-servers/technical run server.py
-claude mcp add eodhd-mcp --env EODHD_API_TOKEN=xxxx -- uv --directory /path/to/fadacai-mcp-servers/eodhd run server.py
+claude mcp add chip-server -- uv --directory /path/to/fadacai-mcp-servers/chip run server.py
 
-# fmp-mcp（需 clone 到獨立資料夾，npm install && npm run build 後）
-claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/index.js
+# 新聞情緒
+claude mcp add cnyes-news -- uv --directory /path/to/cnyes-news run server.py
+
+# 券商（永豐金 Shioaji 範例；API Key/Secret 勿 commit）
+claude mcp add shioaji-server --env SHIOAJI_API_KEY=xxxx --env SHIOAJI_SECRET_KEY=xxxx -- uv --directory /path/to/shioaji-server run server.py
 ```
 
 > 缺任一 server 不會讓整個框架失效——`/mcp-health` 會標出不可用者，skills 內建 retry → 健康檢查 → WebSearch fallback。
@@ -166,8 +170,8 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 
 | 變數 | 用途 | 取得 |
 |------|------|------|
-| `FRED_API_KEY` | 總經快照（Fed Funds / CPI / 殖利率曲線 / HY OAS / VIX） | [FRED 免費申請](https://fred.stlouisfed.org/docs/api/api_key.html) |
-| `EODHD_API_TOKEN` | 基本面快取（`fetch_fundamentals.py`）：PE/PEG/分析師PT/盈餘 beat rate/季度成長 | [EODHD 申請](https://eodhd.com/financial-apis/)（All-In-One 含 Fundamentals）|
+| `FINMIND_TOKEN` | 基本面 / 月營收 / 法人快取（`fetch_fundamentals.py`）：本益比/PEG/殖利率/法人買賣超/季度成長 | [FinMind 申請](https://finmindtrade.com/analysis/#/account/login) |
+| `TWVIX_SOURCE` / 總經 | 總經快照（央行重貼現率 / CPI / 10年公債殖利率 / USD-TWD / 台指 VIX） | FinMind 總經 / 央行 / 主計總處開放資料 |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | 日報推送到 Telegram | `@BotFather` / `getUpdates` |
 | `SMTP_*` / `EMAIL_*` | 日報 email 副本 | Gmail App Password |
 | `BRIEFING_*` / `FRIDAY_CODEX` / `RETRY_MAX` 等 | launchd 自動推送行為 | 見 `.env.example` 註解 |
@@ -181,13 +185,13 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 | 指令 | 用途 | 模型 | 預估時間 |
 |------|------|------|---------|
 | `/briefing` | 快速日報（技術面 + 警示 + 計畫進度） | Sonnet | ~1 min |
-| `/briefing full` | + 情緒面 + 市場動態 + 預測市場 | Sonnet | ~3 min |
-| `/briefing deep` | + SEC + FMP + 個股深度分析 | Opus | ~5 min |
+| `/briefing full` | + 情緒面 + 籌碼動態 + 法人買賣超 | Opus | ~3 min |
+| `/briefing deep` | + 重訊/法說 + 同類股 + 個股深度分析 | Opus | ~5 min |
 | `/briefing telegram` | Telegram 推送格式（emoji 純文字，寫出 briefing-out/ 兩個檔案） | Sonnet | ~2-3 min |
 | `/briefing telegram --send` | 同上，並實際推送至 Telegram + 寄送 email | Sonnet | ~2-3 min |
 | `/portfolio-review` | 完整組合報告（板塊配置 + 個股分析） | Opus | ~3-5 min |
-| `/stock-analysis TICKER` | 個股深度研究（支援多股比較） | Sonnet / Opus | ~2 min |
-| `/options-strategy TICKER STRATEGY` | 選擇權策略計算（E_adj 排序） | Sonnet | ~1-2 min |
+| `/stock-analysis 代號` | 個股深度研究（支援多股比較，如 `2330` `2454`） | Sonnet / Opus | ~2 min |
+| `/options-strategy 標的 STRATEGY` | 台指期/選擇權策略計算（E_adj 排序） | Opus | ~1-2 min |
 | `/todo` | 下一交易日 / 盤中 / 盤後優先行動清單 | Sonnet | ~1 min |
 | `/ev-check [7d\|14d\|30d]` | 強制第一性機率分布 + 組合 EV 計算 | — | ~1 min |
 | `/trade-journal log\|review\|summary\|auto` | 交易記錄與回顧 | — | ~1 min |
@@ -207,8 +211,8 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 
 ```
 /briefing                        ← 快速掃描（Sonnet，~1min）
-/briefing full                   ← + 情緒面、預測市場
-/briefing deep                   ← 完整版含 SEC + 個股分析（Opus）
+/briefing full                   ← + 情緒面、法人籌碼
+/briefing deep                   ← 完整版含重訊/法說 + 個股分析（Opus）
 /briefing telegram               ← 生成 Telegram 推送格式（寫出檔案，不發送）
 /briefing telegram --send        ← 生成並推送至 Telegram + email
 /briefing full --send --codex    ← 完整版 + Codex + 推送
@@ -217,18 +221,18 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 ### 個股研究
 
 ```
-/stock-analysis PLTR
-/stock-analysis ANET CRWD        ← 兩檔比較，依 EV 排序
-/stock-analysis MU --codex       ← + Codex 獨立第二意見
+/stock-analysis 2330             ← 台積電
+/stock-analysis 2454 3034        ← 聯發科 vs 聯詠，依 EV 排序
+/stock-analysis 3661 --codex     ← + Codex 獨立第二意見
 ```
 
-### 選擇權分析
+### 台指期 / 選擇權分析
 
 ```
-/options-strategy PLTR sell-put
-/options-strategy PLTR AMD MU sell-put    ← 多標的 E_adj 比較
-/options-strategy SSRM covered-call
-/options-strategy MU leaps
+/options-strategy TXO sell-put            ← 台指選擇權賣方價外 put
+/options-strategy TXO bull-put-spread     ← 台指買權/賣權價差
+/options-strategy 2330 stock-future       ← 個股期貨
+/options-strategy TX hedge                ← 台指期空單避險現股
 ```
 
 ### 交易記錄
@@ -252,45 +256,50 @@ DRY_RUN=1 python3 tools/send_briefing.py latest   # Dry-run（不實際發送）
 
 ## Telegram 自動推送
 
-每個 NYSE 交易日 **ET 11:30**（夏令 UTC 15:30 / 冬令 UTC 16:30，荷蘭時間恆為 17:30）自動推送盤中決策摘要。週五加 `--codex` 第二意見。
+每個 TWSE 交易日 **台灣時間 14:00**（收盤後 30 分鐘，盤後籌碼/法人買賣超已公布）自動推送收盤決策摘要。週五加 `--codex` 第二意見。
 
 ### Telegram 訊息格式
 
 ```
-📊 5/12 盤中 13:00 ET
+📊 5/12 收盤 14:00
 
 📰 News & Catalysts
-  • ICHR: Q1 beat，Q2 guide $290-310M，GAAP EPS 轉正
+  • 3661 世芯-KW: 法說會釋出 ASIC 大客戶新案，Q2 guide 上修
 
-📅 Earnings This Week
-  • NVDA 5/20 AMC — HBM demand，data-center 指引
+📅 本週重大事件
+  • 2330 台積電 4/17 法說 — 先進製程 capex / HPC 需求指引
+  • 月營收公布日 5/10 前（全持倉）
 
-📊 Sentiment Pulse (EODHD 7d)
-  📈 改善: ONTO 1.00, STRL 0.90, AVGO 0.90
-  ⚠️ 注意: MU 急降 0.97→0.51
+📊 Sentiment Pulse (中文新聞 7d)
+  📈 改善: 3034 聯詠 +0.80, 2308 台達電 +0.75
+  ⚠️ 注意: 3008 大立光 急降 +0.60→−0.20
 
 💰 估值 & Thesis
-  📉 最低估: MU vs 公允價 −22%（三錨點中位 $375）
-  📈 最高估: ARM vs 公允價 +38%
-  📋 今日 thesis: AVBO:q2-guide → partial 公允價 $460→$415（−9.8%）
+  📉 最低估: 2454 聯發科 vs 公允價 −18%（三錨點中位 1,450）
+  📈 最高估: 3661 世芯 vs 公允價 +35%
+  📋 今日 thesis: 2330:法說capex指引 → partial 公允價 1,180→1,120（−5.1%）
 
 🔄 Sector Rotation
-  💪 leading: 半導體 SMH (+34.9% vs SPY)
-  📈 improving: 工業 XLI
-  💀 lagging: 能源 XLE
+  💪 leading: IC 設計（vs 加權指數 +12%）
+  📈 improving: 散熱/PCB
+  💀 lagging: 面板、金融
+
+📊 籌碼面（三大法人）
+  💰 外資連 3 日買超：2330、2454
+  ⚠️ 投信調節：3008 連 2 日賣超
 
 🚨 Alerts
-  • ICHR ⚠️ 財報 reaction window，技術訊號暫停
+  • 3008 大立光 ⚠️ 月營收公布前，技術訊號暫停
 
 🎯 今日待辦
-  • ICHR: 等 reaction settle 後評估加碼至 100 股
+  • 3661: 等法說 reaction settle 後評估加碼
 
 📋 明日待辦
-  • 確認 5/20 cluster 倉位（QCOM/ON/ANET/NVDA）
+  • 確認 5/10 月營收 cluster 倉位（2330/2454/3034）
 
 ⚡ Quick Take
-  全面回調但 SMH 仍 leading，sentiment 全面正面。
-  本週核心：ICHR reaction + 5/20 四檔財報前倉位確認。
+  指數量縮但 IC 設計仍 leading，外資回補權值。
+  本週核心：台積法說 + 全持倉月營收公布。
 ```
 
 ### 快速設定
@@ -347,7 +356,7 @@ launchctl list | grep fadacai    # 確認已載入（PID 欄顯示 -）
 
 **Step 6 — macOS TCC 權限（必做）**
 
-launchd 背景程序需要存取 `~/Desktop` 裡的腳本：
+launchd 背景程序需要存取專案目錄裡的腳本：
 
 1. **System Settings** → **Privacy & Security** → **Full Disk Access**
 2. 點 **+** → 按 `Shift+Cmd+G` → 輸入 `/bin` → 選 **bash** → Open
@@ -356,11 +365,11 @@ launchd 背景程序需要存取 `~/Desktop` 裡的腳本：
 **Step 7 — 手動測試**
 
 ```bash
-# 立刻觸發（不等 13:00）
+# 立刻觸發（不等 14:00）
 launchctl start com.fadacai.briefing
 
 # 觀察 log
-tail -f ~/Desktop/fadacai-v2/portfolio/briefing-out/launchd.log
+tail -f briefing-out/launchd.log
 
 # 確認發送成功
 tail -1 briefing-out/send-log.jsonl
@@ -370,26 +379,27 @@ tail -1 briefing-out/send-log.jsonl
 ### 架構說明
 
 ```
-launchd (每日 ET 11:30，NYSE 交易日)
+launchd (每日台灣時間 14:00，TWSE 交易日)
     │
     ▼
 ~/.local/bin/fadacai_briefing_runner.sh   ← TCC-safe wrapper
-    ├── check_trading_day.py              ← NYSE 休市日 exit 0
+    ├── check_trading_day.py              ← TWSE 休市日 exit 0
     ├── 週五 → CODEX_FLAG="--codex"
-    ├── [non-fatal] fetch_macro.py        ← FRED 總經快取（TTL 36h）
-    ├── [non-fatal] earnings_history.py   ← yfinance 盈餘快取（TTL 24h）
-    ├── [non-fatal] fetch_fundamentals.py ← EODHD 基本面快取（TTL 24h）；含 A4 自建估值（CAGR→own_fwdEPS→own_target）
-    ├── [non-fatal] fetch_news.py         ← EODHD 新聞全文快取（TTL 6h）；P3 訊號擷取的 body 來源
+    ├── [non-fatal] fetch_macro.py        ← 台灣總經快取（TTL 36h）
+    ├── [non-fatal] earnings_history.py   ← FinMind 財報/月營收快取（TTL 24h）
+    ├── [non-fatal] fetch_fundamentals.py ← FinMind 基本面快取（TTL 24h）；含 A4 自建估值（CAGR→own_fwdEPS→own_target）
+    ├── [non-fatal] fetch_news.py         ← 中文新聞全文快取（TTL 6h）；P3 訊號擷取的 body 來源
     └── claude -p "/briefing telegram --send $CODEX_FLAG"
             │
             ▼
         .claude/skills/briefing/SKILL.md (telegram tier)
             ├── Step 0.65: 讀 fundamentals cache（三錨點估值輸入）
-            ├── T1: Earnings Window（from cache）
-            ├── T2: Sentiment Pulse（EODHD sentiment_trend）
+            ├── T1: 重大事件 Window（法說/月營收/除權息，from cache）
+            ├── T2: Sentiment Pulse（中文新聞 sentiment_trend）
             ├── T2.5: 💰 估值 & Thesis Pulse（cache 算，signal-only）
             ├── T3: News & Catalysts
             ├── T4: Sector Rotation
+            ├── T4.5: 籌碼面（三大法人買賣超）
             ├── T5-T7: Alerts / 待辦 / QuickTake
             ├── T8a: 寫 briefing-out/YYYY-MM-DD-full.md
             ├── T8b: 寫 briefing-out/YYYY-MM-DD-telegram.txt
@@ -428,13 +438,13 @@ launchd (每日 ET 11:30，NYSE 交易日)
 
 | Server | 功能 | 備註 |
 |--------|------|------|
-| **firstrade-server** | 即時持倉、帳戶餘額、交易歷史、報價 | 主要帳戶數據源 |
-| **yfinance-advanced** | 即時報價、選擇權鏈、財報、新聞、分析師評級 | 主要市場數據源 |
-| **sec-edgar-mcp** | SEC 財報、內部人 Form 4、8-K 事件、XBRL | 官方法規文件 |
-| **fmp-mcp** | 同業比較、市場漲跌排行（Free tier） | 補充數據 |
+| **shioaji-server** | 即時持倉、帳戶餘額、成交歷史、報價 | 主要帳戶數據源（永豐金 Shioaji 參考整合） |
+| **finmind-server** | 即時報價、財報、月營收、法人買賣超、分點籌碼 | 主要市場數據源（FinMind） |
+| **mops-server** | 公開資訊觀測站：重大訊息、法說會、月營收公告、財報、內部人持股 | 官方法規文件 |
+| **twse-server** | 同類股比較、漲跌幅排行、產業分類（證交所/櫃買開放 API） | 補充數據 |
 | **technical-mcp** | RSI、MACD、布林通道、ATR、動量分數、S/R levels | 技術分析 |
-| **eodhd-mcp** | **`get_news`**（新聞全文 body/symbols/tags，P3 訊號擷取用）+ AI 情緒分析 + **基本面快照**（PE/PEG/分析師PT/盈餘 beat rate/毛利率/季度成長，7 工具，ticker 格式: AAPL.US）| 情緒分析 + 免費版估值 + 新聞全文 |
-| **polymarket-mcp** | 預測市場事件概率（Demo mode，read-only） | 市場信念數據 |
+| **cnyes-news** | **`get_news`**（中文新聞全文 body/symbols/tags，P3 訊號擷取用）+ LLM 中文情緒分析 + **基本面快照**（本益比/PEG/殖利率/法人/季度成長）| 情緒分析 + 新聞全文 |
+| **chip-server** | 三大法人買賣超、融資融券、台指期未平倉（大額交易人）、借券 | 籌碼面/聰明錢部位 |
 
 **MCP Retry Policy：** 失敗 → 重試 3 次 → 健康檢查 → fallback WebSearch/WebFetch，輸出中標記 `⚠️ [server] MCP 不可用`。
 
@@ -447,9 +457,9 @@ launchd (每日 ET 11:30，NYSE 交易日)
 | `plan.md` | 投資計畫：板塊目標、策略佇列、觀察清單 | 手動（僅在用戶要求時） |
 | `journal/` | 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照 | 自動（Step 0c/0d + hook） |
 | `feedback/` | 交易風格規則，所有 skill 每次必讀 | 手動（學習後更新） |
-| `research/` | 個股投資論文（MU 記憶體週期、HDD AI 儲存等） | 手動 |
+| `research/` | 個股投資論文（半導體供應鏈、AI 伺服器、散熱等） | 手動 |
 | `.env` | Telegram + SMTP 設定（**gitignored**，cp .env.example） | 手動 |
-| `tools/` | Pipeline 腳本：`send_briefing.py`、`check_trading_day.py`、`briefing_runner.sh`、`fetch_macro.py`、`fetch_fundamentals.py`（EODHD 基本面 + A4 自建估值快取）、`fetch_news.py`（EODHD 新聞全文快取，TTL 6h）、`earnings_history.py`、`thesis_ledger.py`、`test_self_valuation.py`（A4 單元測試） | git tracked |
+| `tools/` | Pipeline 腳本：`send_briefing.py`、`check_trading_day.py`、`briefing_runner.sh`、`fetch_macro.py`、`fetch_fundamentals.py`（FinMind 基本面 + A4 自建估值快取）、`fetch_news.py`（中文新聞全文快取，TTL 6h）、`earnings_history.py`、`thesis_ledger.py`、`test_self_valuation.py`（A4 單元測試） | git tracked |
 | `briefing-out/` | 每日 briefing 輸出 + 發送 log（**gitignored**） | 自動生成 |
 | `briefing-out/cache/` | 預載快取：`macro-snapshot.json` / `earnings-history.json` / `earnings-dates.json` / `fundamentals-snapshot.json`（含 A4 `self_valuation`，TTL 24h）/ `news-articles.json`（全文 600-char excerpts，TTL 6h）— **日報 zero-latency 數據層** | 自動（runner + launchd） |
 | `docs/briefing-auto-send.md` | Telegram 設定完整教學 | git tracked |
@@ -463,7 +473,7 @@ launchd (每日 ET 11:30，NYSE 交易日)
 執行 `/mcp-health` 診斷，通常重開 Claude Code session 即可。三次重試後自動 fallback WebSearch。
 
 **倉位資料從哪來？**
-`mcp__firstrade-server__get_account_position` 取即時數據（Step 0b 自動執行）。
+`mcp__shioaji-server__get_account_position` 取即時數據（Step 0b 自動執行）。
 
 **交易記錄在哪？**
 `journal/` 目錄，每日一檔（YYYY-MM-DD.md），每次 skill 執行都會建立或更新。
@@ -475,7 +485,7 @@ launchd (每日 ET 11:30，NYSE 交易日)
 每個 Verdict / Recommendation 前強制填寫：核心 thesis（可驗證命題）+ 證偽條件（2-3 個 falsifiable 觀察點）+ 機率分布（EV 計算）。確保結論有 ground truth 依據，不是 narrative。
 
 **Telegram 每天幾點收到？**
-美東 ET 11:30（NYSE 交易日），對應荷蘭時間夏令 17:30 / 冬令 17:30（自動 DST-aware）。
+台灣時間 14:00（TWSE 交易日，收盤後 30 分鐘，盤後三大法人買賣超已公布）。
 
 ---
 
@@ -483,13 +493,13 @@ launchd (每日 ET 11:30，NYSE 交易日)
 
 這套框架的核心不是「叫 LLM 給意見」，而是用多層紀律強迫每個結論落在可驗證的 ground truth 上：
 
-- **第一性原理紀律（Step 0e）** — 任何 Verdict 前強制回答三題：① 核心 thesis（1 句**可驗證命題**，非 narrative）② 證偽條件（2-3 個 falsifiable 觀察點）③ 機率分布 + EV（由 `probability-honesty-checker` agent 強制計算，禁用 default bell shape 與「略偏正」這類質性語言）。
-- **三錨點 Fair PE 估值（Section 8.5 / G3.5）** — 不手寫 PE 倍數猜想；用三個獨立錨點做三角定位：A1 市場隱含 PE（EODHD）/ A2 PEG 成長合理倍數 / A3 分析師 PT 隱含 PE。Base = median；Bull = max × 1.25；Bear = min × 0.70。`pe_ratio == 0.0` / `peg_ratio == 0.0` → 自動丟棄該錨，標 `(anchor unavailable)`。
-- **Thesis Ledger（`tools/thesis_ledger.py`）** — 把帶觸發點的 thesis 登錄進帳本，到期（如財報日）自動回頭抓實際數字驗收 passed/failed，累積命中率。詳見 [`docs/thesis-ledger.md`](docs/thesis-ledger.md)。
-- **Thesis 驗證 → 股價影響（D2 三桶分解）** — thesis verdict 不只是分類；`resolve` 時帶結構化旗標：`fair_value_before/after`（三錨點重算）+ `price_impact_pct` + `impact_decomp`（thesis 成分 vs 倍數重估成分分解）。實例：AVBO partial → `thesis +6%(FY27 AI guide 確認)/multiple −16%(GM 壓縮 re-rate)=net −9.8%`。
+- **第一性原理紀律（Step 0e）** — 任何 Verdict 前強制回答三題：① 核心 thesis（1 句**可驗證命題**，非 narrative）② 證偽條件（2-3 個 falsifiable 觀察點）③ 機率分布 + EV（由 `probability-honesty-checker` agent 強制計算，禁用 default bell shape 與「略偏多」這類質性語言）。
+- **三錨點 Fair PE 估值（Section 8.5 / G3.5）** — 不手寫 PE 倍數猜想；用三個獨立錨點做三角定位：A1 市場隱含本益比（FinMind）/ A2 PEG 成長合理倍數 / A3 分析師目標價隱含 PE（券商報告/FinMind）。Base = median；Bull = max × 1.25；Bear = min × 0.70。`pe_ratio == 0.0` / `peg_ratio == 0.0` → 自動丟棄該錨，標 `(anchor unavailable)`。台股加做**殖利率錨**（現金股利 ÷ 股價 vs 歷史區間）作 sanity check。
+- **Thesis Ledger（`tools/thesis_ledger.py`）** — 把帶觸發點的 thesis 登錄進帳本，到期（如法說會/月營收日）自動回頭抓實際數字驗收 passed/failed，累積命中率。詳見 [`docs/thesis-ledger.md`](docs/thesis-ledger.md)。
+- **Thesis 驗證 → 股價影響（D2 三桶分解）** — thesis verdict 不只是分類；`resolve` 時帶結構化旗標：`fair_value_before/after`（三錨點重算）+ `price_impact_pct` + `impact_decomp`（thesis 成分 vs 倍數重估成分分解）。
 - **全持倉基本面快取（`briefing-out/cache/fundamentals-snapshot.json`）** — `fetch_fundamentals.py` 每交易日 launchd 預載，TTL 24h。Quick/Telegram tier 直接讀快取（zero-latency，不等 MCP）；Deep tier 強制刷新。
-- **A4 自建估值錨（sanity / divergence flag）** — `fetch_fundamentals.py` 同次 API call 計算：`own_fwdEPS = 歷史 CAGR (幾何，40% cap → fade 向 8% terminal) × 淨利率 ÷ 股數`（完全不看分析師 estimate）。`own_target_price = own_fwdEPS × base_FairPE(median A1,A2,A3)`。`A4vsA3% = (own_target − wall_street_target) / wall_street_target` 乾淨隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。**A4 不進 EV**，僅做分歧 flag：`confidence=unavailable`（虧損股 / <3年資料）→ `(self-val N/A)`；`low`（營收 stdev>30%）→ `⚠️低信心`；`ok` → 正常顯示。34 單元測試（`test_self_valuation.py`）覆蓋 CAGR、cap、decel、macro clamp、guardrails。
-- **新聞全文快取 + P3 訊號擷取（`briefing-out/cache/news-articles.json`）** — `fetch_news.py` TTL 6h，top 8 篇/ticker，600-char body excerpt。`mcp__eodhd-mcp__get_news` 工具提供即時全文（1500 char）。Deep tier §9.5 / stock-analysis Step 4b 從 news body + SEC 8-K + 財報逐字稿抽**已量化陳述**（wafer starts / capex / ASP 等），強制附 raw_quote（≤120 字逐字引用），signal → thesis 轉換後以 `--source signal-inference` 登錄 thesis_ledger，閉環追蹤 P3 命中率。反幻覺鎖：**無 raw_quote = 無 signal = 不登錄。**
+- **A4 自建估值錨（sanity / divergence flag）** — `fetch_fundamentals.py` 同次 API call 計算：`own_fwdEPS = 歷史 CAGR (幾何，40% cap → fade 向 8% terminal) × 淨利率 ÷ 股數`（完全不看分析師 estimate）。`own_target_price = own_fwdEPS × base_FairPE(median A1,A2,A3)`。**A4 不進 EV**，僅做分歧 flag。34 單元測試（`test_self_valuation.py`）覆蓋 CAGR、cap、decel、macro clamp、guardrails。
+- **新聞全文快取 + P3 訊號擷取（`briefing-out/cache/news-articles.json`）** — `fetch_news.py` TTL 6h，top 8 篇/標的，600-char body excerpt。Deep tier §9.5 / stock-analysis Step 4b 從新聞 body + 重訊 + 法說逐字稿抽**已量化陳述**（晶圓投片/capex/ASP/月營收 YoY 等），強制附 raw_quote（≤120 字逐字引用），signal → thesis 轉換後以 `--source signal-inference` 登錄 thesis_ledger，閉環追蹤 P3 命中率。反幻覺鎖：**無 raw_quote = 無 signal = 不登錄。**
 
 ## 如何擴展
 
@@ -506,4 +516,4 @@ launchd (每日 ET 11:30，NYSE 交易日)
 
 ## 免責聲明
 
-本專案為**投資研究與紀律輔助工具**，所有輸出（含 Verdict、EV、機率、選擇權建議）**僅供研究與教育參考，不構成投資建議、要約或保證**。美股與選擇權交易具高度風險，可能導致本金全部損失。你需自行評估並承擔一切交易決策與後果，並自備所有 API key 與券商憑證；作者與貢獻者不對任何使用本專案所致之損失負責。
+本專案為**投資研究與紀律輔助工具**，所有輸出（含 Verdict、EV、機率、台指期/選擇權建議）**僅供研究與教育參考，不構成投資建議、要約或保證**。台股、台指期與選擇權交易具高度風險，可能導致本金全部損失。你需自行評估並承擔一切交易決策與後果，並自備所有 API key 與券商憑證；作者與貢獻者不對任何使用本專案所致之損失負責。

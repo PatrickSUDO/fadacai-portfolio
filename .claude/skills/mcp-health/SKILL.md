@@ -17,13 +17,13 @@ model: claude-haiku-4-5-20251001
 
 | # | Server | 測試工具 | 測試呼叫 |
 |---|--------|---------|---------|
-| 1 | firstrade-server | `get_account_balance` | `()` |
-| 2 | yfinance-advanced | `get_stock_info` | `("AAPL")` |
-| 3 | sec-edgar-mcp | `get_company_info` | `("AAPL")` |
-| 4 | fmp-mcp | `getCompanyProfile` | `("AAPL")` |
-| 5 | technical-mcp | `get_technical_indicators` | `("AAPL")` |
-| 6 | eodhd-mcp | `get_sentiment_trend` | `("AAPL.US", 7)` |
-| 7 | polymarket-mcp | `get_trending_markets` | `()` |
+| 1 | shioaji-server | `get_account_balance` | `()` |
+| 2 | finmind-server | `get_stock_info` | `("2330")` |
+| 3 | mops-server | `get_company_info` | `("2330")` |
+| 4 | twse-server | `get_industry_list` | `()` |
+| 5 | technical-mcp | `get_technical_indicators` | `("2330")` |
+| 6 | cnyes-news | `get_sentiment_trend` | `("2330", 7)` |
+| 7 | chip-server | `get_institutional_netbuy` | `("2330", 5)` |
 
 ### 2. 判定狀態
 
@@ -39,13 +39,13 @@ model: claude-haiku-4-5-20251001
 
 | Server | 狀態 | 延遲 | 備註 |
 |--------|------|------|------|
-| firstrade-server | ✅ Healthy | ~Xs | 即時持倉來源 |
-| yfinance-advanced | ✅ Healthy | ~Xs | — |
-| sec-edgar-mcp | ✅ Healthy | ~Xs | — |
-| fmp-mcp | ✅ Healthy | ~Xs | Free tier |
+| shioaji-server | ✅ Healthy | ~Xs | 即時持倉來源 |
+| finmind-server | ✅ Healthy | ~Xs | — |
+| mops-server | ✅ Healthy | ~Xs | — |
+| twse-server | ✅ Healthy | ~Xs | 證交所/櫃買開放 API |
 | technical-mcp | ✅ Healthy | ~Xs | — |
-| eodhd-mcp | ❌ Failed | — | 連線失敗 |
-| polymarket-mcp | ✅ Healthy | ~Xs | Demo mode |
+| cnyes-news | ❌ Failed | — | 連線失敗 |
+| chip-server | ✅ Healthy | ~Xs | 三大法人/籌碼 |
 
 健康: X/7 | 異常: X/7
 ```
@@ -58,14 +58,14 @@ model: claude-haiku-4-5-20251001
 
 ```
 # 手動重啟指令（請在終端機執行）：
-# yfinance-advanced:
-cd ~/.claude/yahoo-finance-mcp && uv run server.py
+# finmind-server:
+cd /path/to/finmind-server && uv run server.py
 
-# sec-edgar-mcp:
-cd ~/.claude/sec-edgar-mcp && uv run --project sec-edgar-runner server.py
+# mops-server:
+cd /path/to/mops-server && uv run server.py
 
-# fmp-mcp:
-node /opt/homebrew/lib/node_modules/financial-modeling-prep-mcp-server/stdio-entry.mjs
+# twse-server:
+cd /path/to/twse-server && uv run server.py
 ```
 
 ### 5. 建議

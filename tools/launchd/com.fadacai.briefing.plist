@@ -11,17 +11,19 @@
     <string>/Users/YOUR_USERNAME/path/to/portfolio/tools/briefing_runner.sh</string>
   </array>
 
-  <!-- Single daily trigger at 17:00 system-local time. One attempt per day —
-       no backup windows; if the run fails it only logs (no Telegram error
-       notify). Pair with `pmset repeat wakepoweron … 16:59 weekdays` and the
-       com.fadacai.caffeinate agent so the Mac is awake for the window. -->
+  <!-- Single daily trigger at 14:00 system-local time (台股 13:30 收盤後、盤後
+       三大法人買賣超約 14:00 前公布). One attempt per day — no backup windows;
+       if the run fails it only logs (no Telegram error notify). Pair with
+       `pmset repeat wakepoweron … 13:59 weekdays` and the com.fadacai.caffeinate
+       agent so the Mac is awake for the window. 若系統時區非 Asia/Taipei，請改成
+       對應的本地時鐘時間。 -->
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
   </array>
 
   <!-- TZ deliberately NOT set here: launchd then evaluates StartCalendarInterval
-       in the system local timezone. ET timestamps are handled by
+       in the system local timezone. Asia/Taipei timestamps are handled by
        briefing_runner.sh exporting TZ internally. -->
   <key>EnvironmentVariables</key>
   <dict>

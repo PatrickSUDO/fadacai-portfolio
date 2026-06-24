@@ -7,7 +7,7 @@ model: claude-opus-4-8
 
 # Portfolio Review
 
-Generate a comprehensive portfolio report from the user's live brokerage positions (via the `firstrade-server` MCP).
+Generate a comprehensive portfolio report from the user's live brokerage positions (via the `shioaji-server` MCP).
 
 ## Step 0: 配置同步 & 倉位偵測
 
@@ -22,7 +22,7 @@ Generate a comprehensive portfolio report from the user's live brokerage positio
 讀以下四份 cache（由各預載腳本維護）：
 - `briefing-out/cache/macro-snapshot.json` — 供 Step 0e 與 probability-honesty-checker Step 1i
 - `briefing-out/cache/earnings-history.json` — 供 Section F Key Alerts、Section G 個股 thesis、及 probability-honesty-checker Step 1d base rate
-- `briefing-out/cache/earnings-dates.json` — 供 Section F earnings window 警示
+- `briefing-out/cache/earnings-dates.json` — 供 Section F 財報/月營收窗口 警示
 - `briefing-out/cache/fundamentals-snapshot.json`（TTL 24h，`tools/fetch_fundamentals.py` 預載）— 供 Section G3.5 三錨點估值、probability-honesty-checker Step 1d/1h
 
 判定 fundamentals cache：
@@ -30,7 +30,7 @@ Generate a comprehensive portfolio report from the user's live brokerage positio
 - `status == "skipped"` / mtime > 30h / 缺失 → 標 `⚠️ Fundamentals cache stale/missing`，派 Agent 即時補抓（同 briefing Deep 模式）：
   ```
   Agent(subagent_type="data-collector"):
-    呼叫 mcp__eodhd-mcp__get_fundamentals_snapshot 對所有 >3% 持倉 (TICKER.US)
+    呼叫 mcp__cnyes-news__get_fundamentals_snapshot 對所有 >3% 持倉 (TICKER)
     回傳 dict {ticker: {snapshot:{...}, base_rate:{...}}}
   ```
 - `pe_ratio == 0.0 / null` → 丟棄 A1 錨；`peg_ratio == 0.0 / null` → 丟棄 A2 錨；不猜測
@@ -70,8 +70,8 @@ python3 tools/thesis_ledger.py due      # 取到期清單 + 自動 expire sweep
 ## Workflow
 
 1. **Fetch live positions**
-   - Call `mcp__firstrade-server__get_account_position` to get real-time positions
-   - Also call `mcp__firstrade-server__get_account_balance` for total account value
+   - Call `mcp__shioaji-server__get_account_position` to get real-time positions
+   - Also call `mcp__shioaji-server__get_account_balance` for total account value
    - Parse the Stocks section and Options section separately
    - Extract: Symbol, Quantity, Last Price, Market Value, Unit Cost, Total Cost, Gain/Loss($), Gain/Loss(%)
 
@@ -95,7 +95,7 @@ python3 tools/thesis_ledger.py due      # 取到期清單 + 自動 expire sweep
    - **Materials/Metals** — aluminum, steel, rare earth, specialty metals
    - **Other** — anything that doesn't fit above
 
-   **Step 2: For any ticker you're unsure about**, use `mcp__yfinance-advanced__get_stock_info` to check its `sector`, `industry`, and `longBusinessSummary` fields to classify accurately.
+   **Step 2: For any ticker you're unsure about**, use `mcp__finmind-server__get_stock_info` to check its `sector`, `industry`, and `longBusinessSummary` fields to classify accurately.
 
    **Grouping rule**: Combine sectors with < 3% allocation into an "Other/Small" bucket to keep the table clean.
 
@@ -130,7 +130,7 @@ For each option position:
 - Days to expiry (calculate from today's date)
 - Current P&L
 - Status (ITM/OTM/ATM based on last stock price if available)
-- For LEAPS: delta equivalent shares estimate
+- For 個股期貨: delta equivalent shares estimate
 - For Sell Puts: potential assignment cost and margin estimate
 
 ### F. Key Alerts
@@ -145,16 +145,16 @@ For each option position:
 
 使用 Agent tool 平行派遣以下 3 組子代理（每組 subagent_type: "data-collector"，自動使用 Haiku 4.5）：
 
-- **Agent 1 — Yahoo Finance**（subagent_type: "data-collector"，所有主要持倉 >3%）：`get_stock_info` + `get_yahoo_finance_news` + `get_historical_stock_prices`
+- **Agent 1 — FinMind**（subagent_type: "data-collector"，所有主要持倉 >3%）：`get_stock_info` + `get_finmind_finance_news` + `get_historical_stock_prices`
 - **Agent 2 — Technical**（subagent_type: "data-collector"，所有持倉）：`get_batch_indicators` + `get_technical_indicators`（top 5 個別分析）
-- **Agent 3 — Sentiment**（subagent_type: "data-collector"，top 5）：`get_sentiment_trend`（ticker format: "TICKER.US"）
+- **Agent 3 — Sentiment**（subagent_type: "data-collector"，top 5）：`get_sentiment_trend`（ticker format: "TICKER"）
 
 若 Agent tool 不可用，依序呼叫亦可。
 
 ⚠️ **Agent 失敗 fallback**：若任一 agent 回傳空結果或聲稱「沒有 MCP 權限」，主 Claude 直接自行呼叫對應工具：
 - Agent 2（Technical）失敗 → 主 Claude 直接呼叫 `mcp__technical-mcp__get_batch_indicators` + `mcp__technical-mcp__get_technical_indicators`，繼續輸出 G2 技術分析
-- Agent 1（Yahoo Finance）失敗 → 主 Claude 直接呼叫 `mcp__yfinance-advanced__get_stock_info`
-- Agent 3（Sentiment）失敗 → 主 Claude 直接呼叫 `mcp__eodhd-mcp__get_sentiment_trend`
+- Agent 1（FinMind）失敗 → 主 Claude 直接呼叫 `mcp__finmind-server__get_stock_info`
+- Agent 3（Sentiment）失敗 → 主 Claude 直接呼叫 `mcp__cnyes-news__get_sentiment_trend`
 絕不因 agent 失敗而跳過整個 section。
 
 Split holdings into two tiers:
@@ -164,7 +164,7 @@ Split holdings into two tiers:
 #### For major holdings (> 3%), fetch and display:
 
 **G1. 股價趨勢 (Price Trends)**
-Use `mcp__yfinance-advanced__get_historical_stock_prices` with different periods.
+Use `mcp__finmind-server__get_historical_stock_prices` with different periods.
 Show for each stock:
 
 | 標的 | 現價 | 1週 | 1月 | 3月 | YTD | 52W高/低 | 距52W高 |
@@ -191,7 +191,7 @@ Flag:
 - vol_regime = "high" → 高波動注意
 
 **G3. 基本面摘要 (Fundamentals)**
-Use `mcp__yfinance-advanced__get_stock_info` for financial data.
+Use `mcp__finmind-server__get_stock_info` for financial data.
 
 | 標的 | Forward PE | P/S | Revenue Growth | Gross Margin | FCF | Analyst Rating | Target Price | Upside |
 
@@ -225,7 +225,7 @@ A4 欄規則：
 偏離 > ±30% → 標 `⚠️ 大幅偏離`；偏離 > ±50% → 標 `⚠️⚠️ 異常大偏離，錨點可能失效`
 
 **G4. 近期新聞 (Recent News)**
-Use `mcp__yfinance-advanced__get_yahoo_finance_news` for each major holding.
+Use `mcp__finmind-server__get_finmind_finance_news` for each major holding.
 Show top 2 headlines per stock:
 
 | 標的 | 日期 | 標題 | 情緒判斷 |
@@ -239,78 +239,78 @@ Sentiment: 利好/利空/中性 based on headline content.
 **NOTE: 平行數據收集已在 Section G 開頭的 Agent 子代理指令中統一處理。**
 
 #### G5. 情緒面分析 (Sentiment Analysis)
-Use `mcp__eodhd-mcp__get_sentiment_trend` for top 5 holdings by market value.
+Use `mcp__cnyes-news__get_sentiment_trend` for top 5 holdings by market value.
 
 | 標的 | 7日情緒 | 30日情緒 | 趨勢 |
 
-For any stock with strongly negative sentiment (< -0.3), also call `mcp__eodhd-mcp__get_news_sentiment` to show recent negative headlines.
+For any stock with strongly negative sentiment (< -0.3), also call `mcp__cnyes-news__get_news_sentiment` to show recent negative headlines.
 
 Flag stocks with rapidly deteriorating sentiment (7-day avg significantly below 30-day avg).
 
-Note: EODHD tickers use exchange suffix format (e.g. "AAPL.US", "NVDA.US").
+Note: FinMind tickers use exchange suffix format (e.g. "2330", "2330 台積電").
 
 **平行數據收集（第二組 Agent 子代理 — subagent_type: "data-collector"）：**
 
 在 Section G 數據到齊後，派遣第二組（subagent_type: "data-collector"，自動使用 Haiku 4.5）：
 
-- **Agent 4 — SEC EDGAR**（subagent_type: "data-collector"，top 5）：`get_insider_transactions` + `get_recent_filings`
-- **Agent 5 — FMP**（subagent_type: "data-collector"）：`getStockPeers`（top 3）+ `getBiggestGainers` / `getBiggestLosers`
+- **Agent 4 — 公開資訊觀測站 MOPS**（subagent_type: "data-collector"，top 5）：`get_insider_transactions` + `get_recent_filings`
+- **Agent 5 — twse**（subagent_type: "data-collector"）：`getStockPeers`（top 3）+ `getBiggestGainers` / `getBiggestLosers`
 
 若 Agent tool 不可用，依序呼叫亦可。
 
-### H. SEC EDGAR 深度數據
+### H. 公開資訊觀測站 MOPS 深度數據
 
-**Uses SEC EDGAR MCP tools.**
+**Uses 公開資訊觀測站 MOPS MCP tools.**
 
 Only run this section for the **top 5 holdings by market value**. Skip if user says "快速報告".
 
 **H1. 內部人交易 (Insider Trading)**
-Use `mcp__sec-edgar-mcp__get_insider_transactions` (days=90) for each top holding.
+Use `mcp__mops-server__get_insider_transactions` (days=90) for each top holding.
 
 | 標的 | 90天內部人交易 | 買入/賣出 | 重要交易摘要 |
 
 Flag any significant insider buying (bullish signal) or heavy selling (watch).
 
-**H2. SEC 財報數據 (SEC Financials)**
-Use `mcp__sec-edgar-mcp__get_financials` with `statement_type="income"` for top holdings.
-Cross-reference with yfinance data — highlight any discrepancies.
+**H2. MOPS 財報數據 (MOPS Financials)**
+Use `mcp__mops-server__get_financials` with `statement_type="income"` for top holdings.
+Cross-reference with FinMind data — highlight any discrepancies.
 
-| 標的 | SEC Revenue | SEC Net Income | SEC EPS | 與Yahoo差異 |
+| 標的 | MOPS Revenue | MOPS Net Income | MOPS EPS | 與FinMind差異 |
 
-**H3. 近期 SEC Filing (Recent Filings)**
-Use `mcp__sec-edgar-mcp__get_recent_filings` (days=30) for top holdings.
+**H3. 近期 MOPS Filing (Recent Filings)**
+Use `mcp__mops-server__get_recent_filings` (days=30) for top holdings.
 
 | 標的 | Filing類型 | 日期 | 重點摘要 |
 
-Flag any 8-K (material events), 10-K/10-Q (earnings), or Form 4 (insider) filings.
+Flag any 重訊 (material events), 10-K/10-Q (earnings), or 內部人持股申報 (insider) filings.
 
-**Note:** SEC EDGAR data comes directly from official SEC filings and may lag real-time market data by days/weeks. Use it for verification and deep analysis, not for real-time trading decisions.
+**Note:** 公開資訊觀測站 MOPS data comes directly from official 公開資訊觀測站文件 and may lag real-time market data by days/weeks. Use it for verification and deep analysis, not for real-time trading decisions.
 
-### I. FMP 市場動態與同業比較
+### I. twse 市場動態與同業比較
 
-**This section uses FMP MCP tools (free tier). Run in parallel with other sections.**
+**This section uses twse MCP tools (free tier). Run in parallel with other sections.**
 
 Skip if user says "快速報告".
 
 **I1. 同業比較 (Peer Comparison)**
-Use `mcp__fmp-mcp__getStockPeers` for top 3 holdings.
+Use `mcp__twse-server__getStockPeers` for top 3 holdings.
 
 | 標的 | 同業代碼 | 同業股價 | 備註 |
 
 Highlight any peers that overlap with existing portfolio holdings.
 
 **I2. 市場動態掃描 (Market Movers)**
-Use `mcp__fmp-mcp__getBiggestGainers` and `mcp__fmp-mcp__getBiggestLosers`.
+Use `mcp__twse-server__getBiggestGainers` and `mcp__twse-server__getBiggestLosers`.
 Check if any portfolio holdings appear in today's extreme movers.
 
 **I3. 公司概覽補充 (Company Profile)**
-Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is incomplete or unavailable.
+Use `mcp__twse-server__getCompanyProfile` only for tickers where FinMind data is incomplete or unavailable.
 
-**Note:** FMP free tier is limited. Tools like getQuote, getIncomeStatement, getAnalystEstimates, getEarningsTranscript return 402. Only use the free endpoints listed above.
+**Note:** twse free tier is limited. Tools like getQuote, getIncomeStatement, getAnalystEstimates, getEarningsTranscript return 402. Only use the free endpoints listed above.
 
 ### I.5 樂透機會掃描（Lottery Opportunity Scan）
 
-**目的：** 從市場掃出**至多 3 個**適合短 DTE OTM Call 樂透的候選（per memory feedback：樂透用近期 OTM Call 不用 LEAPS，避免 vega 干擾凸性）。
+**目的：** 從市場掃出**至多 3 個**適合短 DTE OTM Call 樂透的候選（per memory feedback：樂透用近期 OTM Call 不用 個股期貨，避免 vega 干擾凸性）。
 
 **篩選步驟（重用 Section I.2 的 movers 數據，不額外抓取）：**
 1. 候選池：`getBiggestGainers` + `getMostActiveStocks`
@@ -328,7 +328,7 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
 
 **規則：**
 - 預設 1-2 口，**總成本 ≤ 2% 帳戶價值**（Quarter-Kelly 樂透上限）
-- **不推 LEAPS OTM 當樂透**（vega 干擾，違反 feedback_options_vega_playbook.md）
+- **不推 個股期貨 OTM 當樂透**（vega 干擾，違反 feedback_options_vega_playbook.md）
 - 「上行 +XXX% / 下行 max loss = premium」必寫
 - 若候選 IV Rank > 80：警告「IV 過高，後續 IV crush 風險」
 - 若 portfolio 已有同板塊 binary 樂透（如 OKLO 待執行）：優先補強既有，不新開重複曝險
@@ -360,11 +360,11 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
      ## Step 1 九項輸入（已備齊，從 Section A-I + cache 摘出）:
      1a. RSI 分布: [從 Section G1 / G2 摘出，每 bucket 檔數 + % of port]
      1b. 距 52w 高: [從 Section G3 / get_stock_info 摘出，中位數/最大/最小]
-     1c. 已實現波動: 過去 5d/2d/最大單日（從 journal/firstrade）
+     1c. 已實現波動: 過去 5d/2d/最大單日（從 journal/shioaji）
      1d. Binary catalysts (30d window): [從 earnings-dates.json 摘出財報日期，
          **beat rate + avg surprise %** 來源優先順序：
-         (1) fundamentals-snapshot.json → tickers.TICKER.base_rate（EODHD）
-         (2) earnings-history.json → tickers.TICKER（yfinance 備選）
+         (1) fundamentals-snapshot.json → tickers.TICKER.base_rate（FinMind）
+         (2) earnings-history.json → tickers.TICKER（FinMind 備選）
          格式：「N/8 beat, +X.X% avg」。avg_surprise_unreliable=true → 只用 beat N/8，avg% 標 (unreliable-low-base)；cache 缺 → 標 (unavailable)]
      1e. 集中度: top 1 / top 5 / 最大板塊（從 Section B 板塊分配）
      1f. 板塊輪動曝險: [從 sector_rotation + Section B 計算 leading/lagging 持倉 %]
@@ -454,7 +454,7 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
    照以下 5 步，**每步都要寫出來**，不可直接跳到機率：
    (a) **Input Enumeration**：列 9 項 — RSI 分布 / 距 52w 高 / 已實現波動(5d,2d,單日) / binary catalysts + 各自 base rate / 集中度 / 板塊輪動 / sentiment / thesis 健康度 / macro。缺項不可進下一步。
    (b) **形狀反推**：起點 33/34/33，再依事實逐條 nudge（mean reversion 引力、binary catalyst → 雙峰非 bell、集中度、weakening 板塊、macro 左尾），每條調整寫 ±Xpp 與理由。不可直接寫結果。
-   (c) **各情境 conditional 機率**：每個 catalyst 顯式 base rate（例：「MU 8/8 beat → blowout 機率 55%」）。
+   (c) **各情境 conditional 機率**：每個 catalyst 顯式 base rate（例：「3661 世芯-KW 8/8 beat → blowout 機率 55%」）。
    (d) **三情境合成**：sum = 100%（顯式 check）。
    (e) **EV = Σ(機率 × 中點)**：中點 = 報酬區間算術平均（例 +10~+15% → +12.5%）。
 
@@ -494,12 +494,12 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
 
 我的投資風格：
 - 主軸：AI/半導體、高成長科技；汰弱留強，集中持倉
-- 信念持倉（不換）：TSLA, MU, AVGO 多年期 thesis
+- 信念持倉（不換）：2330 台積電, 3661 世芯-KW, 2454 聯發科 多年期 thesis
 - 板塊偏好：[從 plan.md 摘出 3-5 行板塊目標]
 
 請以獨立分析師視角：
 1. 掃描今日市場有哪些當紅題材/個股，是我目前持倉沒覆蓋到的
-2. 對每個候選列出：題材、代表 ticker、為何此刻有機會、建議切入方式（現股/Spread/LEAPS）
+2. 對每個候選列出：題材、代表 ticker、為何此刻有機會、建議切入方式（現股/Spread/個股期貨）
 3. 要追這些新機會，最該砍掉哪一檔現有持倉？為什麼？
 4. 提供 2-3 個具體 actionable 建議（含目標 entry zone）
 
@@ -509,7 +509,7 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
 ### B3. 輪動分析（rotation scan）
 
 **Step 1 — Claude 預先收集數據：**
-- `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs SPY（leading / improving / weakening / lagging）
+- `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs 加權指數（leading / improving / weakening / lagging）
 - `mcp__technical-mcp__get_batch_indicators(tickers=[所有持倉])` → 個股動能分數 + 趨勢
 
 **Step 2 — 呼叫 Codex（用 CLAUDE.md「Codex 呼叫方式」的 `codex exec` CLI）：**
@@ -518,7 +518,7 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
 我的美股持倉（含市值占比 + 板塊歸屬）：
 [持倉表]
 
-當前板塊輪動數據（vs SPY）：
+當前板塊輪動數據（vs 加權指數）：
 [get_sector_rotation 完整輸出]
 
 當前個股動能：

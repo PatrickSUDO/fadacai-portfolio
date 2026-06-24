@@ -16,7 +16,7 @@ model: claude-sonnet-4-6
 
 ### Step 1：取得即時持倉（必做）
 同時執行：
-- `mcp__firstrade-server__get_account_position` — 即時持倉（股票 + 選擇權）
+- `mcp__shioaji-server__get_account_position` — 即時持倉（股票 + 選擇權）
 - 讀取 `plan.md` — 計畫中待辦事項
 
 ### Step 2：讀取 journal（快速掃描）
@@ -37,7 +37,7 @@ model: claude-sonnet-4-6
 ### A. 選擇權急迫性（最優先）
 - 剩餘天數 < 14 天的合約 → 🔴 急迫
 - 剩餘天數 14-30 天的合約 → 🟡 注意
-- PMCC 短腿距 strike < 5% → 🔴 急迫（可能被 call 走）
+- 個股期貨價差 短腿距 strike < 5% → 🔴 急迫（可能被 call 走）
 - BPS/BCS 已達 50-75% 最大利潤 → 🟡 考慮平倉
 
 ### B. 計畫中待執行策略
@@ -126,7 +126,7 @@ model: claude-sonnet-4-6
 - plan.md ⏳ 待執行/待評估清單（原文）
 - 主要持倉 RSI/趨勢
 - 近期催化（4 天內財報日、產業事件）
-- 投資風格：AI/半導體主軸、汰弱留強、信念持倉 [TSLA/MU/AVGO]
+- 投資風格：AI/半導體主軸、汰弱留強、信念持倉 [2330 台積電/3661 世芯-KW/2454 聯發科]
 
 **請輸出（獨立判斷）：**
 
@@ -164,12 +164,12 @@ model: claude-sonnet-4-6
 
 我的投資風格：
 - 主軸：AI/半導體、高成長科技；汰弱留強，集中持倉
-- 信念持倉（不換）：TSLA, MU, AVGO 多年期 thesis
+- 信念持倉（不換）：2330 台積電, 3661 世芯-KW, 2454 聯發科 多年期 thesis
 - 板塊偏好：[從 plan.md 摘出 3-5 行板塊目標]
 
 請以獨立分析師視角：
 1. 掃描今日市場有哪些當紅題材/個股，是我目前持倉沒覆蓋到的
-2. 對每個候選列出：題材、代表 ticker、為何此刻有機會、建議切入方式（現股/Spread/LEAPS）
+2. 對每個候選列出：題材、代表 ticker、為何此刻有機會、建議切入方式（現股/Spread/個股期貨）
 3. 要追這些新機會，最該砍掉哪一檔現有持倉？為什麼？
 4. 2-3 個具體 actionable 建議（含目標 entry zone），可加進明日待辦
 
@@ -179,7 +179,7 @@ model: claude-sonnet-4-6
 ### B3. 輪動分析（rotation scan）
 
 **Step 1 — Claude 預先收集數據：**
-- `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs SPY（leading / improving / weakening / lagging）
+- `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs 加權指數（leading / improving / weakening / lagging）
 - `mcp__technical-mcp__get_batch_indicators(tickers=[所有持倉])` → 個股動能分數 + 趨勢
 
 **Step 2 — 呼叫 Codex（用 CLAUDE.md「Codex 呼叫方式」的 `codex exec` CLI）：**
@@ -188,7 +188,7 @@ model: claude-sonnet-4-6
 我的美股持倉（含市值占比 + 板塊歸屬）：
 [持倉表]
 
-當前板塊輪動數據（vs SPY）：
+當前板塊輪動數據（vs 加權指數）：
 [get_sector_rotation 完整輸出]
 
 當前個股動能：

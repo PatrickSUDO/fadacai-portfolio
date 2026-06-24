@@ -13,7 +13,7 @@ model: claude-sonnet-4-6
 - `/briefing` → Quick（~1 分鐘）
 - `/briefing full` → Quick + Full（~3 分鐘）
 - `/briefing deep` → Quick + Full + Deep（~5 分鐘）
-- `/briefing telegram` → Telegram Push Tier（~2-3 分鐘）— 盤中推送專用，不跑 Phase 1-3
+- `/briefing telegram` → Telegram Push Tier（~2-3 分鐘）— 收盤後推送專用，不跑 Phase 1-3
 
 ### --send 旗標
 任何 tier 加上 `--send` 會在 tier 執行完後：
@@ -55,7 +55,7 @@ Read briefing-out/cache/macro-snapshot.json
   ```
   📊 Macro: Fed {fed_funds}% | 2s10s {value} ({regime}) | HY OAS {value} ({regime}, pct {pct_1y}%) | VIX {value} ({regime}) | regime: {regime_tag}
   ```
-- `status == "skipped"`（FRED key 缺失）→ 顯示 `⚠️ Macro snapshot unavailable (FRED_API_KEY not set)` 並跳過
+- `status == "skipped"`（台灣總經(FinMind) key 缺失）→ 顯示 `⚠️ Macro snapshot unavailable (台灣總經(FinMind)_API_KEY not set)` 並跳過
 - mtime > 36h → 顯示 `⚠️ Macro snapshot stale ({mtime_hours}h old)` 仍使用但標記
 
 將 5 個 series + regime_tag 內容餵給 **Step 0e** 與後續呼叫的 `probability-honesty-checker` agent（其 Step 1i 必須收到此資料）。
@@ -74,8 +74,8 @@ Read briefing-out/cache/earnings-dates.json
 - `status == "skipped"` / mtime stale → 標記 `⚠️ Earnings cache stale` 但仍使用最後一份
 
 這兩份資料用於：
-- Section 4.5 Earnings Calendar 表格的 `Trailing 8Q beat` / `avg surprise` 欄位
-- Telegram tier `📅 Earnings This Week` 加 beat rate 標註
+- Section 4.5 財報/月營收行事曆 表格的 `Trailing 8Q beat` / `avg surprise` 欄位
+- Telegram tier `📅 本週重大事件（法說/月營收/除權息）` 加 beat rate 標註
 - `probability-honesty-checker` Step 1d「Base rate」強制欄位
 
 ---
@@ -92,7 +92,7 @@ python3 tools/thesis_ledger.py due
 
 **2. 對每筆 `due` thesis 驗收：**
 - 讀該筆 `trigger.metric` → 知道要抓什麼（財報營收/ASP/毛利率、板塊 ETF、價格…）
-- 用既有 MCP（yfinance / `earnings_history.py` cache / technical 等）抓**實際數字**
+- 用既有 MCP（FinMind / `earnings_history.py` cache / technical 等）抓**實際數字**
 - 對照 `thesis` + `falsification` 判定 `passed` / `failed` / `partial`
 - **抓不到新數**（event 觸發但財報還沒出）→ 用 `reschedule` 把觸發日往後推、維持 pending，**絕不猜 verdict**：
   ```
@@ -109,7 +109,7 @@ python3 tools/thesis_ledger.py due
 ## 📋 thesis 驗收
 | thesis | 命題 | 實際 | verdict | → actionable |
 |--------|------|------|---------|-------------|
-| MU:memory-cycle | DRAM 漲價毛利率>40% | ASP +8%、毛利率42% | ✅ passed | HOLD，加碼門檻 $XXX |
+| 3661 世芯-KW:memory-cycle | DRAM 漲價毛利率>40% | ASP +8%、毛利率42% | ✅ passed | HOLD，加碼門檻 $XXX |
 （無到期項則略過此區塊，僅在有 due/expired 時輸出）
 ⏳ 逾期未驗收已歸檔：[expired 清單，若有]
 ```
@@ -149,8 +149,8 @@ python3 tools/thesis_ledger.py due
 ### 4. Options Status
 
 **4a. 無現股標的價格確認：**
-比對選擇權持倉的 underlying ticker vs 現股持倉。若 underlying 沒有對應現股（如 CRWD、DDOG、GOOGL、LRCX、TSLA、TEAM），
-使用 `mcp__technical-mcp__get_batch_indicators` 或 `mcp__yfinance-advanced__get_stock_info` 取得該標的目前現股價格。
+比對選擇權持倉的 underlying ticker vs 現股持倉。若 underlying 沒有對應現股（如 2379 瑞昱、DDOG、2454 聯發科、LRCX、2330 台積電、2454 聯發科），
+使用 `mcp__technical-mcp__get_batch_indicators` 或 `mcp__finmind-server__get_stock_info` 取得該標的目前現股價格。
 在 Options Status 表格中加入「標的現價」和「距 Strike %」欄位，方便判斷 ITM/OTM 狀態。
 
 **4b. Options 總覽表：**
@@ -159,16 +159,16 @@ python3 tools/thesis_ledger.py due
 
 ⚠️ 標記剩餘 <14 天的合約。
 
-### 4.5 Earnings Calendar Check（Technical Snapshot 前必做）
+### 4.5 財報/月營收行事曆 Check（Technical Snapshot 前必做）
 
-**為何必要：** 持倉 ticker 在 ±48h 內若有財報，technical signal（trend / momentum / RSI）會被 earnings reaction 主導，不是結構性訊號。直接套「弱勢持續 → 減碼」會在 fundamental beat 後賣在低點（PLTR 5/5 案例）。
+**為何必要：** 持倉 ticker 在 ±48h 內若有財報，technical signal（trend / momentum / RSI）會被 財報反應 主導，不是結構性訊號。直接套「弱勢持續 → 減碼」會在 fundamental beat 後賣在低點（3661 世芯-KW 5/5 案例）。
 
-**資料來源**：Step 0.6 已預載 `briefing-out/cache/earnings-dates.json` + `earnings-history.json`，直接從 cache 取，**不再呼叫 MCP**（若 cache 缺失或 ticker 不在，才 fallback `mcp__fmp-mcp__getEarningsCalendar`）。
+**資料來源**：Step 0.6 已預載 `briefing-out/cache/earnings-dates.json` + `earnings-history.json`，直接從 cache 取，**不再呼叫 MCP**（若 cache 缺失或 ticker 不在，才 fallback `mcp__twse-server__getEarningsCalendar`）。
 
 **執行步驟：**
 1. 從 cache 列出未來 7 天內、或過去 48h 內有財報的持倉 ticker
-2. 對 earnings window（±48h）內的 ticker，在 Step 5 Technical Snapshot 表格的「標的」欄位前綴 ⚠️
-3. 對 earnings window 內的 ticker：
+2. 對 財報/月營收窗口（±48h）內的 ticker，在 Step 5 Technical Snapshot 表格的「標的」欄位前綴 ⚠️
+3. 對 財報/月營收窗口 內的 ticker：
    - **不執行**「弱勢持續 → 減碼」「拋物線警示 → 出清」自動規則
    - actionable 改寫為「等 N+1 個交易日 settle 再判斷結構」
    - 若強行給建議，必須先 confirm fundamental 數字（revenue / EPS / guide）方向，不能只看 price action
@@ -177,8 +177,8 @@ python3 tools/thesis_ledger.py due
    ```markdown
    | 標的 | 日期 | 時機 | 距 earnings | Trailing 8Q beat | Avg surprise % | 狀態 |
    |------|------|------|------------|-----------------|---------------|------|
-   | NVDA | 2026-05-20 | AMC | 2d | 8/8 (100%) | +6.3% | 🔴 window 內 |
-   | AVGO | 2026-06-03 | AMC | 16d | 7/8 (87.5%) | +3.4% | 觀察中 |
+   | 2330 台積電 | 2026-05-20 | 盤後 | 2d | 8/8 (100%) | +6.3% | 🔴 window 內 |
+   | 2454 聯發科 | 2026-06-03 | 盤後 | 16d | 7/8 (87.5%) | +3.4% | 觀察中 |
    ```
 
    `Trailing 8Q beat` 與 `Avg surprise %` 從 `earnings-history.json` 的 `beat_count/total` 與 `avg_surprise_pct` 直接讀。
@@ -200,7 +200,7 @@ python3 tools/thesis_ledger.py due
 - **動能分**：momentum_score（-100 ~ +100）
 - **RSI**：最後參考，不單獨作為買賣訊號
 
-**複合訊號標記規則（必須多指標同時觸發 + 無 earnings window）：**
+**複合訊號標記規則（必須多指標同時觸發 + 無 財報/月營收窗口）：**
 
 | 標記 | 觸發條件 |
 |------|---------|
@@ -209,12 +209,12 @@ python3 tools/thesis_ledger.py due
 | ⚠️ 動能背離 | uptrend + momentum_score 轉負 OR death_cross（趨勢未破但動能轉弱）|
 | 🚀 強勢確認 | golden_cross + strong_uptrend + volume_ratio > 1.2 |
 | 🟡 留意 | RSI > 70 但無以上複合條件 → 只標數字，不加警示標籤 |
-| ⚠️ earnings window | 過去/未來 48h 有財報 → **以上規則一律不套用**，標記 wait N+1d |
+| ⚠️ 財報/月營收窗口 | 過去/未來 48h 有財報 → **以上規則一律不套用**，標記 wait N+1d |
 
 **根因分類規則（看到弱勢/強勢訊號必做）：**
 
 對任一 weak_down / strong_down / momentum < -20 訊號，先回答根因再行動：
-1. 過去 48h 有財報？→ (b) earnings reaction → HOLD wait
+1. 過去 48h 有財報？→ (b) 財報反應 → HOLD wait
 2. 同板塊 ETF 也弱？→ (c) sector rotation → 評估板塊配置
 3. fundamental 數據惡化？（revenue growth 連 2 季減速 / guide 下修）→ (a) thesis 破裂 → **可執行汰弱**
 4. 以上皆否 → (d) noise → 忽略
@@ -251,7 +251,7 @@ Agent(
   1a. RSI 分布: [從 Section 5 Technical Snapshot 摘出，每 bucket 檔數 + % of port]
   1b. 距 52w 高: [從 get_stock_info 摘出，中位數/最大/最小]
   1c. 已實現波動: 過去 5d/2d 累積，最大單日
-  1d. Binary catalysts (window 7d): [從 Section 4.5 Earnings Calendar Check 摘出，
+  1d. Binary catalysts (window 7d): [從 Section 4.5 財報/月營收行事曆 Check 摘出，
       **必須含 trailing 8Q beat rate + avg surprise %** 來自 earnings-history.json
       cache。格式：「N/8 beat, +X.X% avg」。cache 缺 → (unavailable)]
   1e. 集中度: top 1 / top 5 / 最大板塊（從 Section 1 倉位 + B 板塊配置）
@@ -317,25 +317,25 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 ### 9. Sentiment Analysis
 使用 Agent 子代理（subagent_type: "data-collector"）取 top 5 持倉的情緒數據：
 
-- **Agent: EODHD Sentiment**（subagent_type: "data-collector"）→ `get_sentiment_trend`（ticker format: "TICKER.US"）
+- **Agent: FinMind Sentiment**（subagent_type: "data-collector"）→ `get_sentiment_trend`（ticker format: "TICKER"）
 
 | 標的 | 7日情緒 | 30日情緒 | 趨勢 | 備註 |
 
 情緒 < -0.3 的標的額外調用 `get_news_sentiment` 顯示負面新聞。
 
 ### 10. Market Dynamics
-- `mcp__fmp-mcp__getBiggestGainers` + `getBiggestLosers`
+- `mcp__twse-server__getBiggestGainers` + `getBiggestLosers`
 - 檢查持倉是否出現在極端波動名單
 - 市場主題掃描（板塊輪動、避險情緒等）
 
 ### 11. Prediction Markets
-- `mcp__polymarket-mcp__search_markets` 搜尋與持倉板塊相關事件
+- `mcp__chip-server__search_markets` 搜尋與持倉板塊相關事件
 - 搜尋關鍵字：AI regulation, tariffs, Fed rate, semiconductor
 - 顯示相關事件及概率
 
 ### 11.5 樂透機會掃描（Lottery Opportunity Scan）
 
-**目的：** 從市場掃出**至多 3 個**適合短 DTE OTM Call 樂透的候選（per memory feedback：樂透用近期 OTM Call 不用 LEAPS，避免 vega 干擾凸性）。
+**目的：** 從市場掃出**至多 3 個**適合短 DTE OTM Call 樂透的候選（per memory feedback：樂透用近期 OTM Call 不用 個股期貨，避免 vega 干擾凸性）。
 
 **篩選步驟（重用 Section 10 movers + active list 數據，不額外抓取）：**
 1. 候選池：`getBiggestGainers` + `getMostActiveStocks`
@@ -353,7 +353,7 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 **規則：**
 - 預設 1-2 口，**總成本 ≤ 2% 帳戶價值**（Quarter-Kelly 樂透上限）
-- **不推 LEAPS OTM 當樂透**（vega 干擾，違反 feedback_options_vega_playbook.md）
+- **不推 個股期貨 OTM 當樂透**（vega 干擾，違反 feedback_options_vega_playbook.md）
 - 「上行 +XXX% / 下行 max loss = premium」必寫
 - 若候選 IV Rank > 80：警告「IV 過高，後續 IV crush 風險」
 
@@ -362,7 +362,7 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 | # | 計畫操作 | 狀態 | 觸發條件 | 當前數據 | 備註 |
 |---|---------|------|---------|---------|------|
-| 1 | 加碼 NVDA | ⏳ 待觸發 | RSI<35 | RSI=42 | 接近 |
+| 1 | 加碼 2330 台積電 | ⏳ 待觸發 | RSI<35 | RSI=42 | 接近 |
 | 2 | DDOG BCS | ✅ 已完成 | — | — | 3/5 建倉 |
 
 ---
@@ -373,9 +373,9 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 同時派出 3 組 Agent 子代理（全部 subagent_type: "data-collector"，自動使用 Haiku 4.5）：
 
-- **Agent 1 — SEC EDGAR**（subagent_type: "data-collector"，top 5）：`get_insider_transactions`（90d）+ `get_recent_filings`（30d）
-- **Agent 2 — Yahoo Finance**（subagent_type: "data-collector"，top 5）：`get_stock_info` + `get_financial_statement` — 基本面摘要
-- **Agent 3 — FMP**（subagent_type: "data-collector"）：`getStockPeers`（top 3）+ `getBiggestGainers` / `getBiggestLosers`
+- **Agent 1 — 公開資訊觀測站 MOPS**（subagent_type: "data-collector"，top 5）：`get_insider_transactions`（90d）+ `get_recent_filings`（30d）
+- **Agent 2 — FinMind**（subagent_type: "data-collector"，top 5）：`get_stock_info` + `get_financial_statement` — 基本面摘要
+- **Agent 3 — twse**（subagent_type: "data-collector"）：`getStockPeers`（top 3）+ `getBiggestGainers` / `getBiggestLosers`
 
 若 Agent tool 不可用，依序呼叫亦可。
 
@@ -399,7 +399,7 @@ portfolio-review 式的計畫執行進度表：
 
 ## Telegram Tier（`/briefing telegram`）
 
-**目的：** 每日盤中推送至 Telegram + Email 的精簡決策摘要。不跑 Phase 1-3 的完整分析，只抓推送所需的 7 個資料點，直接產出 emoji 純文字格式。
+**目的：** 每日收盤後（台灣時間 14:00）推送至 Telegram + Email 的精簡決策摘要。不跑 Phase 1-3 的完整分析，只抓推送所需的 7 個資料點，直接產出 emoji 純文字格式。
 
 ### 執行模型
 Sonnet 4.6（資料抓取為主，無深度合成需要）
@@ -409,30 +409,30 @@ Sonnet 4.6（資料抓取為主，無深度合成需要）
 
 ### 資料步驟（依序，可部分並行）
 
-**T1. Earnings Window（next 7 days）**
+**T1. 財報/月營收窗口（next 7 days）**
 **改從 cache 讀：** Step 0.6 已預載 `briefing-out/cache/earnings-dates.json` + `earnings-history.json`，直接 Read 兩份 JSON。
 列出所有持倉 ticker 的：
 - 財報日 + 盤前/盤後（`next_date`, `timing`）
 - 過去 ±48h 已發財報的 ticker 也標出
 - **Trailing 8Q beat rate + avg surprise %**（從 `earnings-history.json`）
-- focus 重點：可從 yfinance news / sentiment 摘要推斷
+- focus 重點：可從 FinMind news / sentiment 摘要推斷
 
-若 cache `status` ≠ `"ok"` → fallback `mcp__fmp-mcp__getEarningsCalendar`，並加註 `⚠️ earnings cache unavailable`。
+若 cache `status` ≠ `"ok"` → fallback `mcp__twse-server__getEarningsCalendar`，並加註 `⚠️ earnings cache unavailable`。
 
 **T2. Sentiment Pulse（平行 Agent）**
-派出 data-collector subagent，取所有持倉的 EODHD 7d sentiment_trend（格式：TICKER.US）：
+派出 data-collector subagent，取所有持倉的 FinMind 7d sentiment_trend（格式：TICKER.US）：
 ```
 Agent(subagent_type="data-collector"):
-  呼叫 mcp__eodhd-mcp__get_sentiment_trend 對每個 ticker
+  呼叫 mcp__cnyes-news__get_sentiment_trend 對每個 ticker
   回傳 dict: {ticker: {score: float, trend: str}}
 ```
 分類：score 7日變動 > +0.1 → 改善；< -0.1 → 轉弱；急降（從 > +0.3 → < +0.1）→ ⚠️ 注意
 
 **T3. News & Catalysts（past 24h）**
-`mcp__yfinance-advanced__get_yahoo_finance_news` 取 top 5 持倉的新聞，各取 1-2 篇 24h 內最重要的。篩選標準：有具體事件（財報、合約、產品發布、監管）優先，無實質 catalyst 跳過。**最多 3 條進入 Telegram 輸出。**
+`mcp__finmind-server__get_finmind_finance_news` 取 top 5 持倉的新聞，各取 1-2 篇 24h 內最重要的。篩選標準：有具體事件（財報、合約、產品發布、監管）優先，無實質 catalyst 跳過。**最多 3 條進入 Telegram 輸出。**
 
 **T4. Sector Rotation**
-`mcp__technical-mcp__get_sector_rotation()` → 取全 sector ETF 相對 SPY 的 leading / improving / weakening / lagging 分類。只顯示各分類各 1-2 個代表 sector。
+`mcp__technical-mcp__get_sector_rotation()` → 取全 sector ETF 相對 加權指數 的 leading / improving / weakening / lagging 分類。只顯示各分類各 1-2 個代表 sector。
 
 **T5. Alerts（閾值觸發）**
 根據 T1 + T2 + Step 0b 持倉數據生成 alerts（無則跳過整個 section）：
@@ -463,7 +463,7 @@ Agent(subagent_type="data-collector"):
 ```markdown
 # Briefing Telegram YYYY-MM-DD
 
-## Earnings Window
+## 財報/月營收窗口
 ...
 
 ## Sentiment Pulse
@@ -499,11 +499,11 @@ Agent(subagent_type="data-collector"):
   • {ticker}: {一句話} ({source})
   （無 catalyst 則略過整個 section）
 
-📅 Earnings This Week
+📅 本週重大事件（法說/月營收/除權息）
   • {ticker} {M/D} {盤前/盤後} ({beat_count}/{total} beat, +{avg_surprise}%) — {focus 重點}
   （Trailing beat rate 從 earnings-history.json 讀；cache 缺則省略括弧）
 
-📊 Sentiment Pulse (EODHD 7d)
+📊 Sentiment Pulse (FinMind 7d)
   📈 改善: {ticker} +{delta}, {ticker} +{delta}
   📉 轉弱: {ticker} -{delta}
   ⚠️ 注意: {ticker} {一句說明}
@@ -570,8 +570,8 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 
 | ❌ 不能寫 | ✅ 改寫為 |
 |----------|----------|
-| `MU strong_uptrend / 49 / 量縮` | `MU $635.80 (+10.30%) / RSI 81.7 / vol_ratio 0.49 / 6w range $XXX-$XXX` |
-| `PLTR weak_downtrend / momentum -24` | `PLTR $138.30 (-5.29%) / RSI 46.2 / 6w range $122-$146 / Q1 earnings 5/4（昨日）` |
+| `3661 世芯-KW strong_uptrend / 49 / 量縮` | `3661 世芯-KW $635.80 (+10.30%) / RSI 81.7 / vol_ratio 0.49 / 6w range $XXX-$XXX` |
+| `3661 世芯-KW weak_downtrend / momentum -24` | `3661 世芯-KW $138.30 (-5.29%) / RSI 46.2 / 6w range $122-$146 / Q1 earnings 5/4（昨日）` |
 | `BE 拋物線警示` | `BE $291 (+0.9%) / RSI 77.6 / 5d 區間 $275-$303` |
 
 **禁止的 label：** strong_uptrend / weak_downtrend / consolidation / overbought / oversold / 拋物線 / 打底 / 弱勢持續 / 強勢確認 / momentum_score（這已是 -100~+100 derived score，改寫成「X 個交易日累計漲跌 X%」）。
@@ -592,23 +592,23 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 - [ticker] $XXX (+/-X.XX%) / RSI XX.X / vol_ratio X.XX / 6w range $XXX-$XXX
 - ...
 
-**Earnings Window 標記（過去/未來 48h 有財報的 ticker）：**
+**財報/月營收窗口 標記（過去/未來 48h 有財報的 ticker）：**
 - [ticker] — 財報日 X/X（[已過 X 天 / 還剩 X 天]）
 
 **主要持倉技術面（fact only）：**
 - [ticker]：價 $XXX / RSI XX / MACD line/signal/histogram / vs SMA20 X% / vs SMA50 X%
 - ...
 
-**板塊輪動（vs SPY 3mo，純數值）：**
-- SMH +X.XX% / 1w +X.XX% / RSI XX.X
+**板塊輪動（vs 加權指數 3mo，純數值）：**
+- 費半/IC設計 +X.XX% / 1w +X.XX% / RSI XX.X
 - ...
 
 **待執行/觀察的計畫項目**（從 plan.md 摘出 ⏳，不寫評語）：
 - ...
 
-**近期重大事件（fact）：** 財報日列表、FOMC、產業催化
+**近期重大事件（fact）：** 財報日列表、台灣央行理監事會 / 美國 FOMC、產業催化
 
-**投資風格：** AI/半導體主軸、汰弱留強、信念持倉 [TSLA/MU/AVGO]
+**投資風格：** AI/半導體主軸、汰弱留強、信念持倉 [2330 台積電/3661 世芯-KW/2454 聯發科]
 
 **請輸出（獨立判斷）：**
 
@@ -624,7 +624,7 @@ raw data 區只能放 fact 數值，**不能放** derived label：
    | 基準 | XX% | [...] | ±X% |
    | 悲觀 | XX% | [...] | -X% |
 
-4. **3 個 actionable 建議**（含口數 / 觸發條件）— 對 earnings window 內的 ticker 預設「等 settle」
+4. **3 個 actionable 建議**（含口數 / 觸發條件）— 對 財報/月營收窗口 內的 ticker 預設「等 settle」
 
 5. **Verdict**（1 句）：今日整體該做什麼？
 
@@ -632,7 +632,7 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 - 機率分布必須 sum 到 100%
 - 不假設 Codex 已說過什麼
 - 保持獨立判斷
-- earnings window 內的 ticker 不直接套「汰弱留強」
+- 財報/月營收窗口 內的 ticker 不直接套「汰弱留強」
 
 請以繁體中文回覆，控制在 700 字內。
 
@@ -646,17 +646,17 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 呼叫 `/codex:rescue`：
 
 ```
-我目前的美股持倉（含市值占比）：
+我目前的台股持倉（含市值占比）：
 [插入 Step 0b get_account_position 取得的持倉表]
 
 我的投資風格：
-- 主軸：AI/半導體、高成長科技；汰弱留強，集中持倉
-- 信念持倉（不換）：TSLA, MU, AVGO 多年期 thesis
+- 主軸：AI/半導體供應鏈、高成長科技；汰弱留強，集中持倉
+- 信念持倉（不換）：2330 台積電, 3661 世芯-KW, 2454 聯發科 多年期 thesis
 - 板塊偏好：[從 plan.md 摘出 3-5 行板塊目標]
 
 請以獨立分析師視角：
 1. 掃描今日市場有哪些當紅題材/個股，是我目前持倉沒覆蓋到的
-2. 對每個候選列出：題材、代表 ticker、為何此刻有機會、建議切入方式（現股/Spread/LEAPS）
+2. 對每個候選列出：題材、代表 ticker、為何此刻有機會、建議切入方式（現股/Spread/個股期貨）
 3. 要追這些新機會，最該砍掉哪一檔現有持倉？為什麼？
 4. 提供 2-3 個具體 actionable 建議（含目標 entry zone）
 
@@ -668,16 +668,16 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 ### B3. 輪動分析（rotation scan）
 
 **Step 1 — Codex 預先收集數據：**
-- `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs SPY（leading / improving / weakening / lagging）
+- `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs 加權指數（leading / improving / weakening / lagging）
 - `mcp__technical-mcp__get_batch_indicators(tickers=[所有持倉])` → 個股動能分數 + 趨勢
 
 **Step 2 — 呼叫 `/codex:rescue`：**
 
 ```
-我的美股持倉（含市值占比 + 板塊歸屬）：
+我的台股持倉（含市值占比 + 板塊歸屬）：
 [持倉表]
 
-當前板塊輪動數據（vs SPY）：
+當前板塊輪動數據（vs 加權指數）：
 [get_sector_rotation 完整輸出]
 
 當前個股動能：

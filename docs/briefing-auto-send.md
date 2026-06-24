@@ -1,6 +1,6 @@
 # Briefing Auto-Send Setup
 
-每個 NYSE 交易日 ET 13:00 自動跑 `/briefing telegram`，推送精簡摘要到 Telegram，同時 email 副本（精簡版 + 完整 briefing markdown）到你的信箱。週五自動加 Codex 第二意見。
+每個 TWSE 交易日台灣時間 14:00（收盤後）自動跑 `/briefing telegram`，推送精簡摘要到 Telegram，同時 email 副本（精簡版 + 完整 briefing markdown）到你的信箱。週五自動加 Codex 第二意見。
 
 ---
 
@@ -86,7 +86,7 @@ python3 tools/send_briefing.py latest
 DRY_RUN=1 python3 tools/send_briefing.py latest
 ```
 
-### 立刻觸發 launchd（不等 13:00）
+### 立刻觸發 launchd（不等 14:00）
 
 ```bash
 launchctl start com.fadacai.briefing
@@ -97,7 +97,7 @@ tail -f briefing-out/launchd.log
 
 ```bash
 FAKE_DATE=2026-05-16 python3 tools/check_trading_day.py
-# 預期：exit 1，印出 "2026-05-16 is NOT a NYSE trading day"
+# 預期：exit 1，印出 "2026-05-16 is NOT a TWSE trading day"
 ```
 
 ### 測試 Telegram 連線
@@ -129,7 +129,7 @@ TELEGRAM_BOT_TOKEN=bad RETRY_MAX=1 python3 tools/send_briefing.py latest
 | 週一至週四 | `/briefing telegram --send`（無 Codex）|
 | 週五 | `/briefing telegram --send --codex`（加 Codex 第二意見）|
 | 週六、週日 | 跳過（不執行）|
-| NYSE 休市日 | 跳過（exchange_calendars 判斷）|
+| TWSE 休市日 | 跳過（exchange_calendars 判斷）|
 
 ---
 
@@ -192,13 +192,13 @@ which claude
 
 ## 喚醒排程 + 不睡著（單一發送時間）
 
-發送時間（系統本地 CET/CEST）：**17:00，一天只試這一次**。無備援窗；失敗只記 log，**不**推 Telegram 錯誤訊息（2026-06-11 用戶決定：Telegram 只收正式 briefing）。
+發送時間（系統本地 Asia/Taipei）：**14:00，一天只試這一次**。無備援窗；失敗只記 log，**不**推 Telegram 錯誤訊息（2026-06-11 用戶決定：Telegram 只收正式 briefing）。
 
 **喚醒（把 Mac 叫醒）**
-- `pmset repeat wakepoweron … 16:59 weekdays` — 16:59 喚醒，涵蓋 17:00 發送窗。
+- `pmset repeat wakepoweron … 13:59 weekdays` — 13:59 喚醒，涵蓋 14:00 發送窗。
 
-**保持清醒（關鍵）** — 實測 16:59 scheduled wake 只是 dark-wake，2 秒後就釋放、可能在 17:00 前又睡回去，導致 launchd 推遲 17:00 job（症狀：`launchctl print` 顯示 `runs` 沒增加）。解法：
-- **`com.fadacai.caffeinate` LaunchAgent**（`tools/launchd/com.fadacai.caffeinate.plist`）在 16:59 weekdays 跑 `caffeinate -u -t 5520`，把 Mac 從 16:59 撐到 18:31 — 足以涵蓋 runner 最壞情況（3 次 claude retry × 900s timeout + 資料快取刷新 ≈ 50 分鐘）。
+**保持清醒（關鍵）** — 實測 13:59 scheduled wake 只是 dark-wake，2 秒後就釋放、可能在 14:00 前又睡回去，導致 launchd 推遲 14:00 job（症狀：`launchctl print` 顯示 `runs` 沒增加）。解法：
+- **`com.fadacai.caffeinate` LaunchAgent**（`tools/launchd/com.fadacai.caffeinate.plist`）在 13:59 weekdays 跑 `caffeinate -u -t 5520`，把 Mac 從 13:59 撐到 15:31 — 足以涵蓋 runner 最壞情況（3 次 claude retry × 900s timeout + 資料快取刷新 ≈ 50 分鐘）。
 - 安裝：`cp tools/launchd/com.fadacai.caffeinate.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.fadacai.caffeinate.plist`
 
 ## 故障排除：自動推送失敗 / 卡死

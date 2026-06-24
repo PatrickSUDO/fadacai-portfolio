@@ -14,8 +14,8 @@
 
 ```jsonc
 {
-  "id": "MU:memory-cycle",        // 去重 key = ticker:slug
-  "ticker": "MU",                  // 個股 / "MARKET"(市場題材) / "PORTFOLIO"
+  "id": "3661:memory-cycle",        // 去重 key = ticker:slug
+  "ticker": "3661",                  // 個股 / "MARKET"(市場題材) / "PORTFOLIO"
   "slug": "memory-cycle",
   "thesis": "DRAM 進入漲價週期，FY26 毛利率 > 40%",  // 1 句可驗證命題
   "falsification": ["次季 ASP 不再漲", "HBM3E 指引下修>10%"],  // 證偽觀察點
@@ -67,20 +67,20 @@ key = `ticker:slug`。`add` 時：
 
 ```bash
 # 登錄/更新（upsert by ticker:slug）
-python3 tools/thesis_ledger.py add --ticker MU --slug memory-cycle \
+python3 tools/thesis_ledger.py add --ticker 3661 --slug memory-cycle \
   --thesis "DRAM 漲價毛利率>40%" --falsification "ASP 不再漲" "HBM 指引下修" \
   --trigger-type event --trigger-date 2026-06-25 --event earnings \
   --metric "ASP QoQ + 毛利率" --source briefing --ev "+1.0% (7d)"
 
-python3 tools/thesis_ledger.py list [--ticker MU] [--status pending]
+python3 tools/thesis_ledger.py list [--ticker 3661] [--status pending]
 python3 tools/thesis_ledger.py due [--asof YYYY-MM-DD] [--expire-after-days 30]
-python3 tools/thesis_ledger.py resolve --id MU:memory-cycle --verdict passed|failed|partial \
+python3 tools/thesis_ledger.py resolve --id 3661:memory-cycle --verdict passed|failed|partial \
   --actual "..." --note "..." --next-action "..."
-python3 tools/thesis_ledger.py reschedule --id MU:memory-cycle --to YYYY-MM-DD --reason "財報未出"
-python3 tools/thesis_ledger.py merge --from MU:dram-pricing --into MU:memory-cycle
-python3 tools/thesis_ledger.py supersede --id MU:memory-cycle --new-slug hbm-capacity \
+python3 tools/thesis_ledger.py reschedule --id 3661:memory-cycle --to YYYY-MM-DD --reason "財報未出"
+python3 tools/thesis_ledger.py merge --from 3661:dram-pricing --into 3661:memory-cycle
+python3 tools/thesis_ledger.py supersede --id 3661:memory-cycle --new-slug hbm-capacity \
   --thesis "..." --falsification "..." --trigger-type date --trigger-date YYYY-MM-DD
-python3 tools/thesis_ledger.py stats [--ticker MU] [--source briefing] [--since YYYY-MM-DD]
+python3 tools/thesis_ledger.py stats [--ticker 3661] [--source briefing] [--since YYYY-MM-DD]
 ```
 
 ### 退出碼
@@ -109,16 +109,16 @@ python3 tools/thesis_ledger.py stats [--ticker MU] [--source briefing] [--since 
 | `briefing` | 由每日 briefing skill 登錄（Section 8 / Step 0.7） |
 | `portfolio-review` | 由組合審查登錄（Step 0.6） |
 | `stock-analysis` | 由個股深度分析登錄（Step 4a writer） |
-| `signal-inference` | **由訊號推導登錄**（news body / SEC 8-K / 逐字稿量化信號 → thesis 轉換） |
+| `signal-inference` | **由訊號推導登錄**（news body / 重大訊息 / 逐字稿量化信號 → thesis 轉換） |
 
 ### `signal-inference` 流程 + 反幻覺規則
 
-這是 P3 新增的來源，用於從高頻資料（新聞全文、8-K、逐字稿）推導 thesis 候選，補上財報間隙的訊號。
+這是 P3 新增的來源，用於從高頻資料（新聞全文、重訊、逐字稿）推導 thesis 候選，補上財報間隙的訊號。
 
 **必要欄位：**
 - `--source signal-inference`
 - `--ev "signal: <metric> <value>, <source>, conf=<confidence>"` — 暫存訊號來源 provenance
-  - 例：`--ev "signal: wafer_starts +8% QoQ, Reuters/EODHD 2026-06-04, conf=medium"`
+  - 例：`--ev "signal: wafer_starts +8% QoQ, Reuters/FinMind 2026-06-04, conf=medium"`
 
 **反幻覺鎖（不可繞過）：**
 - 每個訊號必須有 `raw_quote`（≤120 字逐字原文引用）存在**源文件**中，才成立
@@ -146,15 +146,15 @@ SIGNAL: {ticker} {metric} {value} ({direction})
 **CLI 範例（signal-inference 登錄）：**
 ```bash
 # 先查既有 slug 避免碰撞
-python3 tools/thesis_ledger.py list --ticker MU
+python3 tools/thesis_ledger.py list --ticker 3661
 
-python3 tools/thesis_ledger.py add --ticker MU --slug wafer-starts-bit-growth \
-  --thesis "MU 投片量 +8% QoQ 預示 FY27 bit 出貨 YoY >25% 且 DRAM ASP 不跌破 -5% QoQ" \
+python3 tools/thesis_ledger.py add --ticker 3661 --slug wafer-starts-bit-growth \
+  --thesis "3661 世芯-KW 投片量 +8% QoQ 預示 FY27 bit 出貨 YoY >25% 且 DRAM ASP 不跌破 -5% QoQ" \
   --falsification "下季 bit shipment YoY <25%" "DRAM ASP QoQ <-5%" "guide 下修 >10%" \
   --trigger-type event --trigger-date 2026-09-25 --event earnings \
   --metric "bit shipment YoY + DRAM ASP QoQ" \
   --source signal-inference \
-  --ev "signal: wafer_starts +8% QoQ, Reuters/EODHD 2026-06-04, conf=medium"
+  --ev "signal: wafer_starts +8% QoQ, Reuters/FinMind 2026-06-04, conf=medium"
 ```
 
 **命中率追蹤（閉環驗證 P3 是否真有價值）：**
@@ -163,13 +163,13 @@ python3 tools/thesis_ledger.py add --ticker MU --slug wafer-starts-bit-growth \
 python3 tools/thesis_ledger.py stats --source signal-inference
 
 # 查特定 ticker 的 signal-inference thesis
-python3 tools/thesis_ledger.py list --ticker MU --status pending
+python3 tools/thesis_ledger.py list --ticker 3661 --status pending
 ```
 
 ## 驗收流程（Claude 端）
 
 1. `due` 取今日到期清單（工具同時自動把逾期 >30 天的轉 `expired`）
-2. 每筆讀 `trigger.metric` → 用 MCP（yfinance / earnings cache / technical）抓**實際數字**
+2. 每筆讀 `trigger.metric` → 用 MCP（FinMind / earnings cache / technical）抓**實際數字**
 3. 對照 `thesis` + `falsification` 判 `passed` / `failed` / `partial`
 4. 抓不到新數（財報還沒出）→ `reschedule` 維持 pending，**絕不猜 verdict**
 5. `resolve --next-action` 寫下一步操作 → 併入日報 actionable

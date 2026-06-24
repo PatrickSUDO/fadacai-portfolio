@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-simple_dcf.py — 自建 2-stage DCF（取代 FMP free tier 缺的 getDCFValuation）。
+simple_dcf.py — 自建 2-stage DCF（台股自建估值錨，免付費 API）。
 
-純 stdlib、無外部依賴、deterministic。Skill 把已從 yfinance MCP 抓到的
+純 stdlib、無外部依賴、deterministic。Skill 把已從 FinMind MCP 抓到的
 FCF / shares / cash / debt / growth 餵進來，得到內在價值/股，作 sanity flag
 （不進 EV，僅與三錨點公允價交叉）。
 
@@ -72,11 +72,11 @@ def two_stage_dcf(fcf0: float, shares: float, cash: float, debt: float,
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="自建 2-stage DCF (取代 FMP free tier)")
-    p.add_argument("--fcf", type=float, required=True, help="自由現金流 TTM (絕對值, USD)")
+    p = argparse.ArgumentParser(description="自建 2-stage DCF (台股自建估值錨)")
+    p.add_argument("--fcf", type=float, required=True, help="自由現金流 TTM (絕對值, NT$)")
     p.add_argument("--shares", type=float, required=True, help="流通股數")
-    p.add_argument("--cash", type=float, default=0.0, help="總現金 (USD)")
-    p.add_argument("--debt", type=float, default=0.0, help="總負債 (USD)")
+    p.add_argument("--cash", type=float, default=0.0, help="總現金 (NT$)")
+    p.add_argument("--debt", type=float, default=0.0, help="總負債 (NT$)")
     p.add_argument("--growth", type=float, required=True, help="第 1 年 FCF 成長率 (小數, 如 0.30)")
     p.add_argument("--wacc", type=float, default=0.10, help="折現率 (預設 0.10)")
     p.add_argument("--terminal", type=float, default=0.03, help="終值成長率 (預設 0.03)")

@@ -10,13 +10,13 @@
       "WebSearch",
       "WebFetch",
       "Task",
-      "mcp__firstrade-server",
-      "mcp__yfinance-advanced",
+      "mcp__shioaji-server",
+      "mcp__finmind-server",
       "mcp__technical",
-      "mcp__eodhd-mcp",
-      "mcp__sec-edgar-mcp",
-      "mcp__fmp-mcp",
-      "mcp__polymarket-mcp"
+      "mcp__cnyes-news",
+      "mcp__mops-server",
+      "mcp__twse-server",
+      "mcp__chip-server"
     ]
   }
 }

@@ -160,12 +160,12 @@ class TestConfidenceLevel(unittest.TestCase):
     """Verify confidence=low for high revenue stdev, confidence=ok for stable growth."""
 
     def test_cyclical_revenue_high_stdev_is_low(self):
-        # MU-like swings: +80%, -40%, +67% → stdev >> 30%
+        # 2330-like swings: +80%, -40%, +67% → stdev >> 30%
         # newest-first: 180, 100, 167, 100
         revs = [180e9, 100e9, 167e9, 100e9]
         h = make_highlights(revenue_ttm=180e9)
         f = make_financials(revs)
-        result = ff.compute_self_valuation("MU", h, f)
+        result = ff.compute_self_valuation("2330", h, f)
         self.assertEqual(result["confidence"], "low")
         # Still computes own_fwdEPS (just flagged as low confidence)
         self.assertIsNotNone(result["own_fwdEPS"])
@@ -176,7 +176,7 @@ class TestConfidenceLevel(unittest.TestCase):
         revs = [172.8e9, 144e9, 120e9, 100e9]
         h = make_highlights(revenue_ttm=172.8e9, profit_margin=0.25)
         f = make_financials(revs)
-        result = ff.compute_self_valuation("NVDA", h, f)
+        result = ff.compute_self_valuation("2454", h, f)
         self.assertEqual(result["confidence"], "ok")
         self.assertIsNotNone(result["own_fwdEPS"])
 
@@ -339,7 +339,7 @@ class TestMarginTrend(unittest.TestCase):
     """USE_MARGIN_TREND: use avg(last2) when both positive, rising, |Δ|<3pp."""
 
     def test_margin_trend_applied_when_steadily_rising(self):
-        if not ff.USE_MARGIN_TREND:
+        if not ffE_MARGIN_TREND:
             self.skipTest("USE_MARGIN_TREND is disabled")
         # Margins: m0=20%, m1=18% — both positive, rising, |Δ|=2%<3%
         revs = [200e9, 180e9, 150e9]
@@ -363,7 +363,7 @@ class TestMarginTrend(unittest.TestCase):
         self.assertAlmostEqual(result["net_margin"], 0.18, places=3)
 
     def test_margin_trend_not_applied_when_change_exceeds_3pp(self):
-        if not ff.USE_MARGIN_TREND:
+        if not ffE_MARGIN_TREND:
             self.skipTest("USE_MARGIN_TREND is disabled")
         # m0=25%, m1=20%: rising but |Δ|=5%>3% — trend avg NOT applied
         revs = [200e9, 180e9, 150e9]

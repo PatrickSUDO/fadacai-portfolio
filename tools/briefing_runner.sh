@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # briefing_runner.sh — launchd entry point for daily briefing push.
 #
-# Called by com.fadacai.briefing.plist at 17:00 system-local (CET/CEST) on
-# weekdays — one attempt per day, no backup windows.
-# Checks NYSE calendar, adds --codex on Fridays, then invokes Claude CLI.
+# Called by com.fadacai.briefing.plist at 14:00 台灣時間 (Asia/Taipei) on
+# weekdays — one attempt per day, no backup windows. 台股 13:30 收盤後、盤後
+# 三大法人買賣超約 14:00 前公布。
+# Checks TWSE calendar, adds --codex on Fridays, then invokes Claude CLI.
 
 set -euo pipefail
 
-# Report/log/trading-day timestamps stay on US market time (ET).
+# Report/log/trading-day timestamps stay on Taiwan market time (Asia/Taipei).
 # NOTE: TZ lives here, NOT in the plist's EnvironmentVariables — keeping it out
 # of the plist means launchd's StartCalendarInterval is evaluated in the system
-# local timezone (CET/CEST), so the job fires at the wall-clock time we set.
-: "${TZ:=America/New_York}"
+# local timezone, so the job fires at the wall-clock time we set.
+: "${TZ:=Asia/Taipei}"
 export TZ
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,7 +36,7 @@ SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
-# ── NYSE calendar check ────────────────────────────────────────────────────
+# ── TWSE calendar check ────────────────────────────────────────────────────
 if [[ "$SKIP_NON_TRADING" == "true" ]]; then
   if ! python3 "$SCRIPT_DIR/check_trading_day.py"; then
     log "Non-trading day — exiting without briefing"
@@ -52,22 +53,22 @@ if [[ "$FRIDAY_CODEX" == "true" && "$DOW" == "4" ]]; then
 fi
 
 # ── Pre-load data caches (non-fatal) ──────────────────────────────────────
-log "Refreshing macro cache (FRED)..."
+log "Refreshing macro cache (FinMind 台灣總經)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_macro.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "macro refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
-log "Refreshing earnings cache (yfinance)..."
+log "Refreshing earnings cache (FinMind 財報/月營收)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/earnings_history.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "earnings refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
-log "Refreshing fundamentals cache (EODHD)..."
+log "Refreshing fundamentals cache (FinMind)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_fundamentals.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "fundamentals refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
-log "Refreshing news cache (EODHD raw articles)..."
+log "Refreshing news cache (中文新聞 raw articles)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_news.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "news refresh failed (non-fatal, briefing continues without news cache)"
