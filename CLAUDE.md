@@ -282,6 +282,17 @@ Agent(
   - polymarket-mcp: `get_trending_markets()`
 - Health test also fails → fallback to WebSearch/WebFetch for equivalent data
 - 在輸出中標記 "⚠️ [server] MCP 不可用，使用替代數據源"
+- **fmp-mcp 專屬 fallback（session 過期無需 `/mcp` reconnect）**：`mcp__fmp-mcp__*` 回 `Session not found or expired` 時，**不需手動 reconnect**，直接跑旁路 helper（每次建全新 MCP session，永不過期）：
+  ```bash
+  python3 tools/fmp_query.py <toolName> [--args '<json>']
+  ```
+  常用範例：
+  - `python3 tools/fmp_query.py getBiggestGainers`
+  - `python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`
+  - `python3 tools/fmp_query.py getEarningsCalendar --args '{"from":"2026-06-28","to":"2026-07-28"}'`
+  - `python3 tools/fmp_query.py getCompanyProfile --args '{"symbol":"AAPL"}'`
+  - `python3 tools/fmp_query.py getMostActiveStocks`
+  結果直接是 JSON，等同 MCP tool 的 structured output。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
 
 ## Research Boundaries
 - 不主動研究用戶未要求的付費 API/服務
@@ -293,9 +304,9 @@ Agent(
 
 ## Skill 模型分工（2026-05-05）
 
-### 數據收集 subagent — Haiku 4.5
+### 數據收集 subagent — Sonnet 4.6（2026-06-27 由 Haiku 4.5 升級）
 所有 skill 的平行數據收集 Agent 都指定 `subagent_type: "data-collector"`（見 `.claude/agents/data-collector.md`）。
-Data-collector 每次啟動是全新 context（無歷史），Haiku 完全勝任純 MCP 抓資料工作。
+Data-collector 每次啟動是全新 context（無歷史）。**原用 Haiku 4.5，但兩度整批造假（2026-06-24 COHR、2026-06-27 歷史報酬批次 latest_close 跨票錯置）→ 升 Sonnet 4.6 + agent 內加反幻覺鐵則。** 主程仍須對權威價（Firstrade）交叉驗證，對不上即整批丟棄（見 `feedback/subagent-hallucination-guard.md`）。
 
 ### 主 skill 執行模型（2026-06-13 更新：全面回歸 Opus 4.8）
 
@@ -315,7 +326,7 @@ Data-collector 每次啟動是全新 context（無歷史），Haiku 完全勝任
 | `/trade-journal` review/summary | **Sonnet 4.6** | 帶輕度分析 |
 | `/trade-journal` log | **Haiku 4.5** | 純記錄/格式化（frontmatter 預設 Sonnet，log 可降 Haiku）|
 | `/mcp-health` | **Haiku 4.5** | 純連線測試 |
-| data-collector subagent | **Haiku 4.5** | 純 MCP 抓資料 |
+| data-collector subagent | **Sonnet 4.6** | 純 MCP 抓資料（2026-06-27 由 Haiku 升級，反幻覺）|
 | probability-honesty-checker subagent | **Opus 4.8** | 機率紀律執法者，用旗艦 |
 
 **長 context：** session > 100k 時先 `/compact`，再繼續執行。換主題先 `/clear`。
