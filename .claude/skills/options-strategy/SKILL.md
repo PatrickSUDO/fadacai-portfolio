@@ -122,9 +122,9 @@ For stocks with **revision 下修/flat + 現價已超分析師 PT**（不以 RSI
    | Covered Call | **harvest 端**：肥利潤落袋替代直接賣股 | 🟢 認列桶 ≥100 股 + revision 轉折/題材降溫 | **信念桶不開 CC 封頂**（>10% 紅線減碼除外）；strike 近 R1/分析師 PT，30-45 DTE |
    | Bull Call Spread | **redeploy 端**：加速領導者貼高/超買的定義風險參與 | revision 上修中 + 貼 52W 高（「超買」不是不追的理由，是換結構的理由） | max loss = net debit，凸性參與強者恆強 |
    | Bull Put Spread | **redeploy 端**：支撐區進場替代限價單 | 回檔至支撐 + thesis 完好 | short strike 貼支撐，寬 $10-20 |
-   | LEAPS deep ITM | **信念端**：股票替代，釋放資金給飛輪 | 🔵 信念桶多年 thesis | delta 0.80–0.88、12-18 個月、<90 DTE 評估 roll |
+   | LEAPS deep ITM | **信念端**：股票替代，釋放資金給飛輪 | 🔵 信念桶多年 thesis | delta 0.80–0.88、12-18 個月、<90 DTE 評估 roll；**未實現 >+80% → 評估 roll-up 收回本金留曝險**（LEAPS 版分批停利，per `feedback/tiered-profit-taking.md`） |
    | Bear Call Spread | 對沖/超目標價 harvest 輔助 | revision 下修 + 超分析師 PT 的認列桶 | 不對 revision 上修中的持倉開（會反向封頂強者） |
-   | 短 DTE OTM Call 樂透 | 衛星倉 | binary catalyst 30d 內 + 具體論述 | 總成本 ≤2% 帳戶，IV Rank >80 不做 |
+   | 短 DTE OTM Call 樂透 | 衛星倉 | binary catalyst 30d 內 + 具體論述 | 總成本 ≤2% 帳戶，IV Rank >80 不做；**+100% 賣半回本，剩餘 house-money runner** |
 
 6. **Volatility-Adjusted Guidance**
    Based on `mcp__technical-mcp__get_technical_indicators` volatility regime:

@@ -156,7 +156,8 @@ For each option position:
 |------|------|-----------|---|----------------|---------|
 
 - 正股 Swing Risk = 帳上未實現利潤 + 潛在回吐（用 ATR% 估波動）；Options = Premium 成本 + 未實現利潤（歸零 = Expiry Risk）
-- **判定門檻**：肥利潤（>+40%）+ 高 β（>2）+ revision 轉折/題材降溫 → `🔴 建議 harvest`；肥利潤但 revision 仍上修 → `🟡 監測`（結構領導者不純因新高 trim，per `feedback/momentum-valuation-symmetry.md` 規則 3）
+- **判定門檻**：肥利潤（>+40%）+ 高 β（>2）+ revision 轉折/題材降溫 → `🔴 建議 harvest`（可提前梯級）；肥利潤但 revision 仍上修 → `🟡 按梯級走`（結構領導者不純因新高 trim，per `feedback/momentum-valuation-symmetry.md` 規則 3）
+- **梯級停利對照（認列桶每倉必列，per `feedback/tiered-profit-taking.md`）**：未實現 % → 目前級距（L1 +30%/L2 +60%/L3 +100%/L4+ 每+50pp）→ 累計已減碼 vs 應達比例 → 缺口與下一級 GTC 掛價。保底 30% runner 不列入建議賣量
 - 建議動作必須具體：落袋 N 股 @ GTC $X / 開 covered call / 用價差替代 / Roll（附可掛單，per `feedback/actionable-firstrade-orders.md`）
 
 **E2b. Realized vs Unrealized 比例健檢（組合層）：**
@@ -166,6 +167,7 @@ For each option position:
 比例: Realized ≈ X.X× |未實現虧損|（目標 ≈ 4×）
 ```
 - 比例反轉（一直認列虧損、獲利全掛浮動）→ `🔴 爆倉訊號 flag`
+- **汰弱認列虧損單獨列示**：`其中汰弱認列 −$X（策略性成本，不進爆倉訊號判讀）`——4× 是診斷指標非 KPI，不可為保比率而不砍真弱（Goodhart 防護，per `feedback/realized-pnl-business-model.md`）
 - 落袋節奏檢查：認列循環桶日常 Rolling 落袋目標 0.5–1%/日，最近 5 個交易日實際認列 $X
 
 ### F. Key Alerts
@@ -174,6 +176,8 @@ For each option position:
 - Sector concentration warnings
 - Sell put margin utilization estimate
 - **Swing Risk 未處理**：E2a 標 🔴 的倉位若無對應掛單 → 列入 alerts
+- **梯級停利缺口**：E2a 梯級對照有缺口且無補掛單 → `🟡 梯級缺口`
+- **財報叢集曝險**：未來 7 日財報窗內持倉合計 >20% → `🔴 叢集曝險 X%`（提示窗內認列桶提前 harvest + 暫停新增同窗曝險）
 - **現金滯留**：現金 >15–20% 且無明確部署計畫（無 GTC 掛單、無 dry powder 理由）→ `🔴 飛輪滲漏 flag`
 
 ### G. 個股趨勢與分析
@@ -385,7 +389,7 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
 
    > 診斷基準 = **價格 vs revision 背離**：價弱但 revision↑ = 洗盤該加；價強但 revision↓/flat = 峰值該 harvest。「弱」= fundamental 惡化或最弱動能無催化（非當日紅K）；「強」= estimate 上修/成長加速（非當日超買）。
 
-   **① Harvest 掃描（賣峰值強度）**：認列桶中 revision 轉折（up:down 惡化/翻 flat）/ 題材降溫 / Swing Risk 🔴 者 → 列 harvest 清單，附 GTC 賣限價階梯或 covered call 結構
+   **① Harvest 掃描（賣峰值強度）**：認列桶中 (i) **梯級停利到價/缺口**（per `feedback/tiered-profit-taking.md`）(ii) revision 轉折（up:down 惡化/翻 flat）/ 題材降溫 / Swing Risk 🔴（可提前下一級）→ 列 harvest 清單，附 GTC 賣限價階梯或 covered call 結構
    **② 砍真弱掃描（騰名額）**：僅在 14–18 上緣需要名額時。thesis 破（根因 (a)）OR 最弱動能且無催化者 → 列砍單，依砍因歸層（組合理由→L1 / thesis 破→L2）
    **③ 現金滯留檢查**：現金 % + 既有 GTC 掛單覆蓋額 → 若 >15–20% 閒置且無部署計畫 → 🔴 flag
    **④ Redeploy 配對（每筆 harvest/砍單必配一個去處）**：第一順位 = 信念桶領導者 / L1 中 revision 最陡的領漲者（列 plan.md L1 各標的 revision up:down 比較表）；要嘛部署（附 GTC 買單階梯 / spread 結構），要嘛標明 `dry powder + 觸發條件`。**禁 default 流向「便宜但 revision 平/下修」的落後者**

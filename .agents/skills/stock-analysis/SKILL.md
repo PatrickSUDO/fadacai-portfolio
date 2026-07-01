@@ -250,6 +250,7 @@ Use `mcp__technical-mcp__get_technical_indicators` and `mcp__technical-mcp__get_
 - 深跌至支撐 + **revision 未惡化**：洗盤錯殺，加碼機會（RSI < 30 可作超賣佐證）；revision 惡化中 → 受損 turnaround，等催化不接刀
 - High ATR regime: wider stop-loss needed, consider smaller position
 - 原則：**revision 定方向，估值只定下手結構與 size**；RSI 僅數值列示，過高側不觸發任何「不追/減碼」判定
+- **revision coverage 分級（引用必附 N）**：分析師數 N≥15 全權重；8–14 半權重（須與 trend/季成長印證）；<8 不單獨觸發（改靠 §4b P3 硬數字 + beat rate + guide）；上次財報後 >45 天標 stale 降權
 
 ### SEC EDGAR Insights
 - Insider Trading (90 days): net buying/selling activity

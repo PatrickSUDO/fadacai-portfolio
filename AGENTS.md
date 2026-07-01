@@ -246,6 +246,9 @@ Agent(
 - **兩層候補**：🟡L1 On-Deck（thesis 驗證+觸發明確，補空位只從 L1 拉）/ 🔵L2 Research Pool（需修復或擴 Universe）；砍倉依砍因歸層（組合理由→L1，thesis 破→L2）。
 - **機會成本閘門（桶間升級/降級/部署皆強制）**：新倉須明顯優於最弱在倉名額才進 — 相關 beta 門檻最高（須擠掉弱倉、不淨增），無相關 hedge/填缺口門檻較低；14–18 上緣時砍一進一。
 - **停利再投入飛輪（汰弱留強的閉環，總原則）**：認列循環桶**系統性 harvest 峰值強度**（revision 轉折/題材降溫的肥利潤）+ **砍真弱**（thesis 破 OR 最弱動能無催化）→ **盈餘必配對 redeploy 決策，第一順位投入「加速中強度」**（信念桶領導者 / L1 中 revision 上修的領漲者），**不讓現金閒置滲漏**（每次 harvest 同一次 review 內要嘛 redeploy 上行、要嘛標明 dry powder 理由 + 觸發）。定義鎖死：**「弱」= fundamental 惡化或最弱動能無催化，非當日紅K**（per `feedback/weak-signal-root-cause.md`）；**「強」= estimate 上修/成長加速，非當日超買**（per `feedback/momentum-valuation-symmetry.md`）；funding 源用**已實現獲利 + 真弱倉，非砍虧損倉**（與上面「禁砍 loser 加碼 winner」相容——飛輪靠 realized gain 轉動，不靠認列虧損）。Guardrails（單倉>10%、14–18 支、相關度、去相關 hedge sleeve）是飛輪**護欄不是矛盾**：集中往強度跑、但不破紅線。詳 `feedback/momentum-valuation-symmetry.md`。
+- **梯級停利（認列桶 harvest 的機械化觸發，2026-07-01）**：未實現 +30%/+60%/+100% 各賣 15%/15%/20%，之後每 +50pp 賣 10%；**保底 30% runner 永不因停利出場**（只因 thesis 破/汰弱換強/>10% 才動）。GTC 預掛下一級價、每次 full review 校正；revision 轉折 → 提前下一級；revision 上修中不提前。樂透 +100% 賣半；LEAPS >+80% 評估 roll-up 收本金留曝險。信念桶與 hedge sleeve 不適用。詳 `feedback/tiered-profit-taking.md`。
+- **Revision 訊號 coverage 分級**：分析師數 N≥15 全權重；8–14 半權重（須與 trend/成長數據互相印證）；<8 不單獨觸發加減碼（改靠 P3 硬數字 + beat rate + guide）。上次財報後 >45 天的 revision 視為 stale。
+- **Realized ≈ 4× 是診斷指標非 KPI**（Goodhart 防護）：汰弱認列的虧損屬策略性成本，**單獨列示、不進爆倉訊號判讀**——不可為了保比率而不砍真弱。
 - **即時 roster（信念/認列/L1/L2 名單）權威來源 = `plan.md`「組合架構 v2」**；改動 roster 同步更新該節。
 
 ## MCP Tools Available

@@ -252,6 +252,12 @@ Read research/naked-call-watchlist.md
 
 5. 若 cache `status` ≠ `"ok"` 或 ticker 不在 cache → 該欄填 `(unavailable)`，並在輸出末尾加註 `⚠️ N tickers 缺 earnings cache（請手動 python3 tools/earnings_history.py --force）`
 
+6. **財報叢集曝險（book 級檢查，必做）**：
+   - 計算「未來 7 個日曆日內有財報的持倉」合計佔組合 %（權重從 Step 0b 持倉算）
+   - 表格後固定輸出一行：`📊 財報叢集：未來 7 日窗內持倉合計 X%（N 檔）`
+   - **> 20% → 🔴 叢集警示**（進 Key Alerts）：提示 ① 該窗內 Swing Risk 🔴 / 梯級到價的認列桶倉位**提前 harvest**（財報前落袋，不賭 binary）② 暫停對同窗 ticker 新增曝險（現股與選擇權皆是，選擇權本有 ±48h 禁令）③ 窗內合計曝險與各檔 beat rate 一併列出供判斷
+   - 10–20% → 🟡 資訊性標註，不強制動作
+
 > 詳見 `feedback/earnings-reaction-window.md` 與 `feedback/weak-signal-root-cause.md`
 
 ### 5. Technical Snapshot
@@ -291,7 +297,9 @@ Read research/naked-call-watchlist.md
 **強訊號對稱分類（看到貼高/大漲訊號必做 — per `feedback/momentum-valuation-symmetry.md`；RSI 過高不是輸入）：**
 
 對任一貼 52W 高 / 單日大漲 / 已漲多訊號，先查 **revision 方向**再行動：
-1. estimate 上修中（revisions up ≫ down / eps_revision_30d_pct > 0）+ 成長加速？→ **加速領導者**：在倉**讓它 run、不 trim**（強者愈強）；新資金不否決，改 starter + 回檔 ladder + bull call spread 定義風險
+1. estimate 上修中（revisions up ≫ down / eps_revision_30d_pct > 0）+ 成長加速？→ **加速領導者**：在倉**讓它 run、不 trim**（強者愈強；認列桶仍按梯級停利級距走）；新資金不否決，改 starter + 回檔 ladder + bull call spread 定義風險
+
+> ⚠️ revision 引用必附 coverage：**分析師數 N≥15 全權重；8–14 半權重（須與 trend/季成長印證）；<8 不單獨觸發加減碼**；上次財報後 >45 天的 revision 標 stale 降權（per `feedback/momentum-valuation-symmetry.md` 規則 6）
 2. estimate 翻下修/flat + 高倍數？→ **峰值 harvest 候選**：認列桶列入 harvest 清單（這才是「賣強」的正當時機）
 3. weak_downtrend 反彈 + momentum 低 + 無 revision 支撐？→ **受損 turnaround**：等催化驗收，不接刀（今天綠 ≠ 領導力）
 
@@ -305,6 +313,8 @@ Read research/naked-call-watchlist.md
 - 財報 < 3 天（用已知財報日歷）
 - 選擇權 < 14 天到期
 - **Swing Risk**：認列桶肥利潤（>+40%）+ 高 β + revision 轉折/題材降溫，且無對應落袋掛單 → `🔴 Swing Risk 未處理`（附建議可掛單）
+- **梯級停利到價/缺口**：認列桶倉位觸及下一梯級（+30/+60/+100/每+50pp）而無對應 GTC 掛單，或存量累計減碼低於級距應達比例 → `🟡 梯級缺口`（附補掛單，per `feedback/tiered-profit-taking.md`）
+- **財報叢集**：未來 7 日財報窗內持倉合計 >20% → `🔴 叢集曝險 X%`（見 Section 4.5 step 6）
 - **現金滯留**：現金 >15–20% 且無 GTC 掛單覆蓋、無 dry powder 理由 → `🔴 飛輪滲漏`
 
 ### 7. 計畫進度 Quick
@@ -565,7 +575,7 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 精簡三問（完整版在 /portfolio-review 4.5；briefing 只掃描 + 給可掛單，不展開全表）：
 
-1. **該 harvest 誰？** 認列桶（roster 見 plan.md 組合架構 v2）中 revision 轉折/題材降溫/Swing Risk 🔴 者 → 每筆附 GTC 賣限價或 covered call 結構。**revision 仍上修的領導者不列**（超買/新高不是 harvest 理由）
+1. **該 harvest 誰？** 認列桶（roster 見 plan.md 組合架構 v2）中 ① **梯級停利到價/缺口**（+30/+60/+100 級距，per `feedback/tiered-profit-taking.md`）② revision 轉折/題材降溫/Swing Risk 🔴（可提前下一級）→ 每筆附 GTC 賣限價或 covered call 結構。**revision 仍上修的領導者只按級距走，不提前**（超買/新高不是 harvest 理由）
 2. **現金滯留了嗎？** 現金 % vs 既有 GTC 買單覆蓋 → 閒置 >15–20% 無計畫 → 🔴 flag
 3. **盈餘該去哪？** L1 On-Deck + 信念桶中 revision 最陡的領漲者 1–2 檔 → 附進場結構（GTC 階梯 / bull put spread / bull call spread 貼高參與 / LEAPS）
 

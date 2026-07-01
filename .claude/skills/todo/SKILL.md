@@ -57,7 +57,8 @@ model: claude-sonnet-4-6
 - 不需要立刻動，但需要盯的價位或事件
 
 ### F. 飛輪 / 停利再投入（每次必掃 — per `feedback/momentum-valuation-symmetry.md`）
-- **今日該 Realize 什麼**：認列桶 Swing Risk 🔴（肥利潤 + 高β + revision 轉折）→ 列 harvest 行動（附 GTC 賣單/CC 結構）
+- **梯級停利到價**：認列桶倉位觸及/逼近下一級（+30/+60/+100/每+50pp，per `feedback/tiered-profit-taking.md`）而無 GTC 掛單 → 列補掛行動（含級距價 + 股數）
+- **今日該 Realize 什麼**：認列桶 Swing Risk 🔴（肥利潤 + 高β + revision 轉折）→ 列 harvest 行動（附 GTC 賣單/CC 結構，可提前下一級）
 - **Harvest 配對去處**：每筆停利同時列 redeploy 目標（信念桶領導者 / L1 revision 最陡者 + 進場結構），或標 `dry powder + 觸發條件`
 - **現金滯留**：現金 >15–20% 且無掛單覆蓋、無理由 → 🔴 列「部署決策」行動項
 
