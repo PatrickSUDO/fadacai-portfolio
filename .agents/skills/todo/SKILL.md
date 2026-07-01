@@ -32,7 +32,7 @@ model: claude-sonnet-4-6
 
 ## 分析框架
 
-掃描以下五個維度，找出需要行動的項目：
+掃描以下六個維度，找出需要行動的項目：
 
 ### A. 選擇權急迫性（最優先）
 - 剩餘天數 < 14 天的合約 → 🔴 急迫
@@ -44,16 +44,22 @@ model: claude-sonnet-4-6
 - 從 `plan.md` 找「⏳ 待執行」項目
 - 對照當前市價，判斷觸發條件是否已達成
 
-### C. 個股異常（日內）
-- 今日單檔跌超 5% → 🔴 需確認是否止損或加碼
-- 今日單檔漲超 8% → 🟡 考慮是否獲利了結或開 CC
+### C. 個股異常（日內 — 必過根因/revision 閘門，禁純價格反應）
+- 今日單檔跌超 5% → 先跑根因分類（`feedback/weak-signal-root-cause.md`）：只有 thesis 破裂 (a) 才列減碼；earnings reaction / sector rotation / noise → 「⏸ 不動」。revision 仍上修的深跌 = 洗盤錯殺 → 列加碼候選
+- 今日單檔漲超 8% → 查 revision 方向（`feedback/momentum-valuation-symmetry.md`）：**revision 上修中的加速領導者 → 讓 run，不列停利**（強者愈強，超買非賣出理由）；revision 轉折/flat + 高倍數 + 認列桶 → 列 harvest（GTC 賣階梯或開 CC）。**CC 只對認列循環桶開，信念桶不封頂**（>10% 紅線減碼除外）
 
 ### D. 待開新倉位
 - 從對話或計畫中識別「討論過但尚未進場」的 Spread
 - 確認市況是否符合進場條件
+- 新倉必過機會成本閘門：優於最弱在倉名額才進；14–18 上緣 → 指名砍一進一
 
 ### E. 需設警報的監控項目
 - 不需要立刻動，但需要盯的價位或事件
+
+### F. 飛輪 / 停利再投入（每次必掃 — per `feedback/momentum-valuation-symmetry.md`）
+- **今日該 Realize 什麼**：認列桶 Swing Risk 🔴（肥利潤 + 高β + revision 轉折）→ 列 harvest 行動（附 GTC 賣單/CC 結構）
+- **Harvest 配對去處**：每筆停利同時列 redeploy 目標（信念桶領導者 / L1 revision 最陡者 + 進場結構），或標 `dry powder + 觸發條件`
+- **現金滯留**：現金 >15–20% 且無掛單覆蓋、無理由 → 🔴 列「部署決策」行動項
 
 ---
 
@@ -112,9 +118,9 @@ model: claude-sonnet-4-6
 
 ### B1. 獨立第一性分析（預設，independent first-principles）
 
-**核心原則：Codex 不看 Codex 的行動清單**（不給 🔴/🟡/🟢 分級與排序），只給 raw 持倉 + 計畫 ⏳ 項目 + 市場數據，讓它獨立排今日 priorities。Codex 與 Codex 兩個獨立輸出並排比較。
+**核心原則：Codex 不看 Claude 的行動清單**（不給 🔴/🟡/🟢 分級與排序），只給 raw 持倉 + 計畫 ⏳ 項目 + 市場數據，讓它獨立排今日 priorities。Claude 與 Codex 兩個獨立輸出並排比較。
 
-呼叫 Codex（`subagent_type: "codex:codex-rescue"`），prompt 模板：
+呼叫 Codex（**用 AGENTS.md「Codex 呼叫方式」的 `codex exec` CLI；勿用 codex:codex-rescue subagent / `/codex:rescue`，會卡 superpowers preamble**），prompt 首行加強制 no-tool 指令，模板：
 
 ```
 我是一名美股投資人，使用 Level 2 options + Spread 的 margin 帳戶。
@@ -147,7 +153,7 @@ model: claude-sonnet-4-6
 **規則：**
 - 必須講股數/口數
 - 觸發條件必須 falsifiable
-- 不假設 Codex 已說過什麼
+- 不假設 Claude 已說過什麼
 
 請以繁體中文回覆，控制在 700 字內。
 
@@ -156,7 +162,7 @@ model: claude-sonnet-4-6
 
 ### B2. 機會掃描（opportunity scout）
 
-呼叫 `/codex:rescue`：
+呼叫 Codex（用 AGENTS.md「Codex 呼叫方式」的 `codex exec` CLI）：
 
 ```
 我目前的美股持倉（含市值占比）：
@@ -178,11 +184,11 @@ model: claude-sonnet-4-6
 
 ### B3. 輪動分析（rotation scan）
 
-**Step 1 — Codex 預先收集數據：**
+**Step 1 — Claude 預先收集數據：**
 - `mcp__technical-mcp__get_sector_rotation()` → 全板塊 ETF 相對強度 vs SPY（leading / improving / weakening / lagging）
 - `mcp__technical-mcp__get_batch_indicators(tickers=[所有持倉])` → 個股動能分數 + 趨勢
 
-**Step 2 — 呼叫 `/codex:rescue`：**
+**Step 2 — 呼叫 Codex（用 AGENTS.md「Codex 呼叫方式」的 `codex exec` CLI）：**
 
 ```
 我的美股持倉（含市值占比 + 板塊歸屬）：
@@ -221,14 +227,14 @@ model: claude-sonnet-4-6
 **Codex 不該做：** [...]
 **Codex Verdict：** [...]
 
-#### 並排比較：Codex vs Codex（獨立排序）
+#### 並排比較：Claude vs Codex（獨立排序）
 
-| 項目 | Codex 排序 | Codex 排序 | 一致性 |
+| 項目 | Claude 排序 | Codex 排序 | 一致性 |
 |------|------------|-----------|--------|
-| #1 操作 | [Codex] | [Codex] | 同 / 異 |
-| #2 操作 | [Codex] | [Codex] | 同 / 異 |
-| #3 操作 | [Codex] | [Codex] | 同 / 異 |
-| Verdict | [Codex] | [Codex] | 同 / 異 |
+| #1 操作 | [Claude] | [Codex] | 同 / 異 |
+| #2 操作 | [Claude] | [Codex] | 同 / 異 |
+| #3 操作 | [Claude] | [Codex] | 同 / 異 |
+| Verdict | [Claude] | [Codex] | 同 / 異 |
 
 **真實共識 priorities**（兩邊都排前 3 的）：[1-3 條 — 高信心今天做]
 **真實分歧**（排序差很多的）：[1-3 條 — 值得深入]
@@ -240,8 +246,8 @@ model: claude-sonnet-4-6
 [B3 Codex 完整回覆]
 
 ---
-**值得追蹤的新機會：** [從 B2 挑 1-2 個 Codex 也認同的]
-**輪動 actionable：** [從 B3 挑 1-2 條 Codex 也認同的調倉操作]
+**值得追蹤的新機會：** [從 B2 挑 1-2 個 Claude 也認同的]
+**輪動 actionable：** [從 B3 挑 1-2 條 Claude 也認同的調倉操作]
 ```
 
 ### 進階：`--codex-adversarial`（opt-in 壓力測試）

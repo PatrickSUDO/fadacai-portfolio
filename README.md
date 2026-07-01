@@ -43,14 +43,12 @@ flowchart TD
     end
 
     subgraph Models ["🤖 AI Model 分流（Cost Optimization）"]
-        HAIKU["🟡 Haiku 4.5<br/>data-collector subagent<br/>mcp-health · trade-journal log<br/>純機械 · no synthesis"]
-        SONNET["🔵 Sonnet 4.6<br/>日常分析合成<br/>briefing quick+telegram<br/>todo · journal review"]
-        OPUS["🟠 Opus 4.8<br/>中等深度合成<br/>briefing full<br/>options-strategy"]
-        FABLE["🔴 Fable 5<br/>最強旗艦 · 重推理<br/>portfolio-review · ev-check<br/>briefing deep · stock-analysis<br/>長 context · 機率/EV"]
+        SONNET["🔵 Sonnet 4.6<br/>data-collector subagent<br/>mcp-health · trade-journal log<br/>日常分析合成 · briefing quick+telegram<br/>todo · journal review · 純機械"]
+        OPUS["🟠 Opus 4.8<br/>旗艦推理<br/>portfolio-review · ev-check<br/>briefing full/deep · stock-analysis<br/>options-strategy · 機率/EV"]
     end
 
-    s0e --> SONNET & OPUS & FABLE
-    Skills -->|"subagent_type: data-collector"| HAIKU
+    s0e --> SONNET & OPUS
+    Skills -->|"subagent_type: data-collector"| SONNET
 
     subgraph MCP ["🔌 7 MCP Servers — 外部即時數據"]
         direction LR
@@ -63,7 +61,7 @@ flowchart TD
         PM["🎲 polymarket-mcp<br/>預測市場概率"]
     end
 
-    HAIKU -->|平行呼叫（Retry 3x）| MCP
+    SONNET -->|平行呼叫（Retry 3x）| MCP
     s0b --> FT
     Hook -->|讀寫| JRL
 
@@ -494,7 +492,7 @@ launchd (每日 ET 11:30，NYSE 交易日)
 ## 如何擴展
 
 - **新增 skill**：在 `.claude/skills/<name>/SKILL.md` 建立，frontmatter 設 `user_invocable: true` + `description`，內文遵循 `CLAUDE.md` 的 Step 0 統一規範。
-- **新增資料 agent**：純抓資料的子代理用 `data-collector`（Haiku）；需要紀律推理的用既有 pattern。
+- **新增資料 agent**：純抓資料的子代理用 `data-collector`（Sonnet 4.6）；需要紀律推理的用既有 pattern。
 - **新增工具**：放 `tools/`，純標準函式庫優先（如 `thesis_ledger.py` 即零相依），方便他人免裝依賴執行。
 - **調整交易風格**：`feedback/*.md`（本機個人檔，已 gitignored）每次 skill 必讀，是把你的偏好餵給框架的地方。
 

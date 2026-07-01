@@ -30,8 +30,9 @@ model: claude-opus-4-8
 5. `mcp__yfinance-advanced__get_stock_info(top 11 by MV)` — 52w high/low、fundamentals
 6. `mcp__fmp-mcp__getEarningsCalendar(today, today+horizon)` — binary catalysts in window
 7. （平行 agent）`mcp__eodhd-mcp__get_sentiment_trend(top 8 by MV, days=30)` — 7d/30d sentiment
+8. Read `briefing-out/cache/macro-snapshot.json` — macro state（fed_funds / 2s10s / HY OAS / VIX / CPI / regime_tag）；`status == "skipped"` 或缺失 → 1i 標 `unavailable` 並註明
 
-### Step 2: 整理成 8 項 Input Enumeration
+### Step 2: 整理成 9 項 Input Enumeration
 
 按 `probability-honesty-checker` agent 的 Step 1 contract，整理：
 
@@ -43,6 +44,7 @@ model: claude-opus-4-8
 - 1f. 板塊輪動曝險（leading 持倉 % / lagging 持倉 %）
 - 1g. Sentiment 健康度
 - 1h. Thesis 健康度（從 plan.md + 近期新聞）
+- 1i. Macro state（從 macro-snapshot.json：fed_funds + 30d change / 2s10s + regime / hy_oas + regime + pct_1y / vix + regime / cpi_yoy + trend / regime_tag；agent 缺 1i 會回 INVALID INPUT）
 
 **不齊全 → 不能進下一步**，必須補齊。
 

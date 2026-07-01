@@ -28,7 +28,7 @@ model: claude-opus-4-8
 ### 執行模型建議
 - `/briefing`（quick）→ Sonnet 4.6（純彙整；session 已長則先 `/compact`）
 - `/briefing telegram` → Sonnet 4.6（每日 launchd 自動推送，成本敏感，固定 Sonnet；週五 `--codex` 另走 gpt-5.5）
-- `/briefing full` → Opus 4.8（中等綜合 + Verdict；Phase 2 subagent 已外包 Haiku）
+- `/briefing full` → Opus 4.8（中等綜合 + Verdict；Phase 2 subagent 已外包 Sonnet 4.6）
 - `/briefing deep` → Opus 4.8（深度合成 + Codex 整合 + 機率/EV）
 
 切換方式：`/model sonnet`、`/model opus` 或 `/model fable` 後執行 skill。
@@ -236,7 +236,7 @@ Read research/naked-call-watchlist.md
 1. 從 cache 列出未來 7 天內、或過去 48h 內有財報的持倉 ticker
 2. 對 earnings window（±48h）內的 ticker，在 Step 5 Technical Snapshot 表格的「標的」欄位前綴 ⚠️
 3. 對 earnings window 內的 ticker：
-   - **不執行**「弱勢持續 → 減碼」「拋物線警示 → 出清」自動規則
+   - **不執行**「弱勢持續 → 減碼」等自動規則
    - actionable 改寫為「等 N+1 個交易日 settle 再判斷結構」
    - 若強行給建議，必須先 confirm fundamental 數字（revenue / EPS / guide）方向，不能只看 price action
 4. **輸出格式（必須含 base rate）：**
@@ -265,18 +265,18 @@ Read research/naked-call-watchlist.md
 - **MACD**：顯示 crossover 狀態（golden_cross 🚀 / death_cross ⚠️ / none）
 - **量能比**：volume_ratio（>1.5 爆量 / <0.7 縮量）
 - **動能分**：momentum_score（-100 ~ +100）
-- **RSI**：最後參考，不單獨作為買賣訊號
+- **RSI**：僅數值列示。**RSI 過高不觸發任何警示/標籤/動作**（2026-07-01 用戶定調：強者愈強，超買非賣出理由；反轉偵測交給 revision 閘門）。RSI < 30 可作超賣參考
 
 **複合訊號標記規則（必須多指標同時觸發 + 無 earnings window）：**
 
 | 標記 | 觸發條件 |
 |------|---------|
-| 🔴 拋物線警示 | strong_uptrend + RSI > 75 + volume_ratio < 0.8（創高但量縮，背離）|
 | 🔴 弱勢持續 | downtrend + momentum_score < -30（不是機會，是落刀）|
 | ⚠️ 動能背離 | uptrend + momentum_score 轉負 OR death_cross（趨勢未破但動能轉弱）|
 | 🚀 強勢確認 | golden_cross + strong_uptrend + volume_ratio > 1.2 |
-| 🟡 留意 | RSI > 70 但無以上複合條件 → 只標數字，不加警示標籤 |
 | ⚠️ earnings window | 過去/未來 48h 有財報 → **以上規則一律不套用**，標記 wait N+1d |
+
+> 舊「🔴 拋物線警示（RSI>75）」「🟡 留意（RSI>70）」已於 2026-07-01 移除 — RSI 過高類標籤是飛輪/對稱性規則之前的遺留，一律不再產生。
 
 **根因分類規則（看到弱勢/強勢訊號必做）：**
 
@@ -288,13 +288,24 @@ Read research/naked-call-watchlist.md
 
 只有 (a) 才執行「汰弱留強」減碼。詳見 `feedback/weak-signal-root-cause.md`
 
+**強訊號對稱分類（看到貼高/大漲訊號必做 — per `feedback/momentum-valuation-symmetry.md`；RSI 過高不是輸入）：**
+
+對任一貼 52W 高 / 單日大漲 / 已漲多訊號，先查 **revision 方向**再行動：
+1. estimate 上修中（revisions up ≫ down / eps_revision_30d_pct > 0）+ 成長加速？→ **加速領導者**：在倉**讓它 run、不 trim**（強者愈強）；新資金不否決，改 starter + 回檔 ladder + bull call spread 定義風險
+2. estimate 翻下修/flat + 高倍數？→ **峰值 harvest 候選**：認列桶列入 harvest 清單（這才是「賣強」的正當時機）
+3. weak_downtrend 反彈 + momentum 低 + 無 revision 支撐？→ **受損 turnaround**：等催化驗收，不接刀（今天綠 ≠ 領導力）
+
+**禁**：把「超買/太貴/已漲多/RSI 高」單獨當在倉 trim 或新倉否決理由 — 只影響**下手結構**（分批/spread），永不影響**方向**。賣出仍須過 (a)/(b)/(c) trim 閘門（`feedback/position-concentration.md`）。
+
 ### 6. Key Alerts
 只在觸發時顯示（無則跳過整個 section）：
 - 單日跌 > 5%
 - 總虧 > 15%
-- 單一持倉 > 8% 組合（過度集中）
+- 單一持倉 > 8% 組合（過度集中；>10% 🔴 紅線）
 - 財報 < 3 天（用已知財報日歷）
 - 選擇權 < 14 天到期
+- **Swing Risk**：認列桶肥利潤（>+40%）+ 高 β + revision 轉折/題材降溫，且無對應落袋掛單 → `🔴 Swing Risk 未處理`（附建議可掛單）
+- **現金滯留**：現金 >15–20% 且無 GTC 掛單覆蓋、無 dry powder 理由 → `🔴 飛輪滲漏`
 
 ### 7. 計畫進度 Quick
 - 近期待辦狀態（✅🔄⏳）
@@ -550,13 +561,29 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 | 1 | 加碼 NVDA | ⏳ 待觸發 | RSI<35 | RSI=42 | 接近 |
 | 2 | DDOG BCS | ✅ 已完成 | — | — | 3/5 建倉 |
 
+### 12.5 飛輪檢查（Full/Deep 收尾必跑 — per `feedback/momentum-valuation-symmetry.md` 定期節奏）
+
+精簡三問（完整版在 /portfolio-review 4.5；briefing 只掃描 + 給可掛單，不展開全表）：
+
+1. **該 harvest 誰？** 認列桶（roster 見 plan.md 組合架構 v2）中 revision 轉折/題材降溫/Swing Risk 🔴 者 → 每筆附 GTC 賣限價或 covered call 結構。**revision 仍上修的領導者不列**（超買/新高不是 harvest 理由）
+2. **現金滯留了嗎？** 現金 % vs 既有 GTC 買單覆蓋 → 閒置 >15–20% 無計畫 → 🔴 flag
+3. **盈餘該去哪？** L1 On-Deck + 信念桶中 revision 最陡的領漲者 1–2 檔 → 附進場結構（GTC 階梯 / bull put spread / bull call spread 貼高參與 / LEAPS）
+
+```
+### 🔄 飛輪檢查
+Harvest：[標的 + 觸發依據 + 可掛單]（無則「本期無 harvest 觸發」）
+現金：X%（✅ 有部署計畫 / 🔴 閒置）
+Redeploy 首選：[標的 + revision 依據 + 結構]
+配對狀態：每筆 harvest 已配對去處 or 標 dry powder + 觸發
+```
+
 ---
 
 ## Phase 3: Deep（`/briefing deep` 時執行）
 
 ### 13. 平行 Agent 派遣
 
-同時派出 3 組 Agent 子代理（全部 subagent_type: "data-collector"，自動使用 Haiku 4.5）：
+同時派出 3 組 Agent 子代理（全部 subagent_type: "data-collector"，自動使用 Sonnet 4.6）：
 
 - **Agent 1 — SEC EDGAR**（subagent_type: "data-collector"，top 5）：`get_insider_transactions`（90d）+ `get_recent_filings`（30d）
 - **Agent 2 — Yahoo Finance**（subagent_type: "data-collector"，top 5）：`get_stock_info` + `get_financial_statement` — 基本面摘要

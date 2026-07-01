@@ -67,6 +67,9 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
 - `research/` — 投資論文與研究筆記
 
+### 鏡像規則（.agents 樹為生成檔，禁手改）
+`AGENTS.md` 與 `.agents/skills/` 由 `python3 tools/sync_agents_skills.py` 從 `.claude/` 樹自動生成（唯一轉換：內文 CLAUDE→AGENTS 檔名引用）。**任何 skill / 本檔改動後必須重跑一次 sync**；`--check` 可驗證是否 drift。禁止直接編輯 `.agents/` 下的檔案，也禁止做「Claude→Codex」之類全文置換（2026-07-01 前的鏡像壞損即由此而來）。
+
 ## HTML 報告站工作流
 
 每份報告輸出 markdown（source of truth）後自動轉為 HTML，push 到獨立 private repo 部署為 Netlify 靜態網站。
@@ -228,7 +231,7 @@ Agent(
 ## Investment Style
 - 主軸：AI/半導體、高成長科技（無板塊上限，單一個股 > 10% 才提醒）
 - 避險：基建、航太、貴金屬、核能（小比例平衡）
-- Strategies: LEAPS (stock replacement, deep ITM delta 0.72-0.85), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
+- Strategies: LEAPS (stock replacement, deep ITM delta 0.80-0.88), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated
 
 ### 執行底層邏輯：Portfolio as a Business（強制濾鏡）
@@ -242,6 +245,7 @@ Agent(
 - **分桶**：每倉位歸 🔵信念桶（讓它 run、只在 thesis 破或 >10% 才動）或 🟢認列循環桶（高 β/週期/肥利潤 → 系統性 harvest）；疑問時歸認列。
 - **兩層候補**：🟡L1 On-Deck（thesis 驗證+觸發明確，補空位只從 L1 拉）/ 🔵L2 Research Pool（需修復或擴 Universe）；砍倉依砍因歸層（組合理由→L1，thesis 破→L2）。
 - **機會成本閘門（桶間升級/降級/部署皆強制）**：新倉須明顯優於最弱在倉名額才進 — 相關 beta 門檻最高（須擠掉弱倉、不淨增），無相關 hedge/填缺口門檻較低；14–18 上緣時砍一進一。
+- **停利再投入飛輪（汰弱留強的閉環，總原則）**：認列循環桶**系統性 harvest 峰值強度**（revision 轉折/題材降溫的肥利潤）+ **砍真弱**（thesis 破 OR 最弱動能無催化）→ **盈餘必配對 redeploy 決策，第一順位投入「加速中強度」**（信念桶領導者 / L1 中 revision 上修的領漲者），**不讓現金閒置滲漏**（每次 harvest 同一次 review 內要嘛 redeploy 上行、要嘛標明 dry powder 理由 + 觸發）。定義鎖死：**「弱」= fundamental 惡化或最弱動能無催化，非當日紅K**（per `feedback/weak-signal-root-cause.md`）；**「強」= estimate 上修/成長加速，非當日超買**（per `feedback/momentum-valuation-symmetry.md`）；funding 源用**已實現獲利 + 真弱倉，非砍虧損倉**（與上面「禁砍 loser 加碼 winner」相容——飛輪靠 realized gain 轉動，不靠認列虧損）。Guardrails（單倉>10%、14–18 支、相關度、去相關 hedge sleeve）是飛輪**護欄不是矛盾**：集中往強度跑、但不破紅線。詳 `feedback/momentum-valuation-symmetry.md`。
 - **即時 roster（信念/認列/L1/L2 名單）權威來源 = `plan.md`「組合架構 v2」**；改動 roster 同步更新該節。
 
 ## MCP Tools Available
@@ -304,13 +308,13 @@ Agent(
 
 ## Skill 模型分工（2026-05-05）
 
-### 數據收集 subagent — Sonnet 4.6（2026-06-27 由 Haiku 4.5 升級）
+### 數據收集 subagent — Sonnet 4.6
 所有 skill 的平行數據收集 Agent 都指定 `subagent_type: "data-collector"`（見 `.claude/agents/data-collector.md`）。
-Data-collector 每次啟動是全新 context（無歷史）。**原用 Haiku 4.5，但兩度整批造假（2026-06-24 COHR、2026-06-27 歷史報酬批次 latest_close 跨票錯置）→ 升 Sonnet 4.6 + agent 內加反幻覺鐵則。** 主程仍須對權威價（Firstrade）交叉驗證，對不上即整批丟棄（見 `feedback/subagent-hallucination-guard.md`）。
+Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + agent 內加反幻覺鐵則。** 主程仍須對權威價（Firstrade）交叉驗證，對不上即整批丟棄（見 `feedback/subagent-hallucination-guard.md`）。
 
 ### 主 skill 執行模型（2026-06-13 更新：全面回歸 Opus 4.8）
 
-模型階梯：**Opus 4.8**（`claude-opus-4-8`，$15/$75，旗艦推理）> **Sonnet 4.6**（中堅）> **Haiku 4.5**（純機械）。
+模型階梯：**Opus 4.8**（`claude-opus-4-8`，$15/$75，旗艦推理）> **Sonnet 4.6**（中堅/純機械）。
 
 | Skill / 任務 | 模型 | 理由 |
 |---|---|---|
@@ -324,11 +328,11 @@ Data-collector 每次啟動是全新 context（無歷史）。**原用 Haiku 4.5
 | `/briefing telegram` | **Sonnet 4.6** | 每日 launchd 自動推送，成本敏感 |
 | `/todo` | **Sonnet 4.6** | 行動清單 |
 | `/trade-journal` review/summary | **Sonnet 4.6** | 帶輕度分析 |
-| `/trade-journal` log | **Haiku 4.5** | 純記錄/格式化（frontmatter 預設 Sonnet，log 可降 Haiku）|
-| `/mcp-health` | **Haiku 4.5** | 純連線測試 |
-| data-collector subagent | **Sonnet 4.6** | 純 MCP 抓資料（2026-06-27 由 Haiku 升級，反幻覺）|
+| `/trade-journal` log | **Sonnet 4.6** | 純記錄/格式化 |
+| `/mcp-health` | **Sonnet 4.6** | 純連線測試 |
+| data-collector subagent | **Sonnet 4.6** | 純 MCP 抓資料，反幻覺鐵則 |
 | probability-honesty-checker subagent | **Opus 4.8** | 機率紀律執法者，用旗艦 |
 
 **長 context：** session > 100k 時先 `/compact`，再繼續執行。換主題先 `/clear`。
 
-**手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model opus`、`/model sonnet`、`/model haiku` 切換後再呼叫。
+**手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model opus`、`/model sonnet`、`/model sonnet` 切換後再呼叫。

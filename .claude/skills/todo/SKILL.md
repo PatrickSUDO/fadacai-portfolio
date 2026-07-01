@@ -32,7 +32,7 @@ model: claude-sonnet-4-6
 
 ## 分析框架
 
-掃描以下五個維度，找出需要行動的項目：
+掃描以下六個維度，找出需要行動的項目：
 
 ### A. 選擇權急迫性（最優先）
 - 剩餘天數 < 14 天的合約 → 🔴 急迫
@@ -44,16 +44,22 @@ model: claude-sonnet-4-6
 - 從 `plan.md` 找「⏳ 待執行」項目
 - 對照當前市價，判斷觸發條件是否已達成
 
-### C. 個股異常（日內）
-- 今日單檔跌超 5% → 🔴 需確認是否止損或加碼
-- 今日單檔漲超 8% → 🟡 考慮是否獲利了結或開 CC
+### C. 個股異常（日內 — 必過根因/revision 閘門，禁純價格反應）
+- 今日單檔跌超 5% → 先跑根因分類（`feedback/weak-signal-root-cause.md`）：只有 thesis 破裂 (a) 才列減碼；earnings reaction / sector rotation / noise → 「⏸ 不動」。revision 仍上修的深跌 = 洗盤錯殺 → 列加碼候選
+- 今日單檔漲超 8% → 查 revision 方向（`feedback/momentum-valuation-symmetry.md`）：**revision 上修中的加速領導者 → 讓 run，不列停利**（強者愈強，超買非賣出理由）；revision 轉折/flat + 高倍數 + 認列桶 → 列 harvest（GTC 賣階梯或開 CC）。**CC 只對認列循環桶開，信念桶不封頂**（>10% 紅線減碼除外）
 
 ### D. 待開新倉位
 - 從對話或計畫中識別「討論過但尚未進場」的 Spread
 - 確認市況是否符合進場條件
+- 新倉必過機會成本閘門：優於最弱在倉名額才進；14–18 上緣 → 指名砍一進一
 
 ### E. 需設警報的監控項目
 - 不需要立刻動，但需要盯的價位或事件
+
+### F. 飛輪 / 停利再投入（每次必掃 — per `feedback/momentum-valuation-symmetry.md`）
+- **今日該 Realize 什麼**：認列桶 Swing Risk 🔴（肥利潤 + 高β + revision 轉折）→ 列 harvest 行動（附 GTC 賣單/CC 結構）
+- **Harvest 配對去處**：每筆停利同時列 redeploy 目標（信念桶領導者 / L1 revision 最陡者 + 進場結構），或標 `dry powder + 觸發條件`
+- **現金滯留**：現金 >15–20% 且無掛單覆蓋、無理由 → 🔴 列「部署決策」行動項
 
 ---
 

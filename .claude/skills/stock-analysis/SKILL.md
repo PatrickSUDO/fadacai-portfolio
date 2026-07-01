@@ -93,7 +93,7 @@ fundamentals cache 處理：
 
    **平行數據收集（Agent 子代理 — subagent_type: "data-collector"）：**
 
-   使用 Agent tool 平行派遣以下 3 組子代理（每組指定 subagent_type: "data-collector"，自動使用 Haiku 4.5 純數據收集）：
+   使用 Agent tool 平行派遣以下 3 組子代理（每組指定 subagent_type: "data-collector"，自動使用 Sonnet 4.6 純數據收集）：
 
    - **Agent 1 — Yahoo Finance**（subagent_type: "data-collector"）：`get_stock_info` + `get_financial_statement` + `get_recommendations` + `get_yahoo_finance_news` + `get_historical_stock_prices`
    - **Agent 2 — SEC EDGAR**（subagent_type: "data-collector"）：`get_financials`（all）+ `get_insider_transactions`（90d）+ `get_recent_filings`（60d）+ `get_segment_data`
@@ -228,7 +228,7 @@ Use `mcp__technical-mcp__get_technical_indicators` and `mcp__technical-mcp__get_
 
 | Indicator | Value | Signal |
 |-----------|-------|--------|
-| RSI (14) | XX.X | Overbought/Neutral/Oversold |
+| RSI (14) | XX.X | 數值列示（不標超買；<30 可標 Oversold） |
 | MACD | line/signal/histogram | Golden Cross/Death Cross/None |
 | Bollinger %B | X.XX | Upper/Middle/Lower band |
 | ATR (normalized) | X.X% | Low/Medium/High volatility |
@@ -244,10 +244,12 @@ Use `mcp__technical-mcp__get_technical_indicators` and `mcp__technical-mcp__get_
 | 52W High | $XX.XX | -X.X% |
 | 52W Low | $XX.XX | +X.X% |
 
-**Entry Timing:**
-- RSI > 70: avoid chasing, wait for pullback
-- RSI < 30 + near support: potential entry opportunity
+**Entry Timing（revision 閘門 — per `feedback/momentum-valuation-symmetry.md`；RSI 過高不進任何判定）：**
+- **estimate 上修中**（`forward_estimates` revisions up ≫ down）的加速領導者：**不否決、不等回檔才給方向** — 強者愈強；starter 倉現在進 + 回檔 GTC ladder + bull call spread 定義風險參與
+- **estimate 翻下修/flat + 高倍數**：唯一「不追」的正當情況（均值回歸 edge 只在此成立）
+- 深跌至支撐 + **revision 未惡化**：洗盤錯殺，加碼機會（RSI < 30 可作超賣佐證）；revision 惡化中 → 受損 turnaround，等催化不接刀
 - High ATR regime: wider stop-loss needed, consider smaller position
+- 原則：**revision 定方向，估值只定下手結構與 size**；RSI 僅數值列示，過高側不觸發任何「不追/減碼」判定
 
 ### SEC EDGAR Insights
 - Insider Trading (90 days): net buying/selling activity
@@ -275,6 +277,9 @@ Use `mcp__eodhd-mcp__get_sentiment_trend` and `mcp__eodhd-mcp__get_news_sentimen
 - 與現有持倉是否重疊？
 - 計畫建議的進場方式：現股 vs Bull Put Spread vs LEAPS（引用計畫原文）
 - 建議倉位佔帳戶 %
+- **桶別建議（必填）**：進場後歸 🔵 信念桶（中低 β + 多年結構 thesis → 讓 run）/ 🟢 認列循環桶（高 β >3 / 純週期 / 純波段 → 系統性 harvest）/ 🟡 L1 On-Deck（thesis 已驗證但等觸發）/ 🔵 L2 Research Pool（thesis 未驗證完）。疑問時歸認列桶
+- **機會成本閘門（新倉必答）**：此標的是否**明顯優於目前最弱的在倉名額**？（列出最弱在倉 1-2 檔 revision/動能對比）。組合在 14–18 上緣 → 必須指名砍誰進場（砍一進一，不淨增）；相關 beta 門檻最高，去相關 hedge/填缺口門檻較低
+- **進場結構（對稱性）**：貼高加速領導者 → starter + 回檔 ladder + bull call spread；支撐區 → GTC 限價階梯 / bull put spread；長期信念 → LEAPS deep ITM delta 0.80–0.88。結尾附可掛的 Firstrade 單（per `feedback/actionable-firstrade-orders.md`）
 
 ### 第一性檢查（必填，在 Verdict 之前）
 - **核心 thesis：** [1 句可驗證命題，非 narrative]

@@ -2,7 +2,7 @@
 name: ev-check
 description: 強制 first-principles 機率分布 + EV 計算。用於檢查當前組合在指定時間窗的預期報酬，禁止用 default bell shape 或質性語言。Usage - /ev-check [30d|7d|14d] [optional scenario theme]
 user_invocable: true
-model: claude-fable-5
+model: claude-opus-4-8
 ---
 
 # EV / Probability Distribution Honesty Check
@@ -30,8 +30,9 @@ model: claude-fable-5
 5. `mcp__yfinance-advanced__get_stock_info(top 11 by MV)` — 52w high/low、fundamentals
 6. `mcp__fmp-mcp__getEarningsCalendar(today, today+horizon)` — binary catalysts in window
 7. （平行 agent）`mcp__eodhd-mcp__get_sentiment_trend(top 8 by MV, days=30)` — 7d/30d sentiment
+8. Read `briefing-out/cache/macro-snapshot.json` — macro state（fed_funds / 2s10s / HY OAS / VIX / CPI / regime_tag）；`status == "skipped"` 或缺失 → 1i 標 `unavailable` 並註明
 
-### Step 2: 整理成 8 項 Input Enumeration
+### Step 2: 整理成 9 項 Input Enumeration
 
 按 `probability-honesty-checker` agent 的 Step 1 contract，整理：
 
@@ -43,6 +44,7 @@ model: claude-fable-5
 - 1f. 板塊輪動曝險（leading 持倉 % / lagging 持倉 %）
 - 1g. Sentiment 健康度
 - 1h. Thesis 健康度（從 plan.md + 近期新聞）
+- 1i. Macro state（從 macro-snapshot.json：fed_funds + 30d change / 2s10s + regime / hy_oas + regime + pct_1y / vix + regime / cpi_yoy + trend / regime_tag；agent 缺 1i 會回 INVALID INPUT）
 
 **不齊全 → 不能進下一步**，必須補齊。
 
@@ -123,7 +125,7 @@ EV ([horizon]) = X.XX%
 
 ## 失敗模式與防呆
 
-| Codex 主程序常見偷懶 | 此 skill 阻擋方式 |
+| Claude 主程序常見偷懶 | 此 skill 阻擋方式 |
 |---------------------|----------------|
 | 套 30/45/25 default | Agent Step 2 強制顯示「形狀規則應用」對照表，不對照不能進 Step 3 |
 | 寫「略偏負」結論 | Agent Step 5 強制顯式 Σ 計算，數字必須出現 |

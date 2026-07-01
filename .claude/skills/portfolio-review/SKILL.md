@@ -118,10 +118,25 @@ Sort by percentage descending. Flag any sector > 20% as overweight.
 ### C. Top 5 Winners & Losers (by Gain/Loss %)
 Show the best and worst performing positions.
 
-### D. Position Sizing
-Flag positions that are:
-- Over 7% of portfolio (too concentrated)
+### D. Position Sizing & 分桶對照（Portfolio as a Business）
+
+**D1. Size flags：**
+- Over 7% of portfolio → 預警（too concentrated）
+- **Over 10% → 🔴 紅線強制標記**（信念桶也不豁免，per `feedback/position-concentration.md`）
 - Under 1.5% of portfolio (too small to matter)
+
+**D2. 分桶對照表（roster 權威來源 = `plan.md`「組合架構 v2」）：**
+
+每個主動倉位標注所屬桶別，與 plan.md roster 比對：
+
+| 標的 | 權重 | β | 桶別（🔵信念/🟢認列） | 桶規則狀態 |
+|------|------|---|---------------------|-----------|
+
+- 桶別與 plan.md 不一致 / 新倉未歸桶 → 標 `⚠️ 待歸桶`（疑問時預設認列桶）
+- 🔵 信念桶：只檢查 ① thesis 破 ② >10%，其餘不 trim
+- 🟢 認列桶：進入 Swing Risk 監測（Section E2）與飛輪檢查（Section 4.5）
+
+**D3. 支數檢查：** 主動組合支數 = X 檔（目標 14–18，理想 14–16）。>18 → 標 `🔴 超編：新倉一律砍一進一，不淨增`；<14 → 標 `🟡 有空位：從 plan.md L1 On-Deck 補`。
 
 ### E. Options Summary
 For each option position:
@@ -133,17 +148,39 @@ For each option position:
 - For LEAPS: delta equivalent shares estimate
 - For Sell Puts: potential assignment cost and margin estimate
 
+### E2. Swing Risk & Realized 健檢（必做，per `feedback/realized-pnl-business-model.md`）
+
+**E2a. 每倉位 Swing Risk 標記（認列桶全列；信念桶僅 >10% 或肥利潤者）：**
+
+| 標的 | 桶別 | 未實現利潤% | β | Swing Risk 判定 | 建議動作 |
+|------|------|-----------|---|----------------|---------|
+
+- 正股 Swing Risk = 帳上未實現利潤 + 潛在回吐（用 ATR% 估波動）；Options = Premium 成本 + 未實現利潤（歸零 = Expiry Risk）
+- **判定門檻**：肥利潤（>+40%）+ 高 β（>2）+ revision 轉折/題材降溫 → `🔴 建議 harvest`；肥利潤但 revision 仍上修 → `🟡 監測`（結構領導者不純因新高 trim，per `feedback/momentum-valuation-symmetry.md` 規則 3）
+- 建議動作必須具體：落袋 N 股 @ GTC $X / 開 covered call / 用價差替代 / Roll（附可掛單，per `feedback/actionable-firstrade-orders.md`）
+
+**E2b. Realized vs Unrealized 比例健檢（組合層）：**
+```
+本月 Realized PnL: $X,XXX（從 get_account_history 或 journal 累計）
+未實現虧損合計: −$X,XXX
+比例: Realized ≈ X.X× |未實現虧損|（目標 ≈ 4×）
+```
+- 比例反轉（一直認列虧損、獲利全掛浮動）→ `🔴 爆倉訊號 flag`
+- 落袋節奏檢查：認列循環桶日常 Rolling 落袋目標 0.5–1%/日，最近 5 個交易日實際認列 $X
+
 ### F. Key Alerts
 - Upcoming expiries within 30 days
 - Positions with > 20% loss
 - Sector concentration warnings
 - Sell put margin utilization estimate
+- **Swing Risk 未處理**：E2a 標 🔴 的倉位若無對應掛單 → 列入 alerts
+- **現金滯留**：現金 >15–20% 且無明確部署計畫（無 GTC 掛單、無 dry powder 理由）→ `🔴 飛輪滲漏 flag`
 
 ### G. 個股趨勢與分析
 
 **平行數據收集（第一組 Agent 子代理 — subagent_type: "data-collector"）：**
 
-使用 Agent tool 平行派遣以下 3 組子代理（每組 subagent_type: "data-collector"，自動使用 Haiku 4.5）：
+使用 Agent tool 平行派遣以下 3 組子代理（每組 subagent_type: "data-collector"，自動使用 Sonnet 4.6）：
 
 - **Agent 1 — Yahoo Finance**（subagent_type: "data-collector"，所有主要持倉 >3%）：`get_stock_info` + `get_yahoo_finance_news` + `get_historical_stock_prices`
 - **Agent 2 — Technical**（subagent_type: "data-collector"，所有持倉）：`get_batch_indicators` + `get_technical_indicators`（top 5 個別分析）
@@ -176,7 +213,7 @@ Use `mcp__technical-mcp__get_batch_indicators` for all major holdings at once, t
 
 **Batch overview table (all major holdings):**
 
-| 標的 | 現價 | RSI | RSI狀態 | MACD交叉 | 動量分數 | 趨勢 | 波動率 | 量能比 |
+| 標的 | 現價 | RSI | MACD交叉 | 動量分數 | 趨勢 | 波動率 | 量能比 |
 
 **Detailed view (top 5 holdings only):**
 Use `mcp__technical-mcp__get_technical_indicators` for full data including Bollinger Bands and ATR.
@@ -184,8 +221,8 @@ Use `mcp__technical-mcp__get_technical_indicators` for full data including Bolli
 | 標的 | BB %B | ATR% | SMA20 | SMA50 | SMA200 | vs50MA% | vs200MA% |
 
 Flag:
-- RSI > 70 → ⚠️ 超買
 - RSI < 30 → 💡 超賣 (可能買入機會)
+- **RSI 過高不標示、不觸發任何動作**（2026-07-01 移除舊「⚠️ 超買」flag — 強者愈強，反轉偵測交給 revision 閘門）
 - momentum_score > 50 → 強勢
 - momentum_score < -50 → 嚴重弱勢
 - vol_regime = "high" → 高波動注意
@@ -251,7 +288,7 @@ Note: EODHD tickers use exchange suffix format (e.g. "AAPL.US", "NVDA.US").
 
 **平行數據收集（第二組 Agent 子代理 — subagent_type: "data-collector"）：**
 
-在 Section G 數據到齊後，派遣第二組（subagent_type: "data-collector"，自動使用 Haiku 4.5）：
+在 Section G 數據到齊後，派遣第二組（subagent_type: "data-collector"，自動使用 Sonnet 4.6）：
 
 - **Agent 4 — SEC EDGAR**（subagent_type: "data-collector"，top 5）：`get_insider_transactions` + `get_recent_filings`
 - **Agent 5 — FMP**（subagent_type: "data-collector"）：`getStockPeers`（top 3）+ `getBiggestGainers` / `getBiggestLosers`
@@ -343,6 +380,32 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
    - 板塊佔比 vs 計畫目標的偏差分析
    - 風險監控項目的當前狀態
    - 下一步建議（基於計畫優先級 + 當前市場條件）
+
+4.5 **飛輪檢查（汰弱留強 → 停利 → 再投入；收尾必跑，per `feedback/momentum-valuation-symmetry.md`）**
+
+   > 診斷基準 = **價格 vs revision 背離**：價弱但 revision↑ = 洗盤該加；價強但 revision↓/flat = 峰值該 harvest。「弱」= fundamental 惡化或最弱動能無催化（非當日紅K）；「強」= estimate 上修/成長加速（非當日超買）。
+
+   **① Harvest 掃描（賣峰值強度）**：認列桶中 revision 轉折（up:down 惡化/翻 flat）/ 題材降溫 / Swing Risk 🔴 者 → 列 harvest 清單，附 GTC 賣限價階梯或 covered call 結構
+   **② 砍真弱掃描（騰名額）**：僅在 14–18 上緣需要名額時。thesis 破（根因 (a)）OR 最弱動能且無催化者 → 列砍單，依砍因歸層（組合理由→L1 / thesis 破→L2）
+   **③ 現金滯留檢查**：現金 % + 既有 GTC 掛單覆蓋額 → 若 >15–20% 閒置且無部署計畫 → 🔴 flag
+   **④ Redeploy 配對（每筆 harvest/砍單必配一個去處）**：第一順位 = 信念桶領導者 / L1 中 revision 最陡的領漲者（列 plan.md L1 各標的 revision up:down 比較表）；要嘛部署（附 GTC 買單階梯 / spread 結構），要嘛標明 `dry powder + 觸發條件`。**禁 default 流向「便宜但 revision 平/下修」的落後者**
+   **⑤ 選擇權工具對映（活用而非只現股進出）**：
+   - harvest 端：≥100 股肥利潤認列桶 → covered call（30-45 DTE，strike 近 R1/分析師 PT）替代直接賣股；高 β 純週期 → 用價差鎖利潤
+   - redeploy 端：加速中領導者貼高/超買 → **bull call spread 定義風險參與**（不是「太貴不追」）；支撐區進場 → bull put spread 替代限價單；長期信念 → LEAPS deep ITM（delta 0.80–0.88）
+   - 每個建議附完整可掛規格（結構 + strike + 到期 + limit + 口數；複式單無法 GTC → 價格警報 + 預定結構）
+
+   **輸出格式：**
+   ```
+   ### 🔄 飛輪檢查
+   | 動作 | 標的 | 觸發依據（revision/Swing Risk） | 執行結構 | 可掛單 |
+   |------|------|-------------------------------|---------|--------|
+   | Harvest | ... | revision 19:12 惡化 + β3.78 | GTC 賣 N@$X 或 CC | ... |
+   | Redeploy | ... | L1 最陡 revision 21:0↑ | GTC 階梯 / BCS | ... |
+   現金滯留：X%（✅ 有部署計畫 / 🔴 閒置無理由）
+   Harvest↔Redeploy 配對：X 筆 harvest / X 筆已配對（必須相等或標 dry powder 理由）
+   ```
+
+   Guardrails 不可破：單倉 >10%、14–18 支、相關度上限、去相關 hedge sleeve（AU 等避險倉不參與動能輪動、不因落後就汰）。
 
 5. **第一性檢查（在「下一步建議」前必填）**
 

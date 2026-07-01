@@ -36,7 +36,7 @@ Evaluate options strategies for a given ticker with risk/reward analysis.
 
 當偵測到多個 ticker（如 `/options-strategy PLTR AMD MU sell-put`）：
 
-1. 為每個 ticker 派出獨立 Agent 子代理（subagent_type: "data-collector"，Haiku 4.5），每個 Agent 執行：
+1. 為每個 ticker 派出獨立 Agent 子代理（subagent_type: "data-collector"，Sonnet 4.6），每個 Agent 執行：
    - `get_stock_info` — 現價 + 基本面
    - `get_option_chain` — 選擇權鏈
    - `get_technical_indicators` — 波動率 + RSI + 動量
@@ -54,7 +54,7 @@ Evaluate options strategies for a given ticker with risk/reward analysis.
 2. **Get Current Price & Technicals**
    - If Yahoo Finance MCP is available, fetch real-time quote
    - Otherwise use WebSearch: "[TICKER] stock price today"
-   - Check current-position.md for existing holdings
+   - 現有持倉從 Step 0 的 `get_account_position` 取（已淘汰 current-position.md）
    - Use `mcp__technical-mcp__get_technical_indicators` to get volatility regime, ATR, and RSI
    - Use `mcp__technical-mcp__get_support_resistance` to identify key levels for strike selection
 
@@ -76,7 +76,7 @@ For 3-4 strike levels (near ATM to 15-20% OTM):
 - Show assignment scenario: what happens if assigned
 
 ### Covered Call
-Requires existing shares (check current-position.md):
+Requires existing shares（從 `get_account_position` 確認）:
 | Strike | OTM % | Expiry | Est. Premium | Max Profit | Annualized Yield | P(called away) |
 - Flag if user has enough shares for round lot (100)
 
@@ -97,9 +97,9 @@ For 2-3 strike combinations (short strike near support, long strike $10-20 below
 - 引用配置計畫中建議的 strike levels（如有）
 
 ### Bear Call Spread
-For stocks that are overbought or above target price:
+For stocks with **revision 下修/flat + 現價已超分析師 PT**（不以 RSI 過高為條件）:
 | Short Strike | Long Strike | Width | Max Profit | Max Loss | Breakeven | P(profit) |
-- Suitable for: TPL (RSI超買), ATI (超目標價) 等計畫中標記的標的
+- Suitable for: **revision 下修/flat + 已超分析師 PT** 的標的（RSI 過高不是開 BCS 的理由 — 不對 revision 上修中的強者反向封頂）
 
 ### Naked Call (Speculative)
 | Strike | OTM % | Expiry | Est. Cost | Breakeven | Max Loss |
@@ -113,13 +113,25 @@ For stocks that are overbought or above target price:
    - Sell Put 使用 Margin（非 cash-secured 全額）
    - 不能做裸賣 Call（需 Level 3+）
    - 配置計畫原則：不再開裸 Sell Put，全部用 Spread
+   - **財報 ±48h 不開新選擇權部位**（IV 扭曲定價失準，per `feedback/options-leaps-playbook.md`）；既有部位管理不受限
+
+5.5 **策略角色對映（飛輪定位 — 每次 Recommendation 前先確認本次操作在飛輪哪一環）**
+
+   | 策略 | 飛輪角色 | 適用桶/情境 | 紀律 |
+   |------|---------|-----------|------|
+   | Covered Call | **harvest 端**：肥利潤落袋替代直接賣股 | 🟢 認列桶 ≥100 股 + revision 轉折/題材降溫 | **信念桶不開 CC 封頂**（>10% 紅線減碼除外）；strike 近 R1/分析師 PT，30-45 DTE |
+   | Bull Call Spread | **redeploy 端**：加速領導者貼高/超買的定義風險參與 | revision 上修中 + 貼 52W 高（「超買」不是不追的理由，是換結構的理由） | max loss = net debit，凸性參與強者恆強 |
+   | Bull Put Spread | **redeploy 端**：支撐區進場替代限價單 | 回檔至支撐 + thesis 完好 | short strike 貼支撐，寬 $10-20 |
+   | LEAPS deep ITM | **信念端**：股票替代，釋放資金給飛輪 | 🔵 信念桶多年 thesis | delta 0.80–0.88、12-18 個月、<90 DTE 評估 roll |
+   | Bear Call Spread | 對沖/超目標價 harvest 輔助 | revision 下修 + 超分析師 PT 的認列桶 | 不對 revision 上修中的持倉開（會反向封頂強者） |
+   | 短 DTE OTM Call 樂透 | 衛星倉 | binary catalyst 30d 內 + 具體論述 | 總成本 ≤2% 帳戶，IV Rank >80 不做 |
 
 6. **Volatility-Adjusted Guidance**
    Based on `mcp__technical-mcp__get_technical_indicators` volatility regime:
    - **High volatility regime** → sell premium strategies more attractive (higher premiums), wider strikes
    - **Low volatility regime** → buying options cheaper, tighter strikes for sell strategies
-   - **RSI overbought (>70)** → sell call premiums attractive, avoid buying calls
    - **RSI oversold (<30)** → sell put premiums attractive, consider buying calls
+   - **RSI 過高不作任何指引**（2026-07-01 移除舊「overbought → avoid buying calls」— revision 上修中的強者照樣可用 bull call spread 參與，方向由 revision 定）
    - Use support levels from `get_support_resistance` to suggest sell put strikes near support
 
 7. **倉位管理 & 波動率標準化**
@@ -127,7 +139,12 @@ For stocks that are overbought or above target price:
    **Quarter-Kelly 倉位上限：**
    單筆 Spread 最大配置 = min(總資產 5%, Spread 最大損失)。
    同方向 Spread 合計 ≤ 總資產 15%。
-   （總資產從 `投資組合調整方案_完整版.md` 讀取）
+   （總資產從 Step 0 的 `get_account_balance` 即時取得）
+
+   **Swing Risk / Adjusted Risk 框架（per `feedback/realized-pnl-business-model.md`）：**
+   - 既有選擇權部位的 **Swing Risk = Premium 成本 + 當前未實現利潤**（以歸零為最壞情境 = Expiry Risk）；肥利潤未落袋 → 主動建議部分平倉/roll 鎖利
+   - **Roll 決策用 Adjusted Risk 視角**：同標的累積已認列獲利後，新倉真實風險 = `新倉成本 − 該標的累積已認列`；累積認列 ≥ 起始投入 = Risk-Free State。建議 roll/落袋時用此框架呈現，**不寫「賣了就少賺」**
+   - BPS/BCS 達 50–75% 最大利潤 → 建議平倉認列（theta 後段風險報酬比惡化），釋放 margin 回飛輪
 
    **波動率標準化比較 (E_adj)：**
    當同時評估多個 Spread 機會時，計算：
@@ -160,9 +177,11 @@ For stocks that are overbought or above target price:
 9. **Recommendation**
    - Which strike/expiry combination is best for this ticker
    - How it fits with existing portfolio
+   - **飛輪定位**（引用 5.5 對映表：本操作是 harvest / redeploy / 信念端哪一環；若是 harvest，同時給盈餘配對去處或標 dry powder）
    - Position sizing（根據 Quarter-Kelly 上限）
    - E_adj 分數（如有比較對象）
    - **明確說 Recommendation conditional on 哪個情境 + 機率**
+   - **結尾附可掛的單（per `feedback/actionable-firstrade-orders.md`）**：結構 + 買賣別 + 履約價 + 到期 + limit credit/debit + 口數 + 效期，照抄可下；複式單無法 GTC → 給價格警報價位 + 預定結構（觸發後 2 分鐘執行）
 
 ---
 

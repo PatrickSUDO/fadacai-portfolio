@@ -2,7 +2,7 @@
 name: mcp-health
 description: Test all MCP server connections and report health status. Usage - /mcp-health
 user_invocable: true
-model: claude-haiku-4-5-20251001
+model: claude-sonnet-4-6
 ---
 
 # MCP Health Check
@@ -58,21 +58,29 @@ model: claude-haiku-4-5-20251001
 
 ```
 # 手動重啟指令（請在終端機執行）：
-# yfinance-advanced:
-cd ~/.Codex/yahoo-finance-mcp && uv run server.py
 
-# sec-edgar-mcp:
-cd ~/.Codex/sec-edgar-mcp && uv run --project sec-edgar-runner server.py
+# yfinance-advanced（uvx @0.1.2，由 Claude Code 自管 stdio subprocess）：
+# → 通常重開 Claude Code session 即恢復；若需驗證版本：
+#   uvx yfinance-mcp@0.1.2 --help
 
-# fmp-mcp:
-node /opt/homebrew/lib/node_modules/financial-modeling-prep-mcp-server/stdio-entry.mjs
+# sec-edgar-mcp（uvx @1.0.8，由 Claude Code 自管）：
+# → 重開 Claude Code session 即恢復
+
+# fmp-mcp（Docker 容器，非 stdio，不由 Claude Code 管）：
+docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml restart
+
+# fmp-mcp 旁路驗證（不需 /mcp reconnect，直接測 helper）：
+python3 /Users/supatrick/laptop/project/fadacai-portfolio/tools/fmp_query.py getCompanyProfile --args '{"symbol":"AAPL"}'
+
+# fmp-mcp session expired（常見）→ 用 helper 取資料，不用 reconnect：
+python3 /Users/supatrick/laptop/project/fadacai-portfolio/tools/fmp_query.py getBiggestGainers
 ```
 
 ### 5. 建議
 
 - 若 1-2 個 server 失敗 → 建議重啟該 server，其他 skill 可正常使用（會 fallback）
-- 若 3+ 個 server 失敗 → 建議重啟 Codex session
-- 提醒：MCP server 由 Codex 自動管理，通常重開 session 即可恢復
+- 若 3+ 個 server 失敗 → 建議重啟 Claude Code session
+- 提醒：MCP server 由 Claude Code 自動管理，通常重開 session 即可恢復
 
 ## Output Format
 - 繁體中文輸出

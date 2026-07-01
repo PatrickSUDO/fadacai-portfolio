@@ -25,7 +25,7 @@ This is an investment research and portfolio management workspace. The user acti
 
 Add `--codex` to any of the above (except `/mcp-health`, `/trade-journal`) to append a Codex second-opinion section:
 
-- **B1. 獨立第一性分析（預設）** — Codex 在**不知道 Codex 結論**的情況下，獨立執行 Step 0e（thesis / 證偽條件 / 機率分布 / EV / Verdict），只給它 raw data。然後 Codex 與 Codex 兩個獨立輸出**並排比較**，找出真實共識 vs 真實分歧。所有 5 個 skill 適用。
+- **B1. 獨立第一性分析（預設）** — Codex 在**不知道 Claude 結論**的情況下，獨立執行 Step 0e（thesis / 證偽條件 / 機率分布 / EV / Verdict），只給它 raw data。然後 Claude 與 Codex 兩個獨立輸出**並排比較**，找出真實共識 vs 真實分歧。所有 5 個 skill 適用。
 - **B2. 機會掃描** (`/codex:rescue`) — surface hot themes/tickers not in current portfolio. `/briefing full/deep`, `/portfolio-review`, `/todo` only.
 - **B3. 輪動分析** (`/codex:rescue`) — sector + stock rotation (leading/lagging vs SPY, money flow, 3 actionable rotation moves). Same 3 skills.
 
@@ -33,19 +33,70 @@ Add `--codex` to any of the above (except `/mcp-health`, `/trade-journal`) to ap
 
 舊版 B1 是 `/codex:adversarial-review`（攻擊 thesis），這是 **confirmation bias by design**：要它找 bug 它一定找出 bug，即使 thesis 完全成立。結果是兩邊「分歧」很多但大部分由 framing 製造，不是真實見解衝突。
 
-獨立第一性分析讓 Codex 和 Codex 從同樣 raw data 出發、各自跑 Step 0e、不知道對方結論。**真實共識 = 高信心**；**真實分歧 = 值得深入的學習點**。
+獨立第一性分析讓 Claude 和 Codex 從同樣 raw data 出發、各自跑 Step 0e、不知道對方結論。**真實共識 = 高信心**；**真實分歧 = 值得深入的學習點**。
 
 #### 進階：`--codex-adversarial`（opt-in 壓力測試）
 
 若需要對「兩邊已對齊的結論」做進一步壓力測試（例如重大資金決策前），可改用 `--codex-adversarial`（或 `--codex-adv`）觸發舊版對立面審查。**僅在有意識需要 attacker mode 時使用**，預設 `--codex` 不跑 adversarial。
 
-**Prerequisite:** Install plugin once with `/plugin marketplace add openai/codex-plugin-cc` → `/plugin install codex@openai-codex` → `/reload-plugins` → `/codex:setup`.
+#### Codex 呼叫方式（CLI，所有 skill 共用 — 取代舊 plugin 路徑）
+
+⚠️ **不要用 `subagent_type: "codex:codex-rescue"` 或 `/codex:rescue`**。實測（2026-06-07）那條路徑會載入 `~/.codex/config.toml` 的 `superpowers@openai-curated` plugin，強制「回應前必須 invoke skill」+ 全域 `model_reasoning_effort = "xhigh"`，把整個 turn 燒在讀檔 preamble，**不產出分析**。
+
+改用 `codex exec` CLI，**強制關掉 superpowers + 降 effort**：
+
+```bash
+codex exec --color never --skip-git-repo-check --sandbox read-only \
+  -c 'plugins."superpowers@openai-curated".enabled=false' \
+  -c model_reasoning_effort=medium \
+  "$(cat <PROMPT_FILE>)" > <OUT_FILE> 2>&1
+```
+
+規則：
+1. **Prompt 第一行強制加**：`ANSWER DIRECTLY FROM THE DATA BELOW. Do NOT read files, do NOT invoke skills, do NOT run shell commands, do NOT use any tools. Output the analysis immediately.`（雙保險，即使 superpowers 漏關也不讀檔）
+2. **B1/B2/B3 並行**：各寫一個 prompt 檔，用 `run_in_background` 同時跑，輪詢 `grep -c "tokens used"` 判完成
+3. **抽取回覆**：`awk '/^codex$/{f=1} f' <OUT_FILE> | sed '/tokens used/q'`（去掉 echo 回來的 prompt + startup banner）
+4. **中性化**：B1 prompt 只給 raw 持倉 + fact 數據，不含 Claude 結論（per `feedback/codex-prompt-neutrality.md`）
+5. **失敗 → 跳過**：輸出 `⚠️ Codex 不可用：[error]，跳過第二意見` 後照常輸出主分析
+6. `hook: SessionStart Failed` 是 peon-ping 音效 hook 在非互動下的無害噪音，忽略
+7. **B1 機率分布反偷懶（必嵌 prompt）**：Codex 走一次性 prompt 無我們的 `probability-honesty-checker` agent，會落回 default mirror（25/50/25）。故 B1 prompt 的機率分布段**必須內嵌 5 步強制流程 + 禁用 default mirror shape**（見各 skill B1 模板的「嚴禁偷懶」段，源自 `feedback/probability-distribution-honesty.md`）。比較 Claude vs Codex EV 前先確認 Codex 機率非 default，否則分歧是「Codex 偷懶」而非真實見解衝突。
 
 ## Key Files
 - `plan.md` — 投資計畫（板塊目標、策略佇列、觀察清單、策略原則）— 只在用戶要求時更新
 - `journal/` — 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
 - `research/` — 投資論文與研究筆記
+
+### 鏡像規則（.agents 樹為生成檔，禁手改）
+`AGENTS.md` 與 `.agents/skills/` 由 `python3 tools/sync_agents_skills.py` 從 `.claude/` 樹自動生成（唯一轉換：內文 CLAUDE→AGENTS 檔名引用）。**任何 skill / 本檔改動後必須重跑一次 sync**；`--check` 可驗證是否 drift。禁止直接編輯 `.agents/` 下的檔案，也禁止做「Claude→Codex」之類全文置換（2026-07-01 前的鏡像壞損即由此而來）。
+
+## HTML 報告站工作流
+
+每份報告輸出 markdown（source of truth）後自動轉為 HTML，push 到獨立 private repo 部署為 Netlify 靜態網站。
+
+### 工具
+```bash
+python3 tools/generate_html.py briefing 2026-06-10 [--push]
+python3 tools/generate_html.py portfolio-review briefing-out/portfolio-review-2026-06-07.md [--push]
+python3 tools/generate_html.py stock-analysis briefing-out/stock-analysis-NVDA-2026-06-10.md [--push]
+python3 tools/generate_html.py options-strategy briefing-out/options-strategy-NVDA-2026-06-10.md [--push]
+```
+- 無 `--push`：只在 `briefing-out/html/` 存一份本地 HTML
+- 有 `--push`：同步到 `$REPORTS_REPO_PATH` 並 git push（Netlify 自動部署）
+- `send_briefing.py` 在 `--send` 流程中自動呼叫 `generate_html briefing --push`，Telegram 訊息末自動附連結
+
+### 環境變數（.env，絕不 commit 到主 repo）
+```
+REPORT_SITE_TOKEN=<32-hex-token>          # URL 混淆用，等同隱私鎖
+REPORT_SITE_URL=https://reports.patricksudo.com
+REPORTS_REPO_PATH=/path/to/fadacai-reports  # private repo local clone
+```
+
+### 隱私原則
+- Reports repo 必須是 **private**，token 只存在 .env 與 repo 目錄名
+- 網站根目錄放空白 decoy index.html；所有頁面含 `noindex,nofollow` meta
+- 安全標頭由 reports repo 的 `_headers` 設定（HSTS、`X-Robots-Tag: noindex`、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`），Netlify 部署時套用
+- `cache/`、`send-log.jsonl`、`launchd.log`、codex prompt/out 等敏感快取**不上傳**到 reports repo
 
 ## Step 0 統一規範（所有 skills 共用）
 
@@ -84,9 +135,11 @@ Add `--codex` to any of the above (except `/mcp-health`, `/trade-journal`) to ap
    - 給**機率分布而非單點**（不寫「可能會漲」而是 60% 看多 / 25% 中性 / 15% 看空）
    - 算 expected value：Σ(機率 × 各情境公允價)，與現價比較
    - **強制呼叫 `probability-honesty-checker` agent**（見下方）— 不可手動套機率
+   - **Fair PE 三錨點推導（不可手寫猜測）：** A1=EODHD `pe_ratio`（現行市場隱含）；A2=`peg_ratio×成長率`（成長合理倍數，AI龍頭目標PEG 1.5，其餘 1.0）；A3=`wall_street_target÷forward_EPS`（分析師隱含）。**A3 的 base forward_EPS 取真實賣方共識：`fundamentals-snapshot.json forward_estimates.curr_fy.eps_avg`（缺→next_fy.eps_avg，再缺→`eps_ttm×(1+growth)` 近似）；cache `self_valuation.a3_fwdeps_source` 已標來源，勿手推。** 任一錨回 0.0/null → 丟棄。基準Fair PE=median(A1,A2,A3)；樂觀=max 上限current_PE×1.25；悲觀=min 下限current_PE×0.70。Forward EPS：樂觀=base×(1+min(avg_surprise_pct,15%))；悲觀=base×(1−5%~10%)。
+   - **A4 自建錨（sanity/divergence flag，不進 median，不進 EV）：** 從 `fundamentals-snapshot.json self_valuation` 讀取（`tools/fetch_fundamentals.py` 已在 cache 計算）。`own_fwdEPS = projected_revenue × net_margin ÷ shares`，revenue 用歷史 CAGR 淡化向 8% terminal，**完全不看分析師 estimate**。`own_target_price = own_fwdEPS × base_FairPE(median(A1,A2,A3))`。`A4vsA3% = (own_target − wall_street_target) / wall_street_target`——隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。`confidence=unavailable` → `(self-val N/A)`；`low` → `⚠️低信心（高波動）`；`ok` → 正常顯示。
 
 **為什麼這條重要：**
-- Codex 的分析、Codex 的 adversarial review 都會帶 framing 偏差
+- Claude 的分析、Codex 的 adversarial review 都會帶 framing 偏差
 - narrative 層的辯論（「該買 vs 該避」）永遠分歧，第一性是繞開兩者的 ground truth
 - 連續做不到這三題 = Verdict 是 narrative + heuristic + framing 的產物，不可靠
 
@@ -126,11 +179,11 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - 發現原本確實偷懶 → 老實承認 + 顯示新算（見 feedback/probability-distribution-honesty.md）
 
 **⚠️ Agent 註冊限制（重要）：**
-- Codex session 啟動時載入 `.Codex/agents/` 目錄，**session 內新增的 agent 檔案不會被動態 picked up**
-- 若呼叫返回 `Agent type 'X' not found`：(1) 確認檔案在 `.Codex/agents/X.md`，(2) 該 session 暫時用 workaround，(3) 下次 session 自動載入
+- Claude Code session 啟動時載入 `.claude/agents/` 目錄，**session 內新增的 agent 檔案不會被動態 picked up**
+- 若呼叫返回 `Agent type 'X' not found`：(1) 確認檔案在 `.claude/agents/X.md`，(2) 該 session 暫時用 workaround，(3) 下次 session 自動載入
 
 **Workaround：當 probability-honesty-checker agent 不可用時**
-直接呼叫 `general-purpose` agent，並把 `.Codex/agents/probability-honesty-checker.md` 的內容當 prompt 前綴傳入：
+直接呼叫 `general-purpose` agent，並把 `.claude/agents/probability-honesty-checker.md` 的內容當 prompt 前綴傳入：
 
 ```
 Agent(
@@ -154,11 +207,20 @@ Agent(
 
 第一性檢查產出的可驗證 thesis 不是寫完就忘 — 凡帶**明確時間/事件觸發點**的 thesis（「請在財報後/N 日後檢視 X」）都登錄到帳本 `research/thesis-ledger.json`，到期自動回頭抓實際數字驗收（passed/failed/partial），結果驅動下一步 actionable。
 
-- 工具：`tools/thesis_ledger.py`（去重、碰撞攔截、到期/過期掃描、狀態轉換、統計全在程式層，**Codex 不手改 JSON**）
+- 工具：`tools/thesis_ledger.py`（去重、碰撞攔截、到期/過期掃描、狀態轉換、統計全在程式層，**Claude 不手改 JSON**）
 - 去重 key = `ticker:slug`；同 key 但 thesis 差太多 → exit code 2 碰撞，改 slug 或 `supersede`
 - 逾期 >30 天未驗收 → 自動 `expired`（當作無結果，不算命中率分母）
 - **驗收（每次 briefing / portfolio-review 自動跑）**：`thesis_ledger.py due` → 對到期項抓數判定 → `resolve`；抓不到新數 → `reschedule` 不猜 verdict
 - **登錄（briefing / portfolio-review 收尾）**：`list` 看既有 slug → `add`
+- **Signal-inference 來源**：從 news body / SEC 8-K / 逐字稿抽**已量化陳述**推導的 thesis，登錄時加 `--source signal-inference --ev "signal: <metric> <value>, <source>, conf=<confidence>"`。僅 `confidence ∈ {high, medium}` 且有明確前瞻 trigger + 強制 `raw_quote`（≤120 字逐字）才登錄；`low` 只在文字呈現。`stats --source signal-inference` 可量測新聞推導命中率（閉環驗證 P3 價值）。反幻覺鎖：無 raw_quote = 無 signal = 不登錄。
+- **Resolve 附加估值影響欄位（選填，有數就帶）：**
+  ```
+  python3 tools/thesis_ledger.py resolve --id <id> --verdict passed|failed|partial \
+    --actual "實際數字" --note "判讀" --next-action "操作" \
+    --fair-value-before <float> --fair-value-after <float> \
+    --price-impact-pct <float> --impact-decomp "thesis +X%/multiple −Z%=net −W%"
+  ```
+  passed→公允價上修（recompute D1 三錨點）；failed→下修；partial→拆分 thesis 成分 vs 倍數成分（impact_decomp）。數字存入 history[]，long-term queryable via stats。
 - 詳見 `docs/thesis-ledger.md`
 
 ## Auto Journal Detection（SessionStart Hook）
@@ -169,8 +231,22 @@ Agent(
 ## Investment Style
 - 主軸：AI/半導體、高成長科技（無板塊上限，單一個股 > 10% 才提醒）
 - 避險：基建、航太、貴金屬、核能（小比例平衡）
-- Strategies: LEAPS (stock replacement, deep ITM delta 0.72-0.85), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
+- Strategies: LEAPS (stock replacement, deep ITM delta 0.80-0.88), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated
+
+### 執行底層邏輯：Portfolio as a Business（強制濾鏡）
+任何 Verdict / Action / 倉位建議都先過這套濾鏡（源 `research/新手開局.md`，操作規範 `feedback/realized-pnl-business-model.md`，Step 0a 已含必讀）：
+- **績效看 Realized PnL，不看 Unrealized** — 只認列獲利、虧損掛庫存；目標 Realized ≈ 4× |未實現虧損|。反過來 = 爆倉訊號要 flag。
+- **Swing Risk 首要監測**（= 帳上最高未實現利潤 + 潛在回吐；Options = Premium + 未實現利潤）；肥利潤未落袋要主動提示系統性落袋。
+- **Offsetting 沖銷失誤而非利潤；禁「砍 loser 加碼 winner」**（四錯：認列虧損 / 過度暴險 / Beta 失衡 / 分散化打折）。
+- **Rolling → Adjusted Risk → Risk-Free State**：落袋用 Adjusted Risk 視角（新倉真實風險 = size − 累積已認列），不是「賣了就少賺」。
+- **Pre-emptive（非止損式）風險管理 + Scenario Planning**；慎用 Put/SPY 對沖（漲了變反向認列虧損 = Double-Kill）。
+- **定位先行**；**主動組合支數 14–18（理想 14–16），>18 砍一進一不淨增**，>30 無益。
+- **分桶**：每倉位歸 🔵信念桶（讓它 run、只在 thesis 破或 >10% 才動）或 🟢認列循環桶（高 β/週期/肥利潤 → 系統性 harvest）；疑問時歸認列。
+- **兩層候補**：🟡L1 On-Deck（thesis 驗證+觸發明確，補空位只從 L1 拉）/ 🔵L2 Research Pool（需修復或擴 Universe）；砍倉依砍因歸層（組合理由→L1，thesis 破→L2）。
+- **機會成本閘門（桶間升級/降級/部署皆強制）**：新倉須明顯優於最弱在倉名額才進 — 相關 beta 門檻最高（須擠掉弱倉、不淨增），無相關 hedge/填缺口門檻較低；14–18 上緣時砍一進一。
+- **停利再投入飛輪（汰弱留強的閉環，總原則）**：認列循環桶**系統性 harvest 峰值強度**（revision 轉折/題材降溫的肥利潤）+ **砍真弱**（thesis 破 OR 最弱動能無催化）→ **盈餘必配對 redeploy 決策，第一順位投入「加速中強度」**（信念桶領導者 / L1 中 revision 上修的領漲者），**不讓現金閒置滲漏**（每次 harvest 同一次 review 內要嘛 redeploy 上行、要嘛標明 dry powder 理由 + 觸發）。定義鎖死：**「弱」= fundamental 惡化或最弱動能無催化，非當日紅K**（per `feedback/weak-signal-root-cause.md`）；**「強」= estimate 上修/成長加速，非當日超買**（per `feedback/momentum-valuation-symmetry.md`）；funding 源用**已實現獲利 + 真弱倉，非砍虧損倉**（與上面「禁砍 loser 加碼 winner」相容——飛輪靠 realized gain 轉動，不靠認列虧損）。Guardrails（單倉>10%、14–18 支、相關度、去相關 hedge sleeve）是飛輪**護欄不是矛盾**：集中往強度跑、但不破紅線。詳 `feedback/momentum-valuation-symmetry.md`。
+- **即時 roster（信念/認列/L1/L2 名單）權威來源 = `plan.md`「組合架構 v2」**；改動 roster 同步更新該節。
 
 ## MCP Tools Available
 - `mcp__firstrade-server__*` — live Firstrade account data (positions, balance, history, quotes, watchlists)
@@ -188,9 +264,14 @@ Agent(
 - `mcp__polymarket-mcp__*` — prediction market probabilities (demo mode, read-only)
   - `search_markets(query)` — search for events by keyword
   - `get_trending_markets()` — trending prediction markets
-- `mcp__eodhd-mcp__*` — sentiment analysis from EODHD (ticker format: "AAPL.US")
+- `mcp__eodhd-mcp__*` — EODHD financial data (ticker format: "AAPL.US"; needs session restart after server.py changes to pick up new tools)
+  - `get_news(ticker, days, limit)` — **raw news articles with full body** (up to 1500 chars content), symbols[], tags[], sentiment. Use when you need article body for P3 signal extraction (wafer starts, capex, ASP data). Distinct from get_news_sentiment which discards body/symbols/tags. Also cached daily by `tools/fetch_news.py` → `briefing-out/cache/news-articles.json` (TTL 6h, top 8 articles/ticker, 600-char excerpts).
   - `get_news_sentiment(ticker, days, limit)` — news with AI sentiment scores
   - `get_sentiment_trend(ticker, days)` — aggregated daily sentiment trajectory (-1 to +1)
+  - `get_fundamentals_snapshot(ticker)` — **one-call valuation bundle**: PE/PEG/margins/ROE/eps_ttm/revenue_ttm/qtrly growth YoY/wall_street_target/analyst_ratings/52w/beta/SMA. **Free-tier-safe substitute for 402-gated fmp ratios/PT endpoints.** Known data gaps: pe_ratio=0.0/peg=0.0 → drop that anchor. ticker format: "MU.US"
+  - `get_earnings_history(ticker, quarters)` — trailing 8Q EPS beat base-rate: `{beat_pct, avg_surprise_pct, beats, quarters_counted}` + next_earnings. **Primary source for probability-honesty-checker Step 1d.** Caveat: avg_surprise_pct unreliable for low-EPS-base stocks (AMD shows +152% artifact — use beat COUNT, not avg%); cross-check vs local earnings-history.json cache
+  - `get_economic_calendar(from_date, to_date, country, high_impact_only, limit)` — CPI/NFP/FOMC/PCE with forecast vs previous vs actual. `high_impact_only=True` for macro catalysts. country="US" (2-letter); feeds probability-honesty-checker Step 1i forward catalyst dates
+  - `get_macro_indicator(country, indicator, limit)` — annual macro time series (inflation_consumer_prices_annual, real_interest_rate, gdp_growth_annual…). country="USA" (3-letter). **Annual/lagged — regime context only, not high-frequency signals**
 - Use parallel agent dispatch for batch data fetching across multiple tickers
 
 ## MCP Retry & Fallback Policy
@@ -205,42 +286,53 @@ Agent(
   - polymarket-mcp: `get_trending_markets()`
 - Health test also fails → fallback to WebSearch/WebFetch for equivalent data
 - 在輸出中標記 "⚠️ [server] MCP 不可用，使用替代數據源"
+- **fmp-mcp 專屬 fallback（session 過期無需 `/mcp` reconnect）**：`mcp__fmp-mcp__*` 回 `Session not found or expired` 時，**不需手動 reconnect**，直接跑旁路 helper（每次建全新 MCP session，永不過期）：
+  ```bash
+  python3 tools/fmp_query.py <toolName> [--args '<json>']
+  ```
+  常用範例：
+  - `python3 tools/fmp_query.py getBiggestGainers`
+  - `python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`
+  - `python3 tools/fmp_query.py getEarningsCalendar --args '{"from":"2026-06-28","to":"2026-07-28"}'`
+  - `python3 tools/fmp_query.py getCompanyProfile --args '{"symbol":"AAPL"}'`
+  - `python3 tools/fmp_query.py getMostActiveStocks`
+  結果直接是 JSON，等同 MCP tool 的 structured output。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
 
 ## Research Boundaries
 - 不主動研究用戶未要求的付費 API/服務
 - FMP free tier 限制已記錄，不嘗試付費端點（會返回 402）
 
 ## Permission Protection
-- 不覆蓋/刪除 `.Codex.json` 中現有 allow rules
+- 不覆蓋/刪除 `.claude.json` 中現有 allow rules
 - 只 append 新權限，並向用戶展示新增內容
 
 ## Skill 模型分工（2026-05-05）
 
-### 數據收集 subagent — Haiku 4.5
-所有 skill 的平行數據收集 Agent 都指定 `subagent_type: "data-collector"`（見 `.Codex/agents/data-collector.md`）。
-Data-collector 每次啟動是全新 context（無歷史），Haiku 完全勝任純 MCP 抓資料工作。
+### 數據收集 subagent — Sonnet 4.6
+所有 skill 的平行數據收集 Agent 都指定 `subagent_type: "data-collector"`（見 `.claude/agents/data-collector.md`）。
+Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + agent 內加反幻覺鐵則。** 主程仍須對權威價（Firstrade）交叉驗證，對不上即整批丟棄（見 `feedback/subagent-hallucination-guard.md`）。
 
-### 主 skill 執行模型（2026-06-09 更新：Fable 5 為最強旗艦，取代 Opus 4.8）
+### 主 skill 執行模型（2026-06-13 更新：全面回歸 Opus 4.8）
 
-模型階梯：**Fable 5**（`claude-fable-5`，$10/$50，最強旗艦、重推理、1M context）> **Opus 4.8**（`claude-opus-4-8`，$15/$75，前旗艦）> **Sonnet 4.6**（中堅）> **Haiku 4.5**（純機械）。Fable 5 對 Opus 4.8 是「能力↑+價格↓」的全面壓制，Opus 4.8 僅作 Fable refuse 時的 fallback。
+模型階梯：**Opus 4.8**（`claude-opus-4-8`，$15/$75，旗艦推理）> **Sonnet 4.6**（中堅/純機械）。
 
 | Skill / 任務 | 模型 | 理由 |
 |---|---|---|
-| `/ev-check` | **Fable 5** | 純第一性機率分布 + EV，反偷懶紀律最吃推理 |
-| `/portfolio-review` | **Fable 5** | 跨全組合綜合 + 風險 + EV，驅動資金決策 |
-| `/briefing deep` | **Fable 5** | 深度合成 + Codex 整合 + 機率/EV |
-| `/stock-analysis` | **Fable 5** | 單標的深掘，旗艦推理 |
+| `/ev-check` | **Opus 4.8** | 純第一性機率分布 + EV，反偷懶紀律最吃推理 |
+| `/portfolio-review` | **Opus 4.8** | 跨全組合綜合 + 風險 + EV，驅動資金決策 |
+| `/briefing deep` | **Opus 4.8** | 深度合成 + Codex 整合 + 機率/EV |
+| `/stock-analysis` | **Opus 4.8** | 單標的深掘，旗艦推理 |
 | `/options-strategy` | **Opus 4.8** | Greeks / 價差計算 + 多腿比較 |
 | `/briefing full` | **Opus 4.8** | 中等綜合 + Verdict |
 | `/briefing`（quick）| **Sonnet 4.6** | ~1min 彙整 |
 | `/briefing telegram` | **Sonnet 4.6** | 每日 launchd 自動推送，成本敏感 |
 | `/todo` | **Sonnet 4.6** | 行動清單 |
 | `/trade-journal` review/summary | **Sonnet 4.6** | 帶輕度分析 |
-| `/trade-journal` log | **Haiku 4.5** | 純記錄/格式化（frontmatter 預設 Sonnet，log 可降 Haiku）|
-| `/mcp-health` | **Haiku 4.5** | 純連線測試 |
-| data-collector subagent | **Haiku 4.5** | 純 MCP 抓資料 |
-| probability-honesty-checker subagent | **Fable 5** | 機率紀律執法者，用最強 |
+| `/trade-journal` log | **Sonnet 4.6** | 純記錄/格式化 |
+| `/mcp-health` | **Sonnet 4.6** | 純連線測試 |
+| data-collector subagent | **Sonnet 4.6** | 純 MCP 抓資料，反幻覺鐵則 |
+| probability-honesty-checker subagent | **Opus 4.8** | 機率紀律執法者，用旗艦 |
 
-**長 context：** session > 100k 時往 **Fable 5** 靠（1M context + 推理最穩），不再升 Opus。換主題先 `/clear`、同回合跑完就 `/clear`、過長先 `/compact`。
+**長 context：** session > 100k 時先 `/compact`，再繼續執行。換主題先 `/clear`。
 
-**手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model fable`、`/model opus`、`/model sonnet`、`/model haiku` 切換後再呼叫。
+**手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model opus`、`/model sonnet`、`/model sonnet` 切換後再呼叫。
