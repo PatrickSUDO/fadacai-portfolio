@@ -374,6 +374,28 @@ Use `mcp__fmp-mcp__getCompanyProfile` only for tickers where yfinance data is in
 - 若候選 IV Rank > 80：警告「IV 過高，後續 IV crush 風險」
 - 若 portfolio 已有同板塊 binary 樂透（如 OKLO 待執行）：優先補強既有，不新開重複曝險
 
+### I.6 PMCC 收租機會掃描（Poor Man's Covered Call Scan，必跑）
+
+**目的：** 自動找「想留曝險但不看好大漲」的名字轉 PMCC 收租（填桶架構第 5 格 🟣）。**每次 portfolio-review 自動跑，用戶不用記得手動掃**（源 `feedback/pmcc-candidate-discipline.md`；引擎 `tools/pmcc_scan.py`，5 因子計分卡機械化）。
+
+**執行（掃全組合 + 觀察名，市場時段跑 OI 才準）：**
+```bash
+python3 tools/pmcc_scan.py --json briefing-out/cache/pmcc-scan.json
+# ad-hoc：--tickers TSLA,GOOGL  ；只看過關：--only-candidates
+```
+
+**判讀（機械層已算，skill 做判斷）：**
+- `PMCC_CANDIDATE` → 進 `plan.md`「🟣 PMCC 候選池」；對照現有 LEAPS 持倉（是否從裸持轉收租）。附短腿建議（strike ≥ BE、δ≈0.30、跨財報 flag）
+- `WATCH`（多為 LEAPS debit 太貴）→ 記錄，等 IV 降或深回檔再評
+- `EXCLUDE_LET_RUN`（revision 加速 / target 噴）→ **不封頂**，這是飛輪 ④ 的 redeploy 領漲者，別誤 PMCC
+- 跨財報短腿 → 走 `feedback/options-leaps-playbook.md` 的 ±48h + timing 決策；firstrade MCP 開不了選擇權 → App 手掛
+- **反幻覺**：pmcc_scan 用 yfinance/EODHD，短腿 credit 為機械估；掛單前主程拉即時鏈定案（盤前 OI/IV 不可靠，工具已標註）
+
+**輸出格式（把 scan 表濃縮，只列 CANDIDATE + WATCH）：**
+
+| Ticker | 現價 | 判定 | LEAPS(δ/BE) | 短腿(strike/credit/DTE) | 單輪/年化 | 跨財報 | 動作 |
+|--------|-----:|------|-------------|------------------------|----------|-------|------|
+
 4. **配置計畫對照（必做）**
    - 對照 `plan.md` 中的目標配置
    - 顯示計畫執行進度表：

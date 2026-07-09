@@ -20,6 +20,8 @@ This is an investment research and portfolio management workspace. The user acti
 4. `/options-strategy TICKER STRATEGY` — options calculation (supports multi-ticker comparison)
 5. `/trade-journal log|review|summary|auto` — trade records
 6. `/mcp-health` — test all MCP server connections
+7. `/event-vol-scan [days] [TICKER ...]` — 財報/CPI/FOMC 前末日 buy call / 雙買 straddle 機會掃描（引擎 `tools/event_vol_scan.py`；賣方策略不適用、仍守財報 ±48h 禁令）
+8. PMCC 收租候選掃描 — `python3 tools/pmcc_scan.py`（5 因子計分卡機械化，規則 `feedback/pmcc-candidate-discipline.md`；每次 `/portfolio-review` Section I.6 自動跑，找「想留但不看好大漲」的名字轉 poor man's covered call；判斷層留給 `/options-strategy`）
 
 ### Codex 第二意見（opt-in `--codex` / `--2nd`）
 
@@ -326,6 +328,7 @@ Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + age
 | `/briefing deep` | **Opus 4.8** | 深度合成 + Codex 整合 + 機率/EV |
 | `/stock-analysis` | **Opus 4.8** | 單標的深掘，旗艦推理 |
 | `/options-strategy` | **Opus 4.8** | Greeks / 價差計算 + 多腿比較 |
+| `/event-vol-scan` | **Opus 4.8** | 事件買方掃描：VRP/base rate 判讀 + 末日/雙買結構 |
 | `/briefing full` | **Opus 4.8** | 中等綜合 + Verdict |
 | `/briefing`（quick）| **Sonnet 4.6** | ~1min 彙整 |
 | `/briefing telegram` | **Sonnet 4.6** | 每日 launchd 自動推送，成本敏感 |
