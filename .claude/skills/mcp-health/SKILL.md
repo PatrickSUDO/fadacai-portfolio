@@ -2,7 +2,7 @@
 name: mcp-health
 description: Test all MCP server connections and report health status. Usage - /mcp-health
 user_invocable: true
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # MCP Health Check
