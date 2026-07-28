@@ -21,6 +21,10 @@ This is an investment research and portfolio management workspace. The user acti
 5. `/trade-journal log|review|summary|auto` — trade records
 6. `/mcp-health` — test all MCP server connections
 7. `/event-vol-scan [days] [TICKER ...]` — 財報/CPI/FOMC 前末日 buy call / 雙買 straddle 機會掃描（引擎 `tools/event_vol_scan.py`；賣方策略不適用、仍守財報 ±48h 禁令）
+8. `/trade-review [2w|4w|since YYYY-MM-DD]` — **每兩週交易檢討（自我進化引擎）**：歸因每筆成交是「系統決策」還是「脫離 plan 的自主決策」，算**三個並列指標**、驗影子訊號、更新 `feedback/RULES-LEDGER.md` 規則命中率，輸出「本期該改哪一條規則」。引擎 `tools/trade_ledger.py`；briefing 距上次 >14 天會提醒
+   - **交易 α**（`score`）：進出對不對。β 對**實際使用的基準回歸**算（半導體對 SMH、其餘對 SPY）——用券商 β（對大盤測）套 SMH 會嚴重過度調整，結論會反過來
+   - **持有 α**（`holding-alpha`）：該不該繼續抱。滾動窗 + 建倉至今。**沒有這項，純交易指標會獎勵頻繁進出、把「抱對」記為零貢獻**；首測持有 α 量級大於交易 α
+   - **beta capture**（`beta-capture`）：行情好的時候吃到沒有。拆基準上漲/下跌日各自回歸 β；**up-β < down-β = 漲不上跌得凶**。梯級停利 + 買梯會機械性壓低 up-capture，這是純 α 看不見的成本
 8. PMCC 收租候選掃描 — `python3 tools/pmcc_scan.py`（5 因子計分卡機械化，規則 `feedback/pmcc-candidate-discipline.md`；每次 `/portfolio-review` Section I.6 自動跑，找「想留但不看好大漲」的名字轉 poor man's covered call；判斷層留給 `/options-strategy`）
 
 ### Codex 第二意見（opt-in `--codex` / `--2nd`）
@@ -67,7 +71,27 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 - `plan.md` — 投資計畫（板塊目標、策略佇列、觀察清單、策略原則）— 只在用戶要求時更新
 - `journal/` — 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
+- `feedback/RULES-LEDGER.md` — **規則自己的命中率帳本**（失效 ≥2 次 → 強制覆審）；由 `/trade-review` 每兩週更新
 - `research/` — 投資論文與研究筆記
+- `research/trade-ledger.jsonl` — 結構化成交帳（含 `origin` 誰決定 / `exec_via` 怎麼下單）；工具 `tools/trade_ledger.py`
+- `research/order-registry.json` — 在掛單快照累積（券商只回在掛單，斷天補不回來 → briefing 每次 `snapshot-orders`）
+- `research/shadow-signals.jsonl` — 影子訊號旗標（記錄不阻擋）；工具 `tools/shadow_signals.py`
+- `research/last-trade-review.txt` — 上次交易檻討日期（briefing 據此算 >14 天到期提醒）
+- `research/position-flags.json` — **未結旗標登記（欠一個決定的部位）**。工具 `tools/trade_ledger.py flag/defer/resolve-flag/flags`
+- `briefing-out/cache/archive/YYYY-MM-DD/` — **每日決策輸入凍結快照**（fundamentals/macro/news/earnings/pmcc/leading）。工具 `tools/archive_cache.py`，briefing_runner 自動跑，保留 120 天日快照 + 之後每月首日
+- `research/leading-config.json` — **發現層先行指標配置**（cross-read 鏈、pricing 關鍵字/symbols、SMH 寬度成分、台股月營收清單、decel 閾值）；改持倉/鏈/閾值時手動編輯，`tools/fetch_leading.py` 讀取
+- `briefing-out/cache/leading-indicators.json` — **先行指標快照**（三儀表 credit velocity/VIX 期限/半導體寬度 + 財報 cross-read 排序 + 記憶體/功率報價新聞 + revision 二階導 + 台股月營收）。工具 `tools/fetch_leading.py`（TTL 20h，`--force`/`--only`/DRY_RUN=1），briefing_runner 每日預載、archive_cache 凍結。**所有旗標 display-only（記錄不阻擋，同影子訊號 A4）**，命中率由 /trade-review 驗證後才可升閘門。revision 二階導有兩法：archive-diff（需快照累積）+ **vendor 7d 曲線**（EODHD Fundamentals Data Feed `epsTrend7daysAgo` 等欄位，自首日可用）；breadth 成分自動抓 SMH ETF holdings（靜態清單為 fallback）。fundamentals-snapshot 同步帶 `quarterly_trends[]`（6 季 GM%/庫存天數，缺貨 thesis 證偽指標）
+- `research/price-alerts.json` — **自動價格警報**（launchd `com.fadacai.price-alerts` 每 15 分輪詢，盤中 ET 09:25–16:10 生效 → Telegram）。工具 `tools/price_alerts.py add/list/remove/test`；Firstrade 非官方 lib 無警報 endpoint 故以 yfinance 自建。凡 briefing/review 產出「價格觸發待辦」（收租觸發、撿回條件、短腿破位）應同步 `add` 進來，Mac 睡眠期間不輪詢
+
+### 模型版本記錄（因應模型換代）
+新規則寫入 `feedback/RULES-LEDGER.md` 時填 `作者` 欄；`/trade-review` 補正歸因時帶 `--model` / `--effort`。
+**用途是排覆審順序，不是推翻依據** —— 更新的模型不同意一條已驗證規則（命中 ≥2、失效 0）時，除非有新硬數據否則模型輸。否則每次換代就把累積實證清零，那是「無腦 follow」的反面，同樣不靠證據運作。
+**要比較新舊模型只有一種乾淨作法：盲測重推導** —— 餵 `cache/archive/` 的當日資料切點、**不給結果**，讓新模型獨立推導，再把兩者一起對照實際結果。用新模型「重審」舊決策不具資訊量（它已知道結果）。
+
+### ⚠️ 旗標紀律（修 2026-07-25 量測出的最大回撤漏口）
+凡在 briefing / journal 寫下 **⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判** 的部位，**同一次必須 `trade_ledger.py flag`**（附 `--deadline`）。延後必須走 `defer`（**會計次**），**第 3 次自動 forced → 減碼 1/3 或明文 `resolve-flag --action withdrawn` 附理由**。
+
+**Why：** 旗標只活在散文裡時，每天被當新的重述而永不執行。TSLA 7/01 標降桶候選、延後 3 次（其中一次用「改收租」取代決定）→ **−52.7% / −$6,399**；ON 6/26 明文「勿再向下加碼」→ 7/06 仍加碼 32 股。兩者的 thesis-ledger `history` 都是 **0 筆** —— 沒有任何東西在數延後。自警示起算累積代價 **−$6,333**，是全書最貴的單一機制。`flags` 會顯示 `post_flag_fills`（警示後才加的碼）與 `total_cost_since_flag`（該數字逐期往下走才算修好）。
 
 ### 鏡像規則（.agents 樹為生成檔，禁手改）
 `AGENTS.md` 與 `.agents/skills/` 由 `python3 tools/sync_agents_skills.py` 從 `.claude/` 樹自動生成（唯一轉換：內文 CLAUDE→AGENTS 檔名引用）。**任何 skill / 本檔改動後必須重跑一次 sync**；`--check` 可驗證是否 drift。禁止直接編輯 `.agents/` 下的檔案，也禁止做「Claude→Codex」之類全文置換（2026-07-01 前的鏡像壞損即由此而來）。
@@ -104,7 +128,23 @@ REPORTS_REPO_PATH=/path/to/fadacai-reports  # private repo local clone
 
 ### 0a. 每次必做
 - 讀取 `plan.md` — 了解策略佇列與板塊目標
-- 讀取 `feedback/*.md` — 套用交易風格偏好
+- 讀取 `feedback/*.md` — 交易風格偏好。**但不是無腦套用**：先讀 `feedback/RULES-LEDGER.md`，每條規則都帶著自己的命中/失效紀錄，依下表判讀強度。
+
+#### 規則判讀表（強制，取代舊的「套用 feedback」）
+
+| 規則狀態 | 讀法 |
+|---|---|
+| 命中 ≥2、失效 0 | **已驗證** → 遵循；要反對需硬證據 |
+| 命中 0 / 失效 0、且建立 >60 天 | **未驗證假設** → 可質疑；引用時標「該規則尚未被實測」，並主動設計檢核 |
+| 失效 ≥1 | 待覆審 → 引用時**必須**說明已失效幾次 |
+| 失效 ≥2 | 🔴 強制覆審 → **不得作為唯一依據** |
+| 無結構化原始案例 | ⚠️ **不可驗證** → 降為「偏好」，不是「規則」 |
+
+**兩條鐵則：**
+1. **分數決定，不是模型決定。** 若你（或更新的模型）不同意一條命中 ≥2 的規則 → 你輸，除非你有新的硬數據。不同意一條 0 命中放 >60 天的規則 → 你贏得推定。**規則存廢由實測命中率裁決，不由「哪個模型說的」裁決。** 否則每次模型換代就把累積實證清零，跟「無腦 follow」是同一枚硬幣的反面。
+2. **要求原始案例可重測，本身就是篩子。** 一條規則若無法指出「哪些標的、哪一天、當時主張什麼」，它是意見不是規則，按上表降級。
+
+（2026-07-25 建立時：10 條規則有 6 條屬「未驗證假設」，包含治了 66 次判定的 `weak-signal-root-cause.md` 門檻。誠實標示會讓 briefing 語氣變得比較不確定 —— 那是刻意的：**讓依據的強度可見，而不是所有結論聽起來一樣有信心。**）
 
 ### 0b. 取得即時持倉
 - 呼叫 `mcp__firstrade-server__get_account_position`
@@ -138,7 +178,7 @@ REPORTS_REPO_PATH=/path/to/fadacai-reports  # private repo local clone
    - 算 expected value：Σ(機率 × 各情境公允價)，與現價比較
    - **強制呼叫 `probability-honesty-checker` agent**（見下方）— 不可手動套機率
    - **Fair PE 三錨點推導（不可手寫猜測）：** A1=EODHD `pe_ratio`（現行市場隱含）；A2=`peg_ratio×成長率`（成長合理倍數，AI龍頭目標PEG 1.5，其餘 1.0）；A3=`wall_street_target÷forward_EPS`（分析師隱含）。**A3 的 base forward_EPS 取真實賣方共識：`fundamentals-snapshot.json forward_estimates.curr_fy.eps_avg`（缺→next_fy.eps_avg，再缺→`eps_ttm×(1+growth)` 近似）；cache `self_valuation.a3_fwdeps_source` 已標來源，勿手推。** 任一錨回 0.0/null → 丟棄。基準Fair PE=median(A1,A2,A3)；樂觀=max 上限current_PE×1.25；悲觀=min 下限current_PE×0.70。Forward EPS：樂觀=base×(1+min(avg_surprise_pct,15%))；悲觀=base×(1−5%~10%)。
-   - **A4 自建錨（sanity/divergence flag，不進 median，不進 EV）：** 從 `fundamentals-snapshot.json self_valuation` 讀取（`tools/fetch_fundamentals.py` 已在 cache 計算）。`own_fwdEPS = projected_revenue × net_margin ÷ shares`，revenue 用歷史 CAGR 淡化向 8% terminal，**完全不看分析師 estimate**。`own_target_price = own_fwdEPS × base_FairPE(median(A1,A2,A3))`。`A4vsA3% = (own_target − wall_street_target) / wall_street_target`——隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。`confidence=unavailable` → `(self-val N/A)`；`low` → `⚠️低信心（高波動）`；`ok` → 正常顯示。
+   - **A4 自建錨（sanity/divergence flag，不進 median，不進 EV）：** ⚠️ **2026-07-25 起影子驗證中** — A4 的**高估極端**（`A4vsA3 ≤ −35%`）經一個月前瞻檢驗有預測力（ONTO/ARM/ON/MYRG 4/4 落後，平均 −15.9% α；Spearman +0.45，n=12），低估極端無訊號。目前仍**維持不進 median、不進 EV**，僅由 `tools/shadow_signals.py` 記錄旗標並在 briefing 標 `🟣`，**不得據此改變任何建議**；跑滿 2 期 `/trade-review` 後依實際命中率決定是否升硬閘門（見 `feedback/RULES-LEDGER.md` R3）。從 `fundamentals-snapshot.json self_valuation` 讀取（`tools/fetch_fundamentals.py` 已在 cache 計算）。`own_fwdEPS = projected_revenue × net_margin ÷ shares`，revenue 用歷史 CAGR 淡化向 8% terminal，**完全不看分析師 estimate**。`own_target_price = own_fwdEPS × base_FairPE(median(A1,A2,A3))`。`A4vsA3% = (own_target − wall_street_target) / wall_street_target`——隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。`confidence=unavailable` → `(self-val N/A)`；`low` → `⚠️低信心（高波動）`；`ok` → 正常顯示。
 
 **為什麼這條重要：**
 - Claude 的分析、Codex 的 adversarial review 都會帶 framing 偏差
@@ -257,8 +297,12 @@ Agent(
 - `mcp__firstrade-server__*` — live Firstrade account data (positions, balance, history, quotes, watchlists)
   - `get_account_position` — real-time stock + options positions (replaces current-position.md)
   - `get_account_balance` — account equity and cash
-  - `get_account_history` — transaction history
+  - `get_account_history(date_range, custom_from, custom_to)` — transaction history。`date_range`: today|1w|1m|2m|mtd|ytd|ly|cust；給 `custom_from`（+選填 `custom_to`）即自動走 cust 任意窗（2026-01-01 起 = 702 筆 vs `2m` 的 189 筆）
+  - `get_orders(per_page=0)` — **在掛訂單清單含 order ID**（`G42621-1601`）→ 對上 plan.md ref = 歸因 ground truth；另可偵測死單。⚠️ **只回在掛單，成交/取消後即消失** → 必須每次 briefing 快照累積（`tools/trade_ledger.py snapshot-orders`）
+  - `get_option_chain(symbol, exp_date="")` — 券商選擇權鏈；`exp_date` 空 → 回到期日清單（格式 `YYYYMMDD`，也吃 `YYYY-MM-DD`）
+  - `get_option_greeks(symbol, exp_date)` — 券商計算的 delta/gamma/theta/vega/rho + IV（流動性差的履約價回 `--`）
   - `get_single_quote` / `get_watchlist_quote` — real-time quotes
+  - ⚠️ **選擇權開倉不可用**（ref 1562）：底層 lib `OrderType` 只有 `BO`/`SO`，payload 無 open/close 判別欄位，API 端拒絕。選擇權一律 App 手掛；但 `get_orders` 快照會讓手掛單自動進交易帳，記錄缺口已補
 - `mcp__yfinance-advanced__*` — real-time quotes, options chains, financials, news, recommendations (primary)
 - `mcp__sec-edgar-mcp__*` — SEC filings, XBRL financials, insider trading (Form 4), 8-K events, segment data
 - `mcp__fmp-mcp__*` — stock peers, market movers, company profiles (free tier; most endpoints need paid plan)
@@ -302,6 +346,7 @@ Agent(
   - `python3 tools/fmp_query.py getCompanyProfile --args '{"symbol":"AAPL"}'`
   - `python3 tools/fmp_query.py getMostActiveStocks`
   結果直接是 JSON，等同 MCP tool 的 structured output。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
+- **FMP 免費層實測清單（2026-07-28 全面掃描）**：✅ 可用 — `getTreasuryRates`（全曲線）、`getHistoricalIndustryPE`/`getIndustryPESnapshot`（行業 PE 日頻，`fetch_leading.py` 半導體估值溫度計用）、`getSectorPESnapshot`、`getSectorPerformanceSnapshot`、`getAftermarketQuote`（盤前盤後報價）、`getShareFloat`、`getDividendsCalendar`、`getIndexQuote`（^VIX 可、^VIX3M 402）、加上原有 peers/movers/profile/earnings-calendar。❌ 402 — transcripts、COT、Senate/House trades、stock news、press releases、analyst estimates、grades、price targets、financial scores、economic calendar、SP500 constituents、insider stats（**§9.5 逐字稿改走 SEC 8-K exhibit**）
 
 ## Research Boundaries
 - 不主動研究用戶未要求的付費 API/服務
@@ -330,6 +375,7 @@ Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + age
 | `/options-strategy` | **Opus 4.8** | Greeks / 價差計算 + 多腿比較 |
 | `/event-vol-scan` | **Opus 4.8** | 事件買方掃描：VRP/base rate 判讀 + 末日/雙買結構 |
 | `/briefing full` | **Opus 4.8** | 中等綜合 + Verdict |
+| `/trade-review` | **Opus 4.8** | 決策歸因判讀 + 規則覆審，直接改規則層 |
 | `/briefing`（quick）| **Sonnet 4.6** | ~1min 彙整 |
 | `/briefing telegram` | **Sonnet 4.6** | 每日 launchd 自動推送，成本敏感 |
 | `/todo` | **Sonnet 4.6** | 行動清單 |

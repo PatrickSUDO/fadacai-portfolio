@@ -189,6 +189,8 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 | `/todo` | 下一交易日 / 盤中 / 盤後優先行動清單 | Sonnet | ~1 min |
 | `/ev-check [7d\|14d\|30d]` | 強制第一性機率分布 + 組合 EV 計算 | — | ~1 min |
 | `/trade-journal log\|review\|summary\|auto` | 交易記錄與回顧 | — | ~1 min |
+| `/trade-review [2w\|4w]` | 每兩週交易檢討：成交歸因（系統 vs 自主）+ 三並列指標（交易 α / 持有 α / beta capture）+ 規則命中率帳本 | Opus | ~3-5 min |
+| `/event-vol-scan [days] [TICKER ...]` | 財報/CPI/FOMC 前末日 buy call / 雙買 straddle 機會掃描 | Opus | ~2 min |
 | `/mcp-health` | 測試所有 MCP server 連線狀態 | — | ~30 sec |
 
 **`--send` 旗標：** 可加在任何 tier 後，執行完自動推送 Telegram + email。例：`/briefing full --send`
@@ -447,9 +449,9 @@ launchd (每日 ET 11:30，NYSE 交易日)
 | `feedback/` | 交易風格規則，所有 skill 每次必讀 | 手動（學習後更新） |
 | `research/` | 個股投資論文（MU 記憶體週期、HDD AI 儲存等） | 手動 |
 | `.env` | Telegram + SMTP 設定（**gitignored**，cp .env.example） | 手動 |
-| `tools/` | Pipeline 腳本：`send_briefing.py`、`check_trading_day.py`、`briefing_runner.sh`、`fetch_macro.py`、`fetch_fundamentals.py`（EODHD 基本面 + A4 自建估值快取）、`fetch_news.py`（EODHD 新聞全文快取，TTL 6h）、`earnings_history.py`、`thesis_ledger.py`、`test_self_valuation.py`（A4 單元測試） | git tracked |
+| `tools/` | Pipeline 腳本：`send_briefing.py`、`check_trading_day.py`、`briefing_runner.sh`、`fetch_macro.py`、`fetch_fundamentals.py`（EODHD 基本面 + 7d/30d/60d/90d revision 曲線 + 6 季 GM%/庫存天數 + A4 自建估值快取）、`fetch_news.py`（EODHD 新聞全文快取，TTL 6h）、`fetch_leading.py`（發現層先行指標，見 docs/leading-indicators.md）、`earnings_history.py`、`thesis_ledger.py`、`trade_ledger.py`（成交歸因 / 旗標紀律 / α 計分）、`shadow_signals.py`（影子訊號帳本）、`archive_cache.py`（每日決策輸入凍結，120 天）、`price_alerts.py`（價格警報 → Telegram，launchd 15 分鐘輪詢）、`pmcc_scan.py`、`event_vol_scan.py`、`test_self_valuation.py` / `test_thesis_ledger.py`（單元測試） | git tracked |
 | `briefing-out/` | 每日 briefing 輸出 + 發送 log（**gitignored**） | 自動生成 |
-| `briefing-out/cache/` | 預載快取：`macro-snapshot.json` / `earnings-history.json` / `earnings-dates.json` / `fundamentals-snapshot.json`（含 A4 `self_valuation`，TTL 24h）/ `news-articles.json`（全文 600-char excerpts，TTL 6h）— **日報 zero-latency 數據層** | 自動（runner + launchd） |
+| `briefing-out/cache/` | 預載快取：`macro-snapshot.json` / `earnings-history.json` / `earnings-dates.json` / `fundamentals-snapshot.json`（含 A4 `self_valuation`，TTL 24h）/ `news-articles.json`（全文 600-char excerpts，TTL 6h）/ `leading-indicators.json`（先行指標五 block，TTL 20h）— **日報 zero-latency 數據層**；`archive/YYYY-MM-DD/` 每日凍結全部決策輸入（120 天，之後每月首日），供盲測重推導與 revision 二階導 | 自動（runner + launchd） |
 | `docs/briefing-auto-send.md` | Telegram 設定完整教學 | git tracked |
 | `CLAUDE.md` | 完整專案指令手冊（Step 0 規範、MCP 政策、模型分工） | 手動 |
 
@@ -488,6 +490,9 @@ launchd (每日 ET 11:30，NYSE 交易日)
 - **全持倉基本面快取（`briefing-out/cache/fundamentals-snapshot.json`）** — `fetch_fundamentals.py` 每交易日 launchd 預載，TTL 24h。Quick/Telegram tier 直接讀快取（zero-latency，不等 MCP）；Deep tier 強制刷新。
 - **A4 自建估值錨（sanity / divergence flag）** — `fetch_fundamentals.py` 同次 API call 計算：`own_fwdEPS = 歷史 CAGR (幾何，40% cap → fade 向 8% terminal) × 淨利率 ÷ 股數`（完全不看分析師 estimate）。`own_target_price = own_fwdEPS × base_FairPE(median A1,A2,A3)`。`A4vsA3% = (own_target − wall_street_target) / wall_street_target` 乾淨隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。**A4 不進 EV**，僅做分歧 flag：`confidence=unavailable`（虧損股 / <3年資料）→ `(self-val N/A)`；`low`（營收 stdev>30%）→ `⚠️低信心`；`ok` → 正常顯示。34 單元測試（`test_self_valuation.py`）覆蓋 CAGR、cap、decel、macro clamp、guardrails。
 - **新聞全文快取 + P3 訊號擷取（`briefing-out/cache/news-articles.json`）** — `fetch_news.py` TTL 6h，top 8 篇/ticker，600-char body excerpt。`mcp__eodhd-mcp__get_news` 工具提供即時全文（1500 char）。Deep tier §9.5 / stock-analysis Step 4b 從 news body + SEC 8-K + 財報逐字稿抽**已量化陳述**（wafer starts / capex / ASP 等），強制附 raw_quote（≤120 字逐字引用），signal → thesis 轉換後以 `--source signal-inference` 登錄 thesis_ledger，閉環追蹤 P3 命中率。反幻覺鎖：**無 raw_quote = 無 signal = 不登錄。**
+- **發現層先行指標（`tools/fetch_leading.py`）** — 財報 gate 是裁決層（慢而準），發現層另設五組比財報更早的硬數字前哨：三儀表（HY OAS 速度 / VIX 期限結構 / 半導體寬度）+ 行業 PE 溫度計與國債曲線、財報季 cross-read 排序（早報者 → 晚報持倉的讀序 prior）、記憶體/功率報價新聞監測、**revision 二階導雙法**（archive-diff × vendor 7d 曲線互驗）、台股功率元件月營收（TWSE/TPEx 免金鑰）。全部 **display-only（記錄不阻擋）**，命中率由 `/trade-review` 驗證後才可升閘門。詳見 [`docs/leading-indicators.md`](docs/leading-indicators.md)。
+- **交易檢討自我進化引擎（`/trade-review` + `tools/trade_ledger.py`）** — 每兩週歸因每筆成交是「系統決策」還是「脫離 plan 的自主決策」，計算三並列指標：交易 α（對實際使用的基準回歸，半導體對 SMH）、持有 α（沒有它，純交易指標會獎勵頻繁進出）、up/down beta capture（漲不上跌得凶的量化）。**旗標紀律**：欠決定的部位必須 `flag` 登記附 deadline，延後計次、第 3 次強制執行 — 修的是「警示只活在散文裡而永不執行」這個實測最貴的漏口。規則命中率帳本（`feedback/RULES-LEDGER.md`）讓每條 feedback 規則用實測存廢，不由模型換代裁決。
+- **自動價格警報（`tools/price_alerts.py`）** — 券商 lib 無警報 endpoint，自建：launchd 15 分鐘盤中輪詢 yfinance，跌破/突破/N 日新高三型條件 → Telegram（複用日報同一 bot），`once_per_day` 防洗版；警報定義與觸發狀態存 `research/price-alerts.json`。
 
 ## 如何擴展
 

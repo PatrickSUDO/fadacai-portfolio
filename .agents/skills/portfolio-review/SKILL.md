@@ -24,6 +24,7 @@ Generate a comprehensive portfolio report from the user's live brokerage positio
 - `briefing-out/cache/earnings-history.json` — 供 Section F Key Alerts、Section G 個股 thesis、及 probability-honesty-checker Step 1d base rate
 - `briefing-out/cache/earnings-dates.json` — 供 Section F earnings window 警示
 - `briefing-out/cache/fundamentals-snapshot.json`（TTL 24h，`tools/fetch_fundamentals.py` 預載）— 供 Section G3.5 三錨點估值、probability-honesty-checker Step 1d/1h
+- `briefing-out/cache/leading-indicators.json`（TTL 20h，`tools/fetch_leading.py` 預載，配置 `research/leading-config.json`）— 供 Section F 🚦 regime-break / 台股月營收轉負 / revision decel 旗標（**display-only，記錄不阻擋，同影子訊號 A4**）；`revision_delta.status == "warming_up"` → 不產生 decel 旗標；block `carried_forward` → 標前日值
 
 判定 fundamentals cache：
 - `status == "ok"` 且 mtime < 30h → **使用**（Section G3.5 三錨點計算直接取 highlights）
@@ -179,6 +180,9 @@ For each option position:
 - **梯級停利缺口**：E2a 梯級對照有缺口且無補掛單 → `🟡 梯級缺口`
 - **財報叢集曝險**：未來 7 日財報窗內持倉合計 >20% → `🔴 叢集曝險 X%`（提示窗內認列桶提前 harvest + 暫停新增同窗曝險）
 - **現金滯留**：現金 >15–20% 且無明確部署計畫（無 GTC 掛單、無 dry powder 理由）→ `🔴 飛輪滲漏 flag`
+- **🚦 Regime break（leading cache，display-only）**：credit `widening_fast` / VIX 期限 `inverted` / 半導體寬度 `divergence_flag` → 各 1 行附數字，不觸發自動動作
+- **台股月營收轉負**：tw_monthly `turned_negative` → `🔴 需求證偽候選 → 提前檢討 ON/DIOD，不等財報`
+- **Revision decel**：`book_decel` 或 ≥2 檔 `decel_flag` → `🟠 revision 動能減速`（/trade-review 驗證中，不觸發 harvest）
 
 ### G. 個股趨勢與分析
 

@@ -49,6 +49,10 @@ FUNDAMENTALS_FILTER = ",".join([
     "Highlights", "Valuation", "AnalystRatings", "Technicals",
     # P2: yearly income statement (totalRevenue/netIncome time series for CAGR)
     "Financials::Income_Statement::yearly",
+    # Fundamentals Data Feed (2026-07-28)：季度損益+資產負債 → GM% QoQ / 庫存天數
+    # （ON/DIOD/MCHP/MU 缺貨 thesis 的證偽指標；只存最近 6 季，見 quarterly_trends）
+    "Financials::Income_Statement::quarterly",
+    "Financials::Balance_Sheet::quarterly",
     # P2: shares outstanding (needed for own_fwdEPS = rev × margin ÷ shares)
     "SharesStats::SharesOutstanding",
     # P4: analyst forward consensus (A3 anchor fwdEPS + EPS revision momentum)
@@ -226,10 +230,13 @@ def _extract_forward_estimates(trend_raw: dict) -> dict:
     out: dict = {}
     for period, (date_key, e) in latest_by_period.items():
         eps_cur = _safe_float(e.get("epsTrendCurrent"))
-        eps_30d = _safe_float(e.get("epsTrend30daysAgo"))
-        rev_30d_pct = None
-        if eps_cur is not None and eps_30d not in (None, 0):
-            rev_30d_pct = round((eps_cur - eps_30d) / abs(eps_30d) * 100, 2)
+
+        def _drift(field: str):
+            past = _safe_float(e.get(field))
+            if eps_cur is not None and past not in (None, 0):
+                return round((eps_cur - past) / abs(past) * 100, 2)
+            return None
+
         out[_FORWARD_PERIOD_LABELS[period]] = {
             "period": period,
             "date": date_key,
@@ -240,9 +247,16 @@ def _extract_forward_estimates(trend_raw: dict) -> dict:
             "eps_growth": _safe_float(e.get("earningsEstimateGrowth")),
             "rev_avg": _safe_float(e.get("revenueEstimateAvg")),
             "rev_growth": _safe_float(e.get("revenueEstimateGrowth")),
-            "eps_revision_30d_pct": rev_30d_pct,
+            "eps_revision_30d_pct": _drift("epsTrend30daysAgo"),
             "revisions_up_30d": _num(e.get("epsRevisionsUpLast30days")),
             "revisions_down_30d": _num(e.get("epsRevisionsDownLast30days")),
+            # Fundamentals Data Feed (2026-07-28)：vendor 原生 7d/60d/90d 修正曲線
+            # （7d 欄位 = revision 二階導的直接輸入，不依賴 archive diff）
+            "eps_revision_7d_pct": _drift("epsTrend7daysAgo"),
+            "revisions_up_7d": _num(e.get("epsRevisionsUpLast7days")),
+            "revisions_down_7d": _num(e.get("epsRevisionsDownLast7days")),
+            "eps_revision_60d_pct": _drift("epsTrend60daysAgo"),
+            "eps_revision_90d_pct": _drift("epsTrend90daysAgo"),
         }
     return out
 
@@ -286,6 +300,45 @@ def fetch_snapshot(sym_us: str, token: str) -> dict:
         or _num((data.get("SharesStats") or {}).get("SharesOutstanding"))
     )
 
+    # ── Fundamentals Data Feed：季度趨勢（GM% QoQ / 庫存天數）────────────────
+    q_inc = (
+        data.get("Financials::Income_Statement::quarterly")
+        or (data.get("Financials") or {}).get("Income_Statement", {}).get("quarterly", {})
+        or {}
+    )
+    q_bs = (
+        data.get("Financials::Balance_Sheet::quarterly")
+        or (data.get("Financials") or {}).get("Balance_Sheet", {}).get("quarterly", {})
+        or {}
+    )
+    q_dates = sorted((k for k, v in q_inc.items() if isinstance(v, dict)), reverse=True)
+    quarterly_trends: list[dict] = []
+    for i, dk in enumerate(q_dates[:6]):
+        row = q_inc[dk]
+        rev = _num(row.get("totalRevenue"))
+        gp = _num(row.get("grossProfit"))
+        cogs = _num(row.get("costOfRevenue"))
+        gm = round(100 * gp / rev, 2) if gp is not None and rev else None
+        yoy = None
+        if rev and i + 4 < len(q_dates):
+            rev_y = _num((q_inc.get(q_dates[i + 4]) or {}).get("totalRevenue"))
+            if rev_y:
+                yoy = round(100 * (rev - rev_y) / rev_y, 2)
+        inv = _num((q_bs.get(dk) or {}).get("inventory")) if isinstance(q_bs.get(dk), dict) else None
+        inv_days = round(inv / cogs * 91.25, 1) if inv is not None and cogs else None
+        quarterly_trends.append({
+            "date": dk, "revenue": rev, "revenue_yoy_pct": yoy,
+            "gm_pct": gm, "inventory": inv, "inventory_days": inv_days,
+        })
+    # 庫存天數 QoQ delta（缺貨 thesis 方向指標：連續下降 = 去化/緊俏）
+    for i, q in enumerate(quarterly_trends):
+        nxt = quarterly_trends[i + 1] if i + 1 < len(quarterly_trends) else None
+        q["inventory_days_qoq"] = (
+            round(q["inventory_days"] - nxt["inventory_days"], 1)
+            if q.get("inventory_days") is not None and nxt and nxt.get("inventory_days") is not None
+            else None
+        )
+
     # P4: analyst forward consensus (A3 anchor fwdEPS + revision momentum) —
     # Earnings::Trend may come back flat-keyed or nested under Earnings.
     trend_raw = (
@@ -325,6 +378,8 @@ def fetch_snapshot(sym_us: str, token: str) -> dict:
         },
         # P4: analyst forward consensus (next_q/curr_fy/next_fy) for A3 fwdEPS + P3 signals
         "forward_estimates": forward_estimates,
+        # Fundamentals Data Feed：最近 6 季 GM%/庫存天數（缺貨 thesis 證偽指標）
+        "quarterly_trends": quarterly_trends,
         # P2: time series for A4 self-valuation (compute_self_valuation uses these)
         "financials": {
             "revenue_yearly": rev_yearly,         # [{date, value}] newest-first, up to 5y

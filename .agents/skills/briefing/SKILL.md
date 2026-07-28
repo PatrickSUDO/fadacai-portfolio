@@ -62,6 +62,40 @@ Read briefing-out/cache/macro-snapshot.json
 
 將 5 個 series + regime_tag 內容餵給 **Step 0e** 與後續呼叫的 `probability-honesty-checker` agent（其 Step 1i 必須收到此資料）。
 
+## Step 0.55: Leading Indicators Load（所有 Phase / Tier 共用）
+
+讀 cache（不打 API，由 `tools/fetch_leading.py` 預載，TTL 20h；配置 `research/leading-config.json`）：
+
+```
+Read briefing-out/cache/leading-indicators.json
+```
+
+判定（**逐 block，不整檔否決**）：
+- 頂層 `status == "ok"` 或 `"partial"` 且 mtime < 36h → **使用**；`partial` 時只跳過 `status ∉ {"ok","partial","warming_up"}` 的 block，各標 `⚠️ {block} unavailable`
+- block `status == "carried_forward"` → 使用但標 `(前日值 {data_as_of})`
+- 頂層 `status == "skipped"` / 檔案缺失 → 顯示 `⚠️ Leading indicators unavailable`，跳過所有相關段落；**Deep tier** 強制刷新：`uv run --directory tools python3 tools/fetch_leading.py --force` 後重讀；Quick/Full/Telegram 標旗即續
+- `blocks.revision_delta` 某 archive 窗 `available == false` → 顯示 `⏳ archive-diff {窗} warming up（{available_from} 起可用）`，該窗不產生 archive decel 旗標。**vendor 7d 曲線法（Fundamentals Data Feed 的 `vendor_*` 欄位）自首日可用**：`decel_tickers` 為兩法 union，`decel_tickers_archive` / `decel_tickers_vendor` 分列（/trade-review 各驗命中率）；`vendor_book` 給 7d vs 30d 上修寬度對比
+- `blocks.tw_monthly` 各檔 `history_months < 2` → accel/轉負 flags 為 null 不判定，僅列數字
+
+在 📊 Macro 行下方顯示 1 行 🚦 儀表（所有 tier 一致，欄位缺失以 `—` 填）：
+```
+🚦 先行: HY {delta_5d_bps:+}bp/5d ({velocity_flag}) | VIX期限 {ratio} ({term_flag}) | 半導體寬度 {pct_above_50dma}%>50DMA ({breadth_flag}) | 記憶體報價 {memory.n_hits}則/功率 {power.n_hits}則 | 台股月營收 {data_month} {最強檔 YoY%或 —}
+```
+
+`gauges` 另帶兩個 FMP 免費層儀表（不進一行 banner，供 full/deep 段落與 Key Alerts 引用）：
+- `treasury`（10Y/2Y/3M/30Y + 2s10s/3m10y spread）— plan「10Y <4.35 再加滿」類閘門的即時對照
+- `semis_industry_pe`（半導體行業 PE 日頻 + Δ5d/Δ20d + 100 日分位）— **估值溫度計**：與 revision 寬度並讀可分離「估值壓縮 vs 基本面惡化」（PE 大跌 + revision 寬度不動 = 純 de-rating）
+
+**紀律（同影子訊號 A4，記錄不阻擋）：** 本 cache 所有旗標為 **display-only + Key Alerts 標旗**，不得單獨觸發任何加減碼/harvest/否決；由 `/trade-review` 跑滿 ≥2 期驗命中率後才可討論升級硬閘門。
+
+這份 cache 用於：
+- 本步 🚦 儀表行（所有 tier）
+- **Section 4.6** 財報 Cross-Read 排序（leaders → followers 讀序）
+- **Section 5** 強訊號對稱分類 `🟠 decel` 標註與 **Section 12.5** 飛輪檢查 revision 轉折佐證
+- **Section 6** Key Alerts 的 regime-break / pricing 反轉 / 台股轉負 / book_decel 旗標
+- **§9.5**（Deep）訊號擷取的 pricing_watch 預過濾新聞（excerpt 即 raw_quote 候選）
+- **Telegram** T1 `↳ read-through` 子行、T5 🚦 alerts、T8a/T8b 🚦 區塊
+
 ## Step 0.6: Earnings History Load（所有 Phase / Tier 共用）
 
 讀 cache（由 `tools/earnings_history.py` 預載）：
@@ -183,6 +217,97 @@ Read research/naked-call-watchlist.md
 
 **驗收結果直接餵 actionable**：passed → 強化/HOLD/加碼（含新公允價上修幅度）；failed → 汰弱/減碼（含公允價下修多少）；partial → 分解 thesis vs multiple 成分後決定操作。`resolve --next-action` 寫的就是下一步行動，併入 Key Alerts / 行動項。
 
+**5. SA 量化榜整合（2026-07-25 用戶指定）**：
+- 到期提醒：ledger 有 `MARKET:sa-quant-scan-*` due（或 `research/sa-quant-scans/` 最新快照 >35 天）→ Key Alerts 加一行 `📋 SA 量化榜掃描到期：請貼最新 screener（條件凍結），與 {最新快照日期} 基準 diff`；未到期不輸出。
+- 輔助訊號引用：判讀持倉/bench 名字時**可**引用最新快照的 quant 排名/verdict（標註快照日期，如「SA quant #1 @07-24」）；快照 **>35 天視為 stale 不引用**。
+- 管線與鐵則見 plan.md「SA 量化榜掃描機制」：榜單是儀表板非方向盤——掉榜 = revision 覆查警報（最高價值），quant 高分 ≠ 買進（必過 headroom/coverage/mandate/結構四濾網）。
+
+---
+
+## Step 0.75: 影子訊號 & 交易檢討到期（所有 Tier 共用）
+
+launchd 路徑下 `tools/briefing_runner.sh` 已預取此兩項；**手動執行 briefing 時才需自己跑**（重跑安全，有去重）：
+
+```bash
+python3 tools/shadow_signals.py flag          # A4 高估旗標，記錄不阻擋
+python3 tools/trade_ledger.py snapshot-orders # 在掛單快照（歸因 ground truth）
+python3 tools/trade_ledger.py orders          # 讀回：死單 + 不在 plan 的在掛單
+```
+
+**1. A4 高估旗標（🟣 影子模式）**
+
+`flag` 回傳 `A4vsA3 ≤ −35%` 且 `self_valuation.confidence == ok` 的持倉。在 Key Alerts 加一行：
+
+```
+🟣 A4 高估旗標（影子，不阻擋）：{ticker} A4vsA3 −X%｜{ticker} −Y% — 記錄中，滿 30 天由 /trade-review 計分
+```
+
+**這一行只做記錄，不得據此改變任何建議。** A4 依 AGENTS.md 0e 仍不進 median、不進 EV。跑滿 2 期檢討才決定是否升為硬閘門（見 `feedback/RULES-LEDGER.md` R3）。
+無旗標則整段省略。
+
+**2. 在掛單快照 + 死單偵測**
+
+`snapshot-orders` **每個交易日都必須跑**，累積訂單登記表——這是往後把成交歸因到「系統決策 vs 自主決策」的唯一可靠來源。券商 `order_status` 只回在掛單，成交/取消後即消失，**斷一天就有一天的成交永久無法歸因**。
+
+掛單 >30 天未成交 → Key Alerts 加一行：
+```
+⚠️ 死單：{order_id} {買/賣} {ticker} {N}股 @${price}（掛 D 天）→ 重新定價或撤單
+```
+`python3 tools/trade_ledger.py orders` 另會標出**不在 plan.md 的在掛單**（plan 與券商實況脫節），一併列出。
+
+**3. 未結旗標（🔴 本書最貴的漏口，優先於其他所有 alert）**
+
+```bash
+python3 tools/trade_ledger.py flags
+```
+
+**量測結論（2026-07-25）：吃掉最多回撤的機制是「已標記惡化但沒有強制出場」，自警示以來 −$6,333。** 成因是旗標只活在 briefing 散文裡：TSLA 與 ON 的 thesis-ledger `history` 都是 **0 筆**，沒有任何東西在數延後次數，所以每天把同一個警示當新的重述一次。
+
+輸出規則：
+- `forced_action_required` 非空 → **Key Alerts 第一行**，格式：
+  `🔴 強制決定：{id} 已延後 {n} 次｜自警示 {days} 天累積 −$X → 減碼 1/3 或明文撤旗（附理由）`
+- `overdue` 非空 → `⚠️ 旗標逾期：{id}（deadline {date}，逾 {n} 天）`
+- `post_flag_fills.buys > 0` → `⚠️ {ticker} 在警示後仍加碼 {n} 股（{dates}），損益 $X`
+
+**開旗紀律（強制，這是修好漏口的關鍵）：**
+凡在 briefing / journal 寫下 ⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判 的部位，**同一次必須開旗**：
+
+```bash
+python3 tools/trade_ledger.py flag --ticker <T> --slug <kebab> \
+  --reason "<警示內容>" --deadline <YYYY-MM-DD 決定到期日>
+```
+
+延後**不是免費的**，必須走 `defer`（會計次）：
+```bash
+python3 tools/trade_ledger.py defer --id <id> --to <新日期> --reason "<為何還不決定>"
+```
+**第 3 次延後自動轉 forced** → 減碼 1/3 或明文撤旗。撤旗也要走 `resolve-flag --action withdrawn --note "<為何警示不成立>"`。
+
+> 反例存證：TSLA 7/01 標降桶候選，7/08 再提、7/09「不砍改收租」（用 PMCC 取代決定）、7/13 ledger 記 on-track，最後 −52.7% / −$6,399。若當時有此機制，**7/13 就會被強制處理**（標的 $425 vs 現在 $313）。
+
+**4. thesis 中途證偽掃描（不等觸發日）**
+
+```bash
+python3 tools/thesis_ledger.py recheck --long-drift-only --limit 5
+```
+
+Step 0.7 的 `due` 只在**觸發日**驗收；`recheck` 補的是中間那段。列出「已過天數」最長的 5 筆，各問一句：**證偽條件裡有沒有現在就看得到的已經成立？**
+
+- 成立 → 立刻 `resolve --verdict failed`，不等觸發日，並進 Key Alerts actionable
+- 前提完好 → 不輸出（避免每日噪音）
+
+quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
+
+**5. 交易檢討到期提醒**
+
+讀 `research/last-trade-review.txt`（單行日期）。距今 >14 天（或檔案不存在）→ Key Alerts 加一行：
+
+```
+📋 交易檢討已到期（上次 YYYY-MM-DD，D 天前）→ 執行 /trade-review
+```
+
+未到期不輸出。**briefing 不代跑檢討**——歸因需要逐筆判斷決策來源，要用戶在場。
+
 ---
 
 ## Phase 1: Quick（永遠執行）
@@ -260,6 +385,20 @@ Read research/naked-call-watchlist.md
 
 > 詳見 `feedback/earnings-reaction-window.md` 與 `feedback/weak-signal-root-cause.md`
 
+### 4.6 財報 Cross-Read（先行者 → 後行者讀序）
+
+資料：Step 0.55 `earnings_crossread.chains`（鏈定義 `research/leading-config.json`，日期由 fetcher 解析，不打 API）。
+
+規則：
+1. 只展開 `active == true` 的鏈（leader 過去 10 日已發或未來 7 日將發、或 TSMC 月營收窗 8–12 日）；無 active 鏈 → 一行「本期無 active cross-read 鏈」
+2. leader **已發**（`reported_within_10d`）：從 news cache（Step 0.67）/ pricing_watch 摘 1 句硬數字（capex guide / bit 出貨 / book-to-bill / backlog…），**須逐字 quote ≤120 字，無 quote → 標「已發，硬數字未見」**（同 §9.5 反幻覺門檻）；方向標 ↑/↓/→ 作為 followers 的 **prior**
+3. `news_only` leader（SK海力士/三星/Infineon）：無排程日期，靠 pricing_watch 承接，有相符 item 才列，附 `recurrence` 提示
+4. **禁**：leader 結果不得直接轉成 follower 買賣指令 — 只更新 prior；行動仍走各自 gate（earnings window ±48h 禁令、revision 閘門不變）
+
+| 鏈 | Leader（日期/狀態）| 讀什麼 | Followers（財報日）| Leader 訊號（quote）|
+|----|------------------|--------|------------------|-------------------|
+| hyperscaler_capex | GOOGL 7/22 ✅ / META 7/29 | capex guide | NVDA 8/26, COHR 8/12… | capex ↑ "…"（來源）|
+
 ### 5. Technical Snapshot
 使用 `mcp__technical-mcp__get_batch_indicators` 取得全持倉技術指標。
 
@@ -300,6 +439,8 @@ Read research/naked-call-watchlist.md
 1. estimate 上修中（revisions up ≫ down / eps_revision_30d_pct > 0）+ 成長加速？→ **加速領導者**：在倉**讓它 run、不 trim**（強者愈強；認列桶仍按梯級停利級距走）；新資金不否決，改 starter + 回檔 ladder + bull call spread 定義風險
 
 > ⚠️ revision 引用必附 coverage：**分析師數 N≥15 全權重；8–14 半權重（須與 trend/季成長印證）；<8 不單獨觸發加減碼**；上次財報後 >45 天的 revision 標 stale 降權（per `feedback/momentum-valuation-symmetry.md` 規則 6）
+
+> 🟠 **revision decel（Step 0.55 cache 旗標，影子驗證中）**：該股在 `revision_delta.decel_tickers` 中（上修仍為正但 7d/30d 動能顯著縮減）→ 在該股行尾標 `🟠 decel`。**只標記不改結論**：不因此提前 harvest、不否決加碼、不進 EV；連同 `book_decel` 記入 Section 6 Key Alerts，由 /trade-review 驗命中率。`warming_up` → 本標註完全不出現。
 2. estimate 翻下修/flat + 高倍數？→ **峰值 harvest 候選**：認列桶列入 harvest 清單（這才是「賣強」的正當時機）
 3. weak_downtrend 反彈 + momentum 低 + 無 revision 支撐？→ **受損 turnaround**：等催化驗收，不接刀（今天綠 ≠ 領導力）
 
@@ -316,6 +457,10 @@ Read research/naked-call-watchlist.md
 - **梯級停利到價/缺口**：認列桶倉位觸及下一梯級（+30/+60/+100/每+50pp）而無對應 GTC 掛單，或存量累計減碼低於級距應達比例 → `🟡 梯級缺口`（附補掛單，per `feedback/tiered-profit-taking.md`）
 - **財報叢集**：未來 7 日財報窗內持倉合計 >20% → `🔴 叢集曝險 X%`（見 Section 4.5 step 6）
 - **現金滯留**：現金 >15–20% 且無 GTC 掛單覆蓋、無 dry powder 理由 → `🔴 飛輪滲漏`
+- **🚦 Regime break（Step 0.55，display-only）**：credit `widening_fast`（HY OAS Δ5d ≥ +25bp 或 Δ20d ≥ +50bp）/ VIX 期限 `inverted`（^VIX/^VIX3M ≥ 1.0）/ 半導體寬度 `divergence_flag`（SMH 距 52w 高 <5% 且寬度 <50%）→ 各 1 行附數字，不觸發自動動作
+- **記憶體/功率報價反轉**：pricing_watch 出現合約價轉跌 / lead time 縮短 / 砍單類 quote → `🚦 pricing 反轉候選`（附逐字 excerpt + 對應 thesis slug，如 MU:memory-supply-response-2027）
+- **台股月營收轉負**：tw_monthly 任一檔 `turned_negative == true` → `🔴 需求證偽候選：{名} 月營收 YoY 轉負 → 提前檢討 ON/DIOD，不等財報`
+- **Revision book decel**：`book_decel == true` → `🟠 revision 動能減速（寬度 {breadth_pos_pct}%，7d {momentum_7d_pp}pp）`；`book_rollover == true` → 升 `🔴 revision 寬度跌破 50%`
 
 ### 7. 計畫進度 Quick
 - 近期待辦狀態（✅🔄⏳）
@@ -442,6 +587,8 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 - 樂觀 = 基準 × (1 + min(avg_surprise_pct, 15%))；avg_surprise_unreliable=true → 直接用 +5%
 - 悲觀 = 基準 × (1 − 5%) [beat_pct≥75%] 否則 × (1 − 10%)
 - **EPS 修正動能（P3 訊號）**：`forward_estimates.{curr_fy,next_fy}` 另帶 `eps_revision_30d_pct` 與 `revisions_up_30d / down_30d`——共識 30 日內上修（up≫down 或 pct>0）= guidance 偏正領先訊號，可在備註或 P3 訊號推導引用（非估值輸入）
+- **修正曲線（Fundamentals Data Feed，2026-07-28 起）**：每期另帶 `eps_revision_7d_pct / revisions_up_7d / revisions_down_7d / eps_revision_60d_pct / eps_revision_90d_pct` — 90d→60d→30d→7d 斜率遞減 = 上修波退潮中（Step 0.55 revision_delta 的 vendor 法直接吃這組）
+- **季度趨勢（Fundamentals Data Feed）**：`snapshot.quarterly_trends[]`（最近 6 季 `revenue_yoy_pct / gm_pct / inventory_days / inventory_days_qoq`）— 缺貨 thesis 證偽指標（ON/DIOD/MCHP/MU 的 GM QoQ 與庫存天數方向），thesis 驗收與 §9.5 可直接引用
 
 **Full tier 輸出表（每持倉一行）：**
 ```
@@ -489,8 +636,9 @@ mcp__fmp-mcp__getDCFValuation(ticker)
 
 **資料管道優先順序（可靠度由高到低）：**
 1. SEC 8-K 硬數字（`mcp__sec-edgar-mcp__analyze_8k`）→ `confidence: high`；僅針對 ≥3% 持倉在過去 14 天有新 8-K 者
-2. 財報逐字稿 guidance 數字（`mcp__fmp-mcp__getEarningsTranscript` 最新一份，取 capex/ASP/wafer/utilization 句）→ `confidence: high`；僅財報後 30 天內
+2. 財報硬數字（財報後 30 天內）→ `confidence: high`。⚠️ **FMP `getEarningsTranscript` 已實測 402（2026-07-28，免費層無逐字稿）**，改走：SEC 8-K 財報 exhibit（`mcp__sec-edgar-mcp__analyze_8k` / `get_filing_content`，Item 2.02 附 earnings PR 全數字）或 EODHD news body 財報報導
 3. EODHD raw news body（Step 0.67 `news-articles.json`，需 `"content" in fields_available`）→ `confidence: medium`（一般新聞常缺晶圓級細節）
+3b. Leading cache pricing_watch（Step 0.55 `pricing_watch.memory/power[].excerpt` — 關鍵字預過濾 + 逐字 excerpt ≤240 字）→ `confidence: medium`；excerpt 可直接作 raw_quote 來源（仍須裁剪為 ≤120 字逐字引用），涵蓋非持倉訊號源（TSM/SNDK/STM/TXN 報價與 SK hynix/Samsung/Infineon 發布）
 4. 宏觀 calendar（`macro-snapshot.json` regime_tag + `get_economic_calendar(high_impact_only=True)`）→ 宏觀主題 thesis 輸入
 
 **訊號 record shape（Claude 輸出，不寫 JSON 到 cache）：**
@@ -575,7 +723,7 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 精簡三問（完整版在 /portfolio-review 4.5；briefing 只掃描 + 給可掛單，不展開全表）：
 
-1. **該 harvest 誰？** 認列桶（roster 見 plan.md 組合架構 v2）中 ① **梯級停利到價/缺口**（+30/+60/+100 級距，per `feedback/tiered-profit-taking.md`）② revision 轉折/題材降溫/Swing Risk 🔴（可提前下一級）→ 每筆附 GTC 賣限價或 covered call 結構。**revision 仍上修的領導者只按級距走，不提前**（超買/新高不是 harvest 理由）
+1. **該 harvest 誰？** 認列桶（roster 見 plan.md 組合架構 v2）中 ① **梯級停利到價/缺口**（+30/+60/+100 級距，per `feedback/tiered-profit-taking.md`）② revision 轉折/題材降溫/Swing Risk 🔴（可提前下一級；revision 轉折的機械佐證可引 Step 0.55 `revision_delta` 的 `decel_flag`/`book_decel`，仍屬 prior 非強制 harvest）→ 每筆附 GTC 賣限價或 covered call 結構。**revision 仍上修的領導者只按級距走，不提前**（超買/新高不是 harvest 理由）
 2. **現金滯留了嗎？** 現金 % vs 既有 GTC 買單覆蓋 → 閒置 >15–20% 無計畫 → 🔴 flag
 3. **盈餘該去哪？** L1 On-Deck + 信念桶中 revision 最陡的領漲者 1–2 檔 → 附進場結構（GTC 階梯 / bull put spread / bull call spread 貼高參與 / LEAPS）
 
@@ -625,7 +773,7 @@ Redeploy 首選：[標的 + revision 依據 + 結構]
 |------|------|------|
 | 進行中 / 符合目標 | ✅ on-track | 核心指標與 thesis 方向一致（例：quarterly_revenue_growth_yoy > 0 且加速） |
 | 待財報驗收 | ⏳ 待 event | trigger_type=event 且 trigger_date 尚未到（不能從 cache 判斷，等財報） |
-| 有風險 / 指標轉弱 | ⚠️ at-risk | quarterly growth decel 連 2Q 或 guide 下修方向；技術面 death_cross |
+| 有風險 / 指標轉弱 | ⚠️ at-risk | quarterly growth decel 連 2Q 或 guide 下修方向；技術面 death_cross；或 Step 0.55 `revision_delta` 該股 `decel_flag`（7d 上修動能縮減，影子驗證中）|
 | 已接近證偽條件 | 🔴 warning | falsification 條件中有 1+ 個已出現（精確比對 thesis 列的證偽點） |
 | 無法判定 | ❓ unknown | cache 缺相關指標，無法自動比對 |
 
@@ -681,6 +829,7 @@ Sonnet 4.6（資料抓取為主，無深度合成需要）
 - 過去 ±48h 已發財報的 ticker 也標出
 - **Trailing 8Q beat rate + avg surprise %**（從 `earnings-history.json`）
 - focus 重點：可從 yfinance news / sentiment 摘要推斷
+- **Cross-read 子行**：該 ticker 為 Step 0.55 active 鏈 leader → 行下加 `  ↳ read-through: {followers（≤4 檔）}`（全訊息至多 1 行）
 
 若 cache `status` ≠ `"ok"` → fallback `mcp__fmp-mcp__getEarningsCalendar`，並加註 `⚠️ earnings cache unavailable`。
 
@@ -725,6 +874,7 @@ Agent(subagent_type="data-collector"):
 - Sentiment 急降（T2 注意類）→ 標記「情緒惡化」
 - 任一持倉距 52w 低點 < 5%（需 `get_stock_info`）→ 標記「逼近 52w 低」
 - plan.md 中有明確 stop-loss 且接近觸發的 ticker
+- Step 0.55 🚦 旗標（credit `widening_fast` / VIX 期限 `inverted` / 寬度 `divergence_flag` / 台股月營收 `turned_negative` / `book_decel`）→ 每項 1 行前綴 🚦（無則不出，display-only）
 
 **T6. 今日 / 明日待辦**
 從 `plan.md` 的策略佇列 + 觀察清單（⏳ 待評估）+ Step 0e 第一性分析，生成：
@@ -734,9 +884,10 @@ Agent(subagent_type="data-collector"):
 - 每條格式：`• {action}（{trigger / catalyst}）`
 
 **T7. Quick Take（第一性）**
-2 行以內，情緒/敘事走向。不講 RSI/MACD。句子格式：
+一小段人話（3-5 句，per `feedback/briefing-voice-style.md`），情緒/敘事走向。不講 RSI/MACD。內容不變：
 - 今日整體 sentiment 方向（用 T2 + T4 支撐）
-- 本週重點 / 核心注意事項（1 句）
+- 本週重點 / 核心注意事項
+- 收尾帶一句「明天看什麼」（游庭皓式 wrap-up）
 
 ---
 
@@ -744,7 +895,7 @@ Agent(subagent_type="data-collector"):
 
 **T8a. 完整 Markdown → `briefing-out/YYYY-MM-DD-full.md`**
 
-使用 Write tool 寫入，格式：
+使用 Write tool 寫入。**敘事段落全部走 `feedback/briefing-voice-style.md` 口吻**（section 骨架與數據點照下方模板一項不漏；開場加 2-4 句 big picture 導言、每區內容寫成完整句子帶解讀）。格式：
 ```markdown
 # Briefing Telegram YYYY-MM-DD
 
@@ -753,6 +904,13 @@ Agent(subagent_type="data-collector"):
 
 ## Sentiment Pulse
 ...
+
+## 🚦 Leading Indicators
+- 儀表: HY {Δ5d:+}bp/5d ({flag}) | VIX期限 {ratio} ({flag}) | 半導體寬度 {pct}%>50DMA ({flag})
+- Cross-read: {active 鏈：leader（日期/狀態）→ followers}（無 active 鏈則省略）
+- Pricing: {memory/power 最重要 1-2 條 — "{excerpt 節錄}" ({source})}（無 hit 則省略）
+- 台股月營收: {名 YoY ±X%…}（僅 is_new_month 或有 flag 時列出）
+- Revision Δ: 寬度 {breadth_pos_pct}%（7d {±X}pp）{；🟠 decel: T1, T2}（warming_up → ⏳ warming up (archive {N}d)）
 
 ## News & Catalysts
 ...
@@ -796,7 +954,12 @@ Agent(subagent_type="data-collector"):
 
 📅 Earnings This Week
   • {ticker} {M/D} {盤前/盤後} ({beat_count}/{total} beat, +{avg_surprise}%) — {focus 重點}
+  ↳ read-through: {followers}（僅當該 ticker 為 active 鏈 leader；全訊息至多 1 行）
   （Trailing beat rate 從 earnings-history.json 讀；cache 缺則省略括弧）
+
+🚦 先行指標
+  HY {+X}bp/5d | VIX期限 {ratio} | 寬度 {pct}% | 記憶體 {n}則 | 台股 {摘要或—}
+  ⚠️ {觸發中的 regime-break / 台股轉負 / book_decel，合併一行}（無觸發則省略此行）
 
 📊 Sentiment Pulse (EODHD 7d)
   📈 改善: {ticker} +{delta}, {ticker} +{delta}
@@ -834,9 +997,11 @@ Agent(subagent_type="data-collector"):
 **格式規則：**
 - 純文字，emoji 作區塊分隔
 - 無 `**`、`_`、`[text](url)` 等 markdown 語法
+- **口吻（2026-07-28 起）**：每區 1-3 句**完整句子**取代電報碎片，同區數據點全保留（`feedback/briefing-voice-style.md` 內容不變定律 + before/after 範例）；先講結論、數字帶解讀
 - 數字：K（千）、M（百萬）、% 縮寫
 - 無 catalyst 或無 alert 的 section 完整省略（不要顯示空 section）
-- 目標長度 < 1500 字元（一則 Telegram 訊息），最長不超過 4096
+- 🚦 先行指標區儀表行維持緊湊 1 行（數據面板不句子化），觸發說明行用人話；`↳ read-through` 全訊息至多 1 行
+- 目標長度 **≤3000 字元**（2026-07-28 用戶放寬，換可讀性），硬上限 4096（超過由 send_briefing 自動分則）
 - `briefing-out/` 目錄不存在時先用 Bash `mkdir -p briefing-out` 建立
 
 ---
@@ -1070,7 +1235,8 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 
 ## Output Format
 - 繁體中文
-- 簡潔 markdown 表格
+- **口吻（2026-07-28 起強制）**：所有敘事文字走「懂行朋友講盤」體，規範見 `feedback/briefing-voice-style.md`（股癌式直白 + 游庭皓式晨報導讀）。**鐵則：內容不變定律** — 每個 section/數字/旗標/待辦一項不漏，只改「怎麼說」；先講結論、數字帶解讀不裸列、術語首次給白話；開場 2-4 句 big picture、結尾一小段「明天看什麼」。機率/EV/旗標的數據結構照舊，禁止用語氣詞替代機率
+- 簡潔 markdown 表格（表格是內容不是口吻，保留）
 - 所有金額為 USD
 - Quick 版應在一個畫面內完成
 - Full/Deep 版可較長但需結構清晰

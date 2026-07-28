@@ -72,6 +72,34 @@ uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_news.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "news refresh failed (non-fatal, briefing continues without news cache)"
 
+log "Refreshing leading indicators cache (FRED/yfinance/EODHD/TWSE-TPEx)..."
+uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_leading.py" \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "leading indicators refresh failed (non-fatal, briefing continues with stale/missing cache)"
+
+# Order snapshot must run daily and cannot be backfilled: Firstrade's order_status
+# endpoint returns ONLY resting orders, so an order placed and filled between two
+# snapshots leaves no trace to attribute the fill to. Prefetching here (rather than
+# inside the Claude turn) keeps the cost-sensitive telegram tier cheap and lets a
+# broker-session failure degrade gracefully.
+log "Snapshotting resting orders (attribution ground truth)..."
+python3 "$SCRIPT_DIR/trade_ledger.py" snapshot-orders \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "order snapshot failed (non-fatal; attribution for today's fills may fall back to journal parsing)"
+
+log "Recording shadow signals (A4 overvaluation flags)..."
+python3 "$SCRIPT_DIR/shadow_signals.py" flag \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "shadow signal flagging failed (non-fatal, records only)"
+
+# Freeze today's decision inputs AFTER the caches above have refreshed. Like the
+# order snapshot, a day not archived cannot be backfilled — and without the original
+# data cut, no past call can ever be re-derived without hindsight contamination.
+log "Archiving today's decision inputs..."
+python3 "$SCRIPT_DIR/archive_cache.py" \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "cache archive failed (non-fatal; today's inputs will not be reproducible)"
+
 # ── Invoke Claude CLI ──────────────────────────────────────────────────────
 # Must cd to REPO_ROOT so Claude Code finds .claude/skills/ and project settings
 cd "$REPO_ROOT"
