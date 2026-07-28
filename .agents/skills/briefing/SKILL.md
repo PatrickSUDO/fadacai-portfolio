@@ -1236,6 +1236,7 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 ## Output Format
 - 繁體中文
 - **口吻（2026-07-28 起強制）**：所有敘事文字走「懂行朋友講盤」體，規範見 `feedback/briefing-voice-style.md`（股癌式直白 + 游庭皓式晨報導讀）。**鐵則：內容不變定律** — 每個 section/數字/旗標/待辦一項不漏，只改「怎麼說」；先講結論、數字帶解讀不裸列、術語首次給白話；開場 2-4 句 big picture、結尾一小段「明天看什麼」。機率/EV/旗標的數據結構照舊，禁止用語氣詞替代機率
+- **禁裸參數名**：`curr_fy`、`decel_flag`、`pct_above_50dma` 這類內部欄位名不得直接出現在報告文字，一律翻完整名稱（本財年、上修減速旗標、站上 50 日線比例…完整對照表見 `feedback/briefing-voice-style.md` 規則 4b）；溯源需要時才括號附欄位名。市場慣用英文（EPS/PE/capex/guide/beat/IV/DTE/delta）不受限
 - 簡潔 markdown 表格（表格是內容不是口吻，保留）
 - 所有金額為 USD
 - Quick 版應在一個畫面內完成
