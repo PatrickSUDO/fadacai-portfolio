@@ -417,6 +417,7 @@ TYPE_LABELS = {
     "portfolio-review": "組合審查",
     "stock-analysis": "個股分析",
     "options-strategy": "選擇權策略",
+    "trade-review": "交易檢討",
 }
 
 
@@ -435,6 +436,7 @@ def build_index(token_dir: Path) -> None:
         "portfolio-review": [],
         "stock-analysis": [],
         "options-strategy": [],
+        "trade-review": [],
     }
     total = 0
     for sub in sections:
@@ -518,7 +520,8 @@ def main() -> int:
     clean_args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if len(clean_args) < 2:
         print("Usage: generate_html.py <type> <date-or-path> [--no-push]")
-        print("  type: briefing | portfolio-review | stock-analysis | options-strategy")
+        print("  type: briefing | portfolio-review | stock-analysis | options-strategy"
+              " | trade-review")
         print("  （預設自動 push 到 reports repo；加 --no-push 只存本地）")
         return 1
 

@@ -441,6 +441,10 @@ class TestReturnStructure(unittest.TestCase):
         "own_fwdEPS", "projected_revenue", "revenue_cagr", "g_next",
         "macro_adj", "g_adj", "net_margin", "shares_outstanding",
         "base_fair_pe_approx", "own_target_price", "confidence", "notes",
+        # added by commit 16ecd10 (A3 anchor provenance: consensus_curr_fy /
+        # consensus_next_fy / approx) — CLAUDE.md 0e tells callers to read it rather
+        # than re-derive the forward EPS, so it is part of the contract
+        "a3_fwdeps_source",
     }
 
     def test_ok_result_has_all_keys(self):

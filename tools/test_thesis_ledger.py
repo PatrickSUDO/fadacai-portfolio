@@ -233,6 +233,7 @@ class Merge(unittest.TestCase):
         tl.resolve_thesis(
             data, entry_id="MU:dram-pricing", verdict="partial",
             actual="x", note="y", next_action="z", asof="2026-06-10",
+            price_verdict="missed",
         )
         # back to pending so both exist; we only care history carries over
         data["theses"][1]["status"] = "pending"
@@ -292,7 +293,8 @@ class Stats(unittest.TestCase):
             if status in tl.VALID_VERDICTS:
                 tl.resolve_thesis(data, entry_id=f"MU:{slug}", verdict=status,
                                   actual="x", note="y", next_action="z",
-                                  asof="2026-06-26")
+                                  asof="2026-06-26",
+                                  price_verdict="missed" if status == "partial" else None)
             else:
                 data["theses"][-1]["status"] = status
         return data
@@ -424,6 +426,7 @@ class CLI(unittest.TestCase):
             "--fair-value-after", "415",
             "--price-impact-pct", "-9.8",
             "--impact-decomp", "thesis +6%/multiple −16%=net −9.8%",
+            "--price-verdict", "missed",
             "--asof", "2026-06-26",
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -459,6 +462,142 @@ class CLI(unittest.TestCase):
         self.assertIsNone(h.get("fair_value_after"))
         self.assertIsNone(h.get("price_impact_pct"))
         self.assertIsNone(h.get("impact_decomp"))
+
+
+class PositionLinkage(unittest.TestCase):
+    """thesis 命中 ≠ 賺錢（ARM 2026-07-20 以 −20.8% 清倉，thesis 7/29 才到期）。"""
+
+    def _resolved(self, **extra):
+        data = empty_ledger()
+        tl.add_thesis(data, **base_add_kwargs(slug="memory-cycle"))
+        tl.resolve_thesis(data, entry_id="MU:memory-cycle", verdict="passed",
+                          actual="x", note="y", next_action="z",
+                          asof="2026-06-26", **extra)
+        return data
+
+    def test_partial_requires_price_verdict(self):
+        data = empty_ledger()
+        tl.add_thesis(data, **base_add_kwargs(slug="memory-cycle"))
+        with self.assertRaises(ValueError):
+            tl.resolve_thesis(data, entry_id="MU:memory-cycle", verdict="partial",
+                              actual="x", note="y", next_action="z", asof="2026-06-26")
+
+    def test_partial_accepts_price_verdict(self):
+        data = empty_ledger()
+        tl.add_thesis(data, **base_add_kwargs(slug="memory-cycle"))
+        tl.resolve_thesis(data, entry_id="MU:memory-cycle", verdict="partial",
+                          actual="guide raised, stock -15%", note="", next_action="",
+                          asof="2026-06-26", price_verdict="missed")
+        self.assertEqual(data["theses"][0]["history"][-1]["price_verdict"], "missed")
+
+    def test_passed_does_not_require_price_verdict(self):
+        data = self._resolved()
+        self.assertIsNone(data["theses"][0]["history"][-1]["price_verdict"])
+
+    def test_invalid_position_status_rejected(self):
+        data = empty_ledger()
+        tl.add_thesis(data, **base_add_kwargs(slug="memory-cycle"))
+        with self.assertRaises(ValueError):
+            tl.resolve_thesis(data, entry_id="MU:memory-cycle", verdict="passed",
+                              actual="x", note="", next_action="",
+                              position_status="sold")
+
+    def test_stats_splits_thesis_and_pnl_hit_rate(self):
+        # thesis passed on a position that was already liquidated at a loss
+        data = self._resolved(position_status="exited", realized_pnl=-641.0)
+        out = tl.stats(data)
+        self.assertEqual(out["hit_rate"], 1.0)        # thesis was right
+        self.assertEqual(out["pnl_hit_rate"], 0.0)    # the money was not
+        self.assertEqual(out["realized_pnl_total"], -641.0)
+        self.assertEqual(out["coverage"]["with_realized_pnl"], 1)
+
+    def test_stats_price_hit_rate(self):
+        data = empty_ledger()
+        for slug, pv in (("a", "met"), ("b", "missed"), ("c", "missed")):
+            tl.add_thesis(data, **base_add_kwargs(slug=slug))
+            tl.resolve_thesis(data, entry_id=f"MU:{slug}", verdict="partial",
+                              actual="x", note="", next_action="",
+                              asof="2026-06-26", price_verdict=pv)
+        self.assertAlmostEqual(tl.stats(data)["price_hit_rate"], 1 / 3)
+
+
+class CloseUntested(unittest.TestCase):
+    """出場早於觸發 = 未受測，既非命中也非失敗（ARM 7/20 清倉、thesis 7/29 才觸發）。"""
+
+    def _one(self):
+        data = empty_ledger()
+        tl.add_thesis(data, **base_add_kwargs(ticker="ARM", slug="cpu-royalty"))
+        return data
+
+    def test_sets_untested_status(self):
+        data = self._one()
+        res = tl.close_untested(data, entry_id="ARM:cpu-royalty", exit_date="2026-07-20",
+                                note="清倉", realized_pnl=-641.0, asof="2026-07-25")
+        self.assertEqual(res["action"], "closed_untested")
+        self.assertEqual(data["theses"][0]["status"], "untested")
+        h = data["theses"][0]["history"][-1]
+        self.assertEqual(h["verdict"], "untested")
+        self.assertEqual(h["position_status"], "exited")
+        self.assertEqual(h["realized_pnl"], -641.0)
+
+    def test_excluded_from_hit_rate_and_follow_through(self):
+        data = self._one()
+        tl.add_thesis(data, **base_add_kwargs(ticker="MU", slug="memory-cycle"))
+        tl.resolve_thesis(data, entry_id="MU:memory-cycle", verdict="passed",
+                          actual="x", note="", next_action="", asof="2026-06-26")
+        tl.close_untested(data, entry_id="ARM:cpu-royalty", exit_date="2026-07-20",
+                          note="清倉", asof="2026-07-25")
+        out = tl.stats(data)
+        self.assertEqual(out["hit_rate"], 1.0)              # untested must not dilute
+        self.assertEqual(out["follow_through_rate"], 1.0)   # nor count as a miss to verify
+        self.assertEqual(out["coverage"]["untested_excluded"], 1)
+
+    def test_refuses_non_pending(self):
+        data = self._one()
+        tl.close_untested(data, entry_id="ARM:cpu-royalty", exit_date="2026-07-20",
+                          note="x", asof="2026-07-25")
+        again = tl.close_untested(data, entry_id="ARM:cpu-royalty", exit_date="2026-07-20",
+                                  note="x", asof="2026-07-25")
+        self.assertEqual(again["action"], "not_pending")
+
+    def test_no_longer_reported_as_orphan(self):
+        data = self._one()
+        tl.close_untested(data, entry_id="ARM:cpu-royalty", exit_date="2026-07-20",
+                          note="x", asof="2026-07-25")
+        found, _ = tl.orphans(data, ["MU"], ever_traded={"ARM", "MU"})
+        self.assertEqual(found, [])
+
+
+class Orphans(unittest.TestCase):
+    def _ledger(self):
+        data = empty_ledger()
+        tl.add_thesis(data, **base_add_kwargs(ticker="ARM", slug="cpu-royalty"))
+        tl.add_thesis(data, **base_add_kwargs(ticker="MU", slug="memory-cycle"))
+        tl.add_thesis(data, **base_add_kwargs(ticker="STRL", slug="reentry-post-q2"))
+        tl.add_thesis(data, **base_add_kwargs(ticker="MARKET", slug="cpi-gate"))
+        tl.add_thesis(data, **base_add_kwargs(ticker="WELL", slug="supply-gap"))
+        return data
+
+    def test_exited_position_is_orphan(self):
+        found, _ = tl.orphans(self._ledger(), ["MU"], ever_traded={"ARM", "MU", "STRL"})
+        self.assertEqual([o["ticker"] for o in found], ["ARM"])
+
+    def test_held_reentry_and_market_excluded(self):
+        found, _ = tl.orphans(self._ledger(), ["MU"], ever_traded={"ARM", "MU", "STRL"})
+        tickers = {o["ticker"] for o in found}
+        self.assertNotIn("MU", tickers)        # still held
+        self.assertNotIn("STRL", tickers)      # reentry-* outlives the position
+        self.assertNotIn("MARKET", tickers)    # no single position to exit
+
+    def test_never_held_is_bench_candidate_not_orphan(self):
+        found, bench = tl.orphans(self._ledger(), ["MU"], ever_traded={"ARM", "MU", "STRL"})
+        self.assertNotIn("WELL", {o["ticker"] for o in found})
+        self.assertIn("WELL", {o["ticker"] for o in bench})
+
+    def test_without_trade_ledger_everything_counts_as_orphan(self):
+        found, bench = tl.orphans(self._ledger(), ["MU"], ever_traded=None)
+        self.assertIn("WELL", {o["ticker"] for o in found})
+        self.assertEqual(bench, [])
 
 
 if __name__ == "__main__":
