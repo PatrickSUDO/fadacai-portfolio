@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fadacai.price-alerts</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/YOUR_USERNAME/path/to/portfolio &amp;&amp; python3 tools/price_alerts.py</string>
+  </array>
+
+  <!-- 每 15 分鐘輪詢；腳本自帶盤中時窗 gate（ET 09:25–16:10 交易日），
+       盤外呼叫直接靜默退出，成本趨近於零。
+       限制：Mac 睡眠期間不輪詢（launchd 醒來後補跑一次）。 -->
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/YOUR_USERNAME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key><string>/Users/YOUR_USERNAME</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/price-alerts.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/price-alerts.err</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
