@@ -44,6 +44,7 @@ TARGETS = [
     "earnings-dates.json",
     "pmcc-scan.json",
     "leading-indicators.json",
+    "account-metrics.json",
 ]
 
 KEEP_DAILY_DAYS = 120     # every day inside this window

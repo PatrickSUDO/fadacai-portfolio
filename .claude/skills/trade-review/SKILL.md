@@ -67,6 +67,14 @@ python3 tools/trade_ledger.py holding-alpha --window 90
 python3 tools/trade_ledger.py beta-capture --window 180 --bench SMH
 ```
 
+### 2d. 帳戶級四指標（每期必跑，2026-07-29 起）
+
+```bash
+python3 tools/account_metrics.py scan && python3 tools/account_metrics.py report --live <Step 0b 即時帳戶總值>
+```
+
+輸出期間報酬 / CAGR / MDD / Sharpe（淨值標記曲線）+ profit factor（FIFO 已實現、含選擇權與費用）。與上期 `archive/*/account-metrics.json` 對照列 Δ。**誠實標示照工具輸出**：MDD 基於離散標記屬低估、短窗年化僅供方向；淨值紀錄自 2026-06-01 起，用戶提供券商對帳單更早淨值時用 `add` 補錨。
+
 ### 2a. 交易 α（誰決定的比較好）
 
 | 決策來源 | n | β調整 α | 勝率 | β調整 $ | β=1 的 $ | beta 汙染 | 均β |

@@ -21,7 +21,7 @@ This is an investment research and portfolio management workspace. The user acti
 5. `/trade-journal log|review|summary|auto` — trade records
 6. `/mcp-health` — test all MCP server connections
 7. `/event-vol-scan [days] [TICKER ...]` — 財報/CPI/FOMC 前末日 buy call / 雙買 straddle 機會掃描（引擎 `tools/event_vol_scan.py`；賣方策略不適用、仍守財報 ±48h 禁令）
-8. `/trade-review [2w|4w|since YYYY-MM-DD]` — **每兩週交易檢討（自我進化引擎）**：歸因每筆成交是「系統決策」還是「脫離 plan 的自主決策」，算**三個並列指標**、驗影子訊號、更新 `feedback/RULES-LEDGER.md` 規則命中率，輸出「本期該改哪一條規則」。引擎 `tools/trade_ledger.py`；briefing 距上次 >14 天會提醒
+8. `/trade-review [2w|4w|since YYYY-MM-DD]` — **每兩週交易檢討（自我進化引擎）**：歸因每筆成交是「系統決策」還是「脫離 plan 的自主決策」，算**三個並列指標**、驗影子訊號、更新 `feedback/RULES-LEDGER.md` 規則命中率，輸出「本期該改哪一條規則」。引擎 `tools/trade_ledger.py`；briefing 距上次 >14 天會提醒。**每期加跑帳戶級四指標**（期間報酬/CAGR/MDD/Sharpe + profit factor）：`tools/account_metrics.py scan && report --live <即時總值>`（淨值標記刮自 journal/briefing 快照，2026-06-01 起；FIFO 已實現含選擇權）
    - **交易 α**（`score`）：進出對不對。β 對**實際使用的基準回歸**算（半導體對 SMH、其餘對 SPY）——用券商 β（對大盤測）套 SMH 會嚴重過度調整，結論會反過來
    - **持有 α**（`holding-alpha`）：該不該繼續抱。滾動窗 + 建倉至今。**沒有這項，純交易指標會獎勵頻繁進出、把「抱對」記為零貢獻**；首測持有 α 量級大於交易 α
    - **beta capture**（`beta-capture`）：行情好的時候吃到沒有。拆基準上漲/下跌日各自回歸 β；**up-β < down-β = 漲不上跌得凶**。梯級停利 + 買梯會機械性壓低 up-capture，這是純 α 看不見的成本
