@@ -33,3 +33,6 @@ package-lock.json
 .venv/
 venv/
 .serena/
+
+# Seeking Alpha（個人訂閱數據與抓取工具，一律不入 commit / 不上公開 repo）
+tools/fetch_sa_quant.py
