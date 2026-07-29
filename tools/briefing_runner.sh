@@ -87,6 +87,13 @@ python3 "$SCRIPT_DIR/trade_ledger.py" snapshot-orders \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "order snapshot failed (non-fatal; attribution for today's fills may fall back to journal parsing)"
 
+log "Refreshing account metrics (R15 drawdown circuit breaker input)..."
+python3 "$SCRIPT_DIR/account_metrics.py" scan \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  && python3 "$SCRIPT_DIR/account_metrics.py" report \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "account metrics refresh failed (non-fatal)"
+
 log "Recording shadow signals (A4 overvaluation flags)..."
 python3 "$SCRIPT_DIR/shadow_signals.py" flag \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \

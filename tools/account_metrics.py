@@ -137,6 +137,7 @@ def equity_metrics(series):
         dd = v / peak - 1
         if dd < mdd:
             mdd, mdd_from, mdd_to = dd, peak_d, dt
+    current_dd = vals[-1] / peak - 1  # 供 R15 回檔熔斷（−10% 閘）判定
 
     # 不規則間隔 Sharpe：區間 log return 攤到日，日波動加權估計
     lrs, gaps = [], []
@@ -166,6 +167,9 @@ def equity_metrics(series):
         "mdd_pct": round(mdd * 100, 2),
         "mdd_from": mdd_from.isoformat() if mdd_from else None,
         "mdd_to": mdd_to.isoformat() if mdd_to else None,
+        "current_drawdown_pct": round(current_dd * 100, 2),
+        "peak_value": peak, "peak_date": peak_d.isoformat(),
+        "circuit_breaker_active": current_dd <= -0.10,
         "vol_ann_pct": round(vol_ann * 100, 2),
         "sharpe": round(sharpe, 2) if sharpe is not None else None,
         "rf_used_pct": round(rf * 100, 2),
@@ -242,6 +246,8 @@ def cmd_report(live: float | None, pf_from: str):
     print(f"期間報酬  {eq['total_return_pct']:+.2f}%   （${eq['start_value']:,.0f} → ${eq['end_value']:,.0f}）")
     print(f"CAGR      {eq['cagr_pct']:+.2f}%（年化外推）")
     print(f"MDD       {eq['mdd_pct']:.2f}%   （{eq['mdd_from']} 峰 → {eq['mdd_to']} 谷）")
+    cb = "🔴 熔斷生效（R15）" if eq["circuit_breaker_active"] else "正常"
+    print(f"當前回撤  {eq['current_drawdown_pct']:.2f}%（峰 {eq['peak_date']} ${eq['peak_value']:,.0f}）→ {cb}")
     print(f"Sharpe    {eq['sharpe']}      （年化波動 {eq['vol_ann_pct']:.1f}%，rf {eq['rf_used_pct']}%）")
     print(f"ProfitFactor {pf['profit_factor']}（{pf['from']} 起：+${pf['gross_profit']:,.0f} / −${pf['gross_loss']:,.0f}，"
           f"勝率 {pf['win_rate_pct']}%（{pf['closed_wins']}W/{pf['closed_losses']}L），未配對剔除 {pf['unmatched_sells_skipped']} 筆）")

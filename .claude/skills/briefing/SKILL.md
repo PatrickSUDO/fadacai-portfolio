@@ -461,6 +461,7 @@ quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
 - **記憶體/功率報價反轉**：pricing_watch 出現合約價轉跌 / lead time 縮短 / 砍單類 quote → `🚦 pricing 反轉候選`（附逐字 excerpt + 對應 thesis slug，如 MU:memory-supply-response-2027）
 - **台股月營收轉負**：tw_monthly 任一檔 `turned_negative == true` → `🔴 需求證偽候選：{名} 月營收 YoY 轉負 → 提前檢討 ON/DIOD，不等財報`
 - **Revision book decel**：`book_decel == true` → `🟠 revision 動能減速（寬度 {breadth_pos_pct}%，7d {momentum_7d_pp}pp）`；`book_rollover == true` → 升 `🔴 revision 寬度跌破 50%`
+- **🔴 回檔行為熔斷（R15）**：讀 `briefing-out/cache/account-metrics.json` → `equity.circuit_breaker_active == true`（帳戶自峰回落 >10%）→ 固定顯示 `🔴 回檔熔斷生效中（峰 {peak_date} −{current_drawdown_pct}%）：信念桶禁淨減碼；清倉/降桶決定強制隔夜（寫理由過根因分類，次日確認）；僅機械單（梯級 harvest/旗標 forced/既掛 GTC）照常`（規則 `feedback/holding-period-discipline.md`；cache 缺失 → 跳過不猜）
 
 ### 7. 計畫進度 Quick
 - 近期待辦狀態（✅🔄⏳）
