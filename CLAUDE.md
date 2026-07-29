@@ -172,6 +172,7 @@ REPORTS_REPO_PATH=/path/to/fadacai-reports  # private repo local clone
    - 列出 2-3 個 **falsifiable 觀察點**（可量化的指標、事件、時程）
    - ❌ 反例：「市況不好就錯」
    - ✅ 範例：「下次財報 HDD ASP 不再上漲、HAMR 60TB 量產延後、Hyperscaler capex 下修 >10%」
+   - **區分力優先（2026-07-29）**：觀察點優先選「在對立假說下出現機率差距大」的證據；與雙假說皆相容者（如「需求強勁」既相容週期高峰也相容結構改變）不得作為 thesis 支持，只能列背景。同源相關證據打折，不當多筆獨立樣本。詳 `feedback/voi-research-gate.md`
 
 3. **目前 Verdict 在多大機率上 conditional 在 thesis 成立？**
    - 給**機率分布而非單點**（不寫「可能會漲」而是 60% 看多 / 25% 中性 / 15% 看空）
