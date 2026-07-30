@@ -694,6 +694,7 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 **篩選步驟（重用 Section 10 movers + active list 數據，不額外抓取）：**
 1. 候選池：`getBiggestGainers` + `getMostActiveStocks`
+1b. **槓桿 ETF 先映射本尊再判斷（2026-07-30 BE 案）**：榜上槓桿/反向 ETF（名稱含 2x/3x/Long/Short Daily）不得直接當雜訊丟棄 —— 先映射 underlying（BEG→BE、MUZ→MU…），本尊若 mandate 內且有 binary catalyst → 以本尊進入後續篩選
 2. **排除遲到派對：** 過去 5 日累計漲幅 > 30% → 凸性已被消耗
 3. **排除既有持倉同題材：** 與 portfolio 重複曝險的標的跳過
 4. **必要條件（3 項全符合才入選）：**
