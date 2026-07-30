@@ -205,6 +205,19 @@ python3 tools/thesis_ledger.py resolve --id <id> --verdict passed|failed|partial
 4. 本期新發現的可測假設 → 加進「待建立的對照追蹤」表
 5. 新寫入 `feedback/*.md` 的規則，同時在帳本登錄一列
 
+## Step 5.5 — 注意力預算稽核（每期必跑，2026-07-30 起）
+
+登記機制只進不出會稀釋注意力。每期掃四類，列清理清單並執行：
+
+1. **Thesis 殭屍**：`thesis_ledger.py stats` + pending 全列 →
+   - 已清倉標的的殘留 thesis（re-entry 條目已另存者）→ `close-untested --exit-date <清倉日>`
+   - pending 齡 >60 天且 due 還在 30 天外、期間無任何 signpost 移動 → 覆審：還值得等嗎？不值得 → close
+2. **L1/L2 板凳除名**（plan.md）：L2 名字 90 天無 gate 觸發且 revision 靜止/轉負 → 除名（一句理由）；L1 觸發價失效 >60 天 → 降 L2 或除名；已進場者移出板凳。**除名 ≠ 永久淘汰**（質地理由才可判永久淘汰，per `exit-reentry-discipline.md` 分層鐵則）
+3. **價格警報覆核**：`price_alerts.py list` → 觸發多次無人行動 / 條件已過時（財報已過、thesis 已結案）→ remove
+4. **一次性清單**：research/ 下的行動清單（抄底清單類）過期 → 移 `research/archive/`，並拔掉 skill 引用
+
+輸出：`🧹 本期清理：thesis −N / 板凳 −N / 警報 −N`（零清理也要列，證明有跑）。
+
 ## Step 6 — 輸出
 
 寫 `briefing-out/trade-review-YYYY-MM-DD.md`，然後：

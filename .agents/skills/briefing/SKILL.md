@@ -195,15 +195,7 @@ python3 tools/thesis_ledger.py due
   ```
   `fair_value_before/after` 取自 Step 0.65 fundamentals cache 的三錨點計算；全部選填，有數就帶。
 
-**3. 讀 research/naked-call-watchlist.md（若存在）：**
-```
-Read research/naked-call-watchlist.md
-```
-用 `macro-snapshot.json`（10Y UST、VIX）+ `get_batch_indicators` 2 日技術確認，評估其 3 閘門狀態：
-- G1 10Y UST ≤4.35%：從 macro snapshot fed_funds 推估或 technical；G2 VIX ≤18：macro VIX；G3 目標 2 日收盤確認：batch indicator 技術
-- 更新 watchlist 閘門欄位 → 狀態進 Key Alerts（未達全過則 `🔒 LOCKED: G1/G2/G3 [狀態]`）
-- 3 閘門全過 → 輸出 `🎯 樂透閘門達標：{ticker} 可評估進場`，加入 Key Alerts actionable 與 Telegram T5/T6
-- **日誌最後一行（auto-append）**：`--send` / launchd 路徑用 Write 追加今日欄位到 watchlist；互動 quick/full/deep 僅輸出提議行，不 Write
+**3.（已除役 2026-07-30）** 舊 naked-call-watchlist 3 閘門檢查已移除 —— 該清單為 6/5 反應式閘門時代產物（方法論 6/13 已被預掛 GTC 買梯取代），檔案歸檔至 `research/archive/`。樂透機會由 Section 11.5 掃描 + 價格警報器承接，不再每日讀舊清單。
 
 **4. 輸出「📋 thesis 驗收」區塊**（接在 Key Alerts 後 / Quick Take 前）：
 ```
