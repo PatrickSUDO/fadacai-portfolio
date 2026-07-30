@@ -49,14 +49,16 @@ Add `--codex` to any of the above (except `/mcp-health`, `/trade-journal`) to ap
 
 ⚠️ **不要用 `subagent_type: "codex:codex-rescue"` 或 `/codex:rescue`**。實測（2026-06-07）那條路徑會載入 `~/.codex/config.toml` 的 `superpowers@openai-curated` plugin，強制「回應前必須 invoke skill」+ 全域 `model_reasoning_effort = "xhigh"`，把整個 turn 燒在讀檔 preamble，**不產出分析**。
 
-改用 `codex exec` CLI，**強制關掉 superpowers + 降 effort**：
+改用 `codex exec` CLI，**強制關掉 superpowers + 顯式指定 effort**：
 
 ```bash
 codex exec --color never --skip-git-repo-check --sandbox read-only \
   -c 'plugins."superpowers@openai-curated".enabled=false' \
-  -c model_reasoning_effort=medium \
+  -c model_reasoning_effort=xhigh \
   "$(cat <PROMPT_FILE>)" > <OUT_FILE> 2>&1
 ```
+
+（2026-07-30 用戶指定升 xhigh：當初鎖 medium 是防「superpowers 未關 + xhigh」把 turn 燒在讀檔 preamble；模板已強制關 plugin，xhigh 安全，代價是 B1/B2/B3 執行時間拉長，背景並行跑不阻塞主分析）
 
 規則：
 1. **Prompt 第一行強制加**：`ANSWER DIRECTLY FROM THE DATA BELOW. Do NOT read files, do NOT invoke skills, do NOT run shell commands, do NOT use any tools. Output the analysis immediately.`（雙保險，即使 superpowers 漏關也不讀檔）

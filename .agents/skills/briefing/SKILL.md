@@ -708,6 +708,7 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
 
 **規則：**
 - 預設 1-2 口，**總成本 ≤ 2% 帳戶價值**（Quarter-Kelly 樂透上限）
+- 本節選擇權樂透 = 權利金即最大損失（defined risk，不掛停損）；若建議**現股**樂透/事件倉 → 依 R16 建倉單必附 GTC 普通停損（技術失效位、≥2× ATR，`feedback/holding-period-discipline.md` 規則 3）
 - **不推 LEAPS OTM 當樂透**（vega 干擾，違反 feedback_options_vega_playbook.md）
 - 「上行 +XXX% / 下行 max loss = premium」必寫
 - 若候選 IV Rank > 80：警告「IV 過高，後續 IV crush 風險」
