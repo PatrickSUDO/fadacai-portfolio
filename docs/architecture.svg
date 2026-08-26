@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1240 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc">
+        <title id="architecture-title">Portfolio 系統架構總覽</title>
+        <desc id="architecture-desc">架構圖：用戶與自動排程觸發各項技能，經 Step 0 紀律與模型分流分析後寫入六本自我驗證帳本，雙週覆盤再把規則命中率回饋給下一輪判讀，形成封閉迴路。</desc>
+        <defs>
+          <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- ============ ZONES (drawn before arrows/nodes) ============ -->
+        <!-- Zone 1: Step 0 discipline -->
+        <rect x="300" y="224" width="636" height="112" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="563" y="228" width="110" height="12" rx="2" fill="#ececec"/>
+        <text x="618" y="237" fill="rgba(45,49,66,0.8)" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">STEP 0 紀律</text>
+
+        <!-- Zone 2: Ledger layer — FOCAL self-verification core -->
+        <rect x="300" y="480" width="636" height="180" rx="8" fill="rgba(235,108,54,0.04)" stroke="rgba(235,108,54,0.35)" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <rect x="543" y="484" width="150" height="12" rx="2" fill="#ececec"/>
+        <text x="618" y="493" fill="#eb6c36" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.14em">帳本層 · 自我驗證</text>
+
+        <!-- ============ ARROWS (behind nodes) ============ -->
+
+        <!-- Input -> Skills (fan, 2 targets) -->
+        <path d="M588,104 V116 Q588,124 580,124 H482 Q474,124 474,132 V144" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M652,104 V116 Q652,124 660,124 H758 Q766,124 766,132 V144" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- Skills -> 判讀規則 (2 attach points, fanned) -->
+        <path d="M474,216 V228 Q474,236 466,236 H384 Q376,236 376,244 V256" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M766,216 V228 Q766,236 758,236 H444 Q436,236 436,244 V256" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- Step 0 internal chain (straight, same axis) -->
+        <line x1="496" y1="288" x2="528" y2="288" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="708" y1="288" x2="740" y2="288" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- Data layer -> 第一性框架 (right-side feed) -->
+        <path d="M960,288 H920" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="924" y="278" width="34" height="12" rx="2" fill="#ececec"/>
+        <text x="941" y="288" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">MCP</text>
+
+        <!-- 第一性框架 -> 模型分流 (fan, 3 targets) -->
+        <path d="M785,320 V340 Q785,348 777,348 H396 Q388,348 388,356 V376" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M830,320 V340 Q830,348 822,348 H628 Q620,348 620,356 V376" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M875,320 V340 Q875,348 867,348 H860 Q852,348 852,356 V376" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- Opus -> Ledger zone (log) -->
+        <path d="M620,440 V480" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="628" y="452" width="34" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="645" y="462" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">登錄</text>
+
+        <!-- Ledger zone -> 投遞 (deliver) -->
+        <path d="M620,660 V700" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- 自動觸發 -> 投遞 -->
+        <path d="M468,732 H500" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="472" y="712" width="24" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="484" y="722" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">推送</text>
+
+        <!-- FEEDBACK LOOP: RULES-LEDGER -> 判讀規則 (the selling point) -->
+        <path d="M324,616 H56 Q48,616 48,608 V296 Q48,288 56,288 H316" fill="none" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+        <rect x="58" y="402" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="90" y="412" fill="#eb6c36" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.06em">回饋規則</text>
+
+        <!-- ============ EDITORIAL CALLOUT ============ -->
+        <path d="M 196,462 Q 260,520 338,586" fill="none" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,3"/>
+        <circle cx="338" cy="587" r="2" fill="#eb6c36"/>
+        <text x="64" y="452" fill="#eb6c36" font-size="14" font-style="italic" font-family="'Instrument Serif', Georgia, serif" text-anchor="start">每個結論都留下可計分的痕跡</text>
+
+        <!-- ============ NODES ============ -->
+
+        <!-- N1: 輸入層 (input treatment) -->
+        <rect x="520" y="40" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="520" y="40" width="200" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="528" y="46" width="28" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+        <text x="542" y="55" fill="#7a8399" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">IN</text>
+        <text x="620" y="80" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">👤 用戶 ／ 🔔 Hook</text>
+        <text x="620" y="94" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">slash commands · gap-fill</text>
+
+        <!-- N2: 日常／盤中 Skills -->
+        <rect x="344" y="144" width="260" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="344" y="144" width="260" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="352" y="150" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="368" y="159" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SKL</text>
+        <text x="474" y="178" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">日常／盤中 Skills</text>
+        <text x="474" y="192" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/briefing quick·full·deep·telegram</text>
+        <text x="474" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/todo</text>
+
+        <!-- N3: 深度與覆盤 Skills -->
+        <rect x="616" y="144" width="300" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="616" y="144" width="300" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="624" y="150" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="640" y="159" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">SKL</text>
+        <text x="766" y="178" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">深度與覆盤 Skills</text>
+        <text x="766" y="192" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/portfolio-review · /stock-analysis</text>
+        <text x="766" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">/options-strategy · /trade-review(2w) · /ev-check</text>
+
+        <!-- N4: 判讀規則 -->
+        <rect x="316" y="256" width="180" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="316" y="256" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="324" y="262" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="336" y="271" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">S0</text>
+        <text x="406" y="296" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">判讀規則</text>
+        <text x="406" y="310" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">plan.md + RULES-LEDGER</text>
+
+        <!-- N5: 即時持倉 -->
+        <rect x="528" y="256" width="180" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="528" y="256" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="536" y="262" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="548" y="271" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">S0</text>
+        <text x="618" y="296" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">即時持倉</text>
+        <text x="618" y="310" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">Firstrade MCP</text>
+
+        <!-- N6: 第一性框架 -->
+        <rect x="740" y="256" width="180" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="740" y="256" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="748" y="262" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="760" y="271" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">S0</text>
+        <text x="830" y="296" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">第一性框架</text>
+        <text x="830" y="310" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">thesis · 證偽 · 機率/EV</text>
+
+        <!-- N7: Data layer (external, right side) -->
+        <rect x="960" y="252" width="220" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="960" y="252" width="220" height="72" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="968" y="258" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="984" y="267" fill="#7a8399" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+        <text x="1070" y="286" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">資料層</text>
+        <text x="1070" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">7 MCP servers ＋ 每日快取</text>
+        <text x="1070" y="312" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">→ archive/ 凍結</text>
+
+        <!-- N8: Sonnet 4.6 -->
+        <rect x="288" y="376" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="288" y="376" width="200" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="296" y="382" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="312" y="391" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+        <text x="388" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">Sonnet 4.6</text>
+        <text x="388" y="430" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">data-collector / telegram</text>
+
+        <!-- N9: Opus 4.8 -->
+        <rect x="520" y="376" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="520" y="376" width="200" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="528" y="382" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="544" y="391" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+        <text x="620" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">Opus 4.8</text>
+        <text x="620" y="430" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">推理 · EV · review</text>
+
+        <!-- N10: Codex (external, opt-in) -->
+        <rect x="752" y="376" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="752" y="376" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="760" y="382" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="776" y="391" fill="#7a8399" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="852" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">Codex（--codex）</text>
+        <text x="852" y="430" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">獨立第二意見</text>
+
+        <!-- N11-16: Ledger nodes (zone 2) -->
+        <!-- thesis-ledger -->
+        <rect x="324" y="512" width="180" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="324" y="512" width="180" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="332" y="517" width="28" height="10" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="346" y="525" fill="#4f5d75" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LDG</text>
+        <text x="414" y="541" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">thesis-ledger</text>
+        <text x="414" y="556" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">到期驗收</text>
+
+        <!-- ev-ledger -->
+        <rect x="528" y="512" width="180" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="528" y="512" width="180" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="536" y="517" width="28" height="10" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="550" y="525" fill="#4f5d75" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LDG</text>
+        <text x="618" y="541" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">ev-ledger</text>
+        <text x="618" y="556" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">機率校準</text>
+
+        <!-- source-credit -->
+        <rect x="732" y="512" width="180" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="732" y="512" width="180" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="740" y="517" width="28" height="10" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="754" y="525" fill="#4f5d75" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LDG</text>
+        <text x="822" y="541" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">source-credit</text>
+        <text x="822" y="556" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">來源信用 tier</text>
+
+        <!-- RULES-LEDGER — FOCAL, loop closure -->
+        <rect x="324" y="588" width="180" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="324" y="588" width="180" height="56" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="332" y="593" width="28" height="10" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+        <text x="346" y="601" fill="#eb6c36" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LDG</text>
+        <text x="414" y="617" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">RULES-LEDGER</text>
+        <text x="414" y="632" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">規則命中率</text>
+
+        <!-- trade-ledger -->
+        <rect x="528" y="588" width="180" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="528" y="588" width="180" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="536" y="593" width="28" height="10" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="550" y="601" fill="#4f5d75" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LDG</text>
+        <text x="618" y="617" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">trade-ledger</text>
+        <text x="618" y="632" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">+ position-flags</text>
+
+        <!-- shadow-signals -->
+        <rect x="732" y="588" width="180" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="732" y="588" width="180" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="740" y="593" width="28" height="10" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="754" y="601" fill="#4f5d75" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">LDG</text>
+        <text x="822" y="617" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">shadow-signals</text>
+        <text x="822" y="632" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">影子旗標</text>
+
+        <!-- N17: 自動觸發 (optional/async, dashed) -->
+        <rect x="228" y="700" width="240" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="228" y="700" width="240" height="64" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="236" y="706" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="253" y="715" fill="#7a8399" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">AUTO</text>
+        <text x="348" y="740" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">自動觸發</text>
+        <text x="348" y="754" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">launchd（NYSE）· price_alerts 15m</text>
+
+        <!-- N18: 投遞 -->
+        <rect x="500" y="700" width="240" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="500" y="700" width="240" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="508" y="706" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="522" y="715" fill="#2d3142" font-size="7" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle" letter-spacing="0.08em">OUT</text>
+        <text x="620" y="740" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">投遞</text>
+        <text x="620" y="754" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, Menlo, monospace" text-anchor="middle">Telegram + Email · 私有報告站</text>
+
+        <!-- ============ LEGEND ============ -->
+        <line x1="40" y1="800" x2="1200" y2="800" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="816" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, Menlo, monospace" letter-spacing="0.18em">LEGEND</text>
+
+        <rect x="40" y="832" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="60" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">FOCAL · 帳本收斂點</text>
+
+        <rect x="196" y="832" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="216" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">一般節點</text>
+
+        <rect x="316" y="832" width="14" height="10" rx="2" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="336" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">輸入</text>
+
+        <rect x="404" y="832" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="424" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">資料 / 外部</text>
+
+        <rect x="516" y="832" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="536" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">帳本 Store</text>
+
+        <rect x="628" y="832" width="14" height="10" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,2"/>
+        <text x="648" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">自動 / 選用</text>
+
+        <line x1="756" y1="837" x2="784" y2="837" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="792" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">一般流程</text>
+
+        <line x1="900" y1="837" x2="928" y2="837" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+        <text x="936" y="840" fill="#4f5d75" font-size="8.5" font-family="'Geist', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">回饋迴路</text>
+      </svg>
