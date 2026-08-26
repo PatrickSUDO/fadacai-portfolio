@@ -16,8 +16,6 @@
 
 ![架構總覽](docs/architecture.svg)
 
-完整頁面版（含各層說明卡）見 [`docs/architecture.html`](docs/architecture.html)；圖以 [diagram-design](https://github.com/cathrynlavery/diagram-design) 設計系統繪製。
-
 ---
 
 ## 核心設計
