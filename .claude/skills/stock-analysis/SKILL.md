@@ -145,6 +145,16 @@ python3 tools/thesis_ledger.py add --ticker TICKER --slug <slug> \
 ```
 新增 `--ev` 時同時記錄當下基準公允價（= `fair_value_before` 的基準，日後 resolve 時用）
 
+**EV ledger 事前登錄（thesis add 之後緊接執行，機率校準自驗）：**
+```
+python3 tools/ev_ledger.py add --ticker TICKER --slug <slug>-ev \
+  --horizon-days 365 --spot <現價> \
+  --p-bull XX --p-base XX --p-bear XX \
+  --fv-bull XXX --fv-base XXX --fv-bear XXX --ev-price XXX \
+  --source stock-analysis --model <本次模型> --thesis-ref TICKER:<thesis-slug>
+```
+到期由 briefing `resolve-due` 機械驗價（零判斷）；校準統計由 /trade-review 讀。**機率/公允價直接抄機率分布表，不重算**。
+
 4b. **訊號擷取 & Thesis 候選（Signal Extraction，stock-analysis 預設開）**
 
 > 目的：從 news body + SEC 8-K + 財報逐字稿抽**已量化陳述**，用以補強/修正 thesis 機率分布輸入（Step 0e）。
@@ -156,13 +166,14 @@ python3 tools/thesis_ledger.py add --ticker TICKER --slug <slug> \
 2. 財報逐字稿（`mcp__fmp-mcp__getEarningsTranscript` 最新一份，取 capex/ASP/wafer/utilization 句）→ `confidence: high`；僅財報後 30 天內
 3. EODHD raw news body（`news-articles.json` Step 0.67，或 `mcp__eodhd-mcp__get_news` 即時抓）→ `confidence: medium`
 4. FMP segment（`mcp__fmp-mcp__getRevenueProductSegmentation`）→ `confidence: medium`（有數字才算）
+5. 來源訊號 cache（`briefing-out/cache/twitter-signals.json`，Step 0.68 同源；Trusted/Core tier → `confidence: medium`，Probation → `confidence: low` 不入 ledger）→ post 全文（裁至 ≤120 字逐字）即 raw_quote 來源；**引用即代表 add-claim**，同一次 `python3 tools/source_credit.py add-claim ...` 登錄該主張
 
 **訊號 record（Claude 輸出，不寫 JSON cache）：**
 ```
 metric: wafer_starts / capex / ASP_QoQ / segment_revenue / utilization / ...
 value: "+8% QoQ"（逐字含單位）
 direction: up | down | flat
-ticker, source_url_or_desc, source_type: sec_8k | transcript | news | fmp_segment
+ticker, source_url_or_desc, source_type: sec_8k | transcript | news | fmp_segment | twitter | substack | rss
 date, confidence: high | medium | low
 raw_quote: "<逐字引用，≤120 字>"    ← 無此欄 = 不成立
 ```
@@ -279,7 +290,7 @@ Use `mcp__eodhd-mcp__get_sentiment_trend` and `mcp__eodhd-mcp__get_news_sentimen
 - 計畫建議的進場方式：現股 vs Bull Put Spread vs LEAPS（引用計畫原文）
 - 建議倉位佔帳戶 %
 - **桶別建議（必填）**：進場後歸 🔵 信念桶（中低 β + 多年結構 thesis → 讓 run）/ 🟢 認列循環桶（高 β >3 / 純週期 / 純波段 → 系統性 harvest）/ 🟡 L1 On-Deck（thesis 已驗證但等觸發）/ 🔵 L2 Research Pool（thesis 未驗證完）。疑問時歸認列桶
-- **機會成本閘門（新倉必答）**：此標的是否**明顯優於目前最弱的在倉名額**？（列出最弱在倉 1-2 檔 revision/動能對比）。組合在 14–18 上緣 → 必須指名砍誰進場（砍一進一，不淨增）；相關 beta 門檻最高，去相關 hedge/填缺口門檻較低
+- **機會成本閘門（新倉必答）**：**先過行業濾網——該行業 TAM 是否 GROWING-STRUCTURAL？衰退行業內的相對強者直接不進 bench（垃圾桶尋寶濾網，2026-08-19）**；過濾網後才比：此標的是否**明顯優於目前最弱的在倉名額**？（列出最弱在倉 1-2 檔 revision/動能對比）。組合在 14–18 上緣 → 必須指名砍誰進場（砍一進一，不淨增）；相關 beta 門檻最高，去相關 hedge/填缺口門檻較低
 - **進場結構（對稱性）**：貼高加速領導者 → starter + 回檔 ladder + bull call spread；支撐區 → GTC 限價階梯 / bull put spread；長期信念 → LEAPS deep ITM delta 0.80–0.88。結尾附可掛的 Firstrade 單（per `feedback/actionable-firstrade-orders.md`）
 
 ### 第一性檢查（必填，在 Verdict 之前）

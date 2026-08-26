@@ -88,6 +88,8 @@ Read briefing-out/cache/leading-indicators.json
 
 **紀律（同影子訊號 A4，記錄不阻擋）：** 本 cache 所有旗標為 **display-only + Key Alerts 標旗**，不得單獨觸發任何加減碼/harvest/否決；由 `/trade-review` 跑滿 ≥2 期驗命中率後才可討論升級硬閘門。
 
+**質性訊號 theta（2026-08-19 起，資訊有時間衰減）：** 凡引用 `pricing_watch` excerpt 或 cross-read leader 訊號作 prior，**必附訊號 age**（來源日 → 今日，格式 `（N 天前）`）；**age > 14 天 → 標 🕒 stale，降為背景不作 prior**（同 revision >45d stale 的質性版——每組資訊過一定時間就被 fully price-in）。來源日缺失 → 標 `(age unknown)` 並降權。
+
 這份 cache 用於：
 - 本步 🚦 儀表行（所有 tier）
 - **Section 4.6** 財報 Cross-Read 排序（leaders → followers 讀序）
@@ -165,6 +167,36 @@ Read briefing-out/cache/news-articles.json
 
 ---
 
+## Step 0.68: 來源訊號 Load（所有 Tier 共用，cache-only）
+
+讀 cache（由 `tools/fetch_twitter.py` 預載，TTL 20h；配置私有 `research/source-config.json`，schema 範例見 `docs/source-config.example.json`）：
+
+```
+Read briefing-out/cache/twitter-signals.json
+```
+
+判定：
+- `status == "ok"` 或 `"partial"` 且 mtime < 24h → **使用**；`"partial"` 標 ⚠️（部分帳號讀取失敗，仍用已讀到的貼文）
+- `budget_exhausted == true` → 標 💸（本輪 X API 讀取額度用盡），仍用已讀到的部分
+- `status == "skipped"`（無 `X_BEARER_TOKEN` 或 `x_fetch.enabled=false`）/ mtime > 24h / 缺失 → 顯示 `⚠️ 來源訊號 unavailable`，跳過 §9.6 與相關 Key Alerts / Telegram 段落
+
+單則貼文 `date` 距今 > 14 天 → 標 🕒 stale，降為背景不作 prior（同 Step 0.55 質性訊號 theta 規則）。
+
+**紀律（display-only，同 A4 影子 / R18 / 先行指標）：**
+- Tier（`probation`/`trusted`/`core`）完全由 `tools/source_credit.py tiers` 機械算出，**Claude 不得手動升降**
+- **Probation** 來源只能出現在 §9.6（Deep tier 陳列），不得作 Key Alerts / Telegram 引用來源，不得作任何 prior
+- **Trusted** 可作 medium confidence prior、可進 Key Alerts 🐦 行、可進 Telegram T3.5/T8a/T8b
+- **Core** 額外可提作試單候選背景（仍須過 R14 持有期閘 / R15 回檔熔斷 / R18 財報窗禁令等既有硬閘門，不繞過）
+- 驗滿 **≥2 期 `/trade-review`** 前，來源訊號**不得單獨改變任何 Verdict / 加減碼建議**，只作背景與記錄
+- **引用即 add-claim**：凡在 briefing 任何段落引用某則貼文的主張支持判斷，同一次必須 `python3 tools/source_credit.py add-claim ...` 登錄該主張；未登錄的引用不算數（同旗標紀律「講了要記」）
+
+這份 cache 用於：
+- **Section 6 Key Alerts** 🐦 行（Trusted+、48h、has_number）
+- **§9.6**（Deep）來源訊號陳列表 + 信用帳統計
+- **Telegram** T3.5 / T8a / T8b 🐦 區塊
+
+---
+
 ## Step 0.7: Thesis Ledger 驗收 & 逾期掃描（所有 Tier 共用）
 
 帳本 = `research/thesis-ledger.json`，工具 = `tools/thesis_ledger.py`（去重/碰撞/到期/過期/統計全在程式層，**Claude 不手改 JSON**）。
@@ -172,6 +204,8 @@ Read briefing-out/cache/news-articles.json
 **1. 取得今日到期清單（同時自動 expire sweep）：**
 ```
 python3 tools/thesis_ledger.py due
+python3 tools/ev_ledger.py resolve-due   # EV 分布到期機械驗價（零判斷，自動抓價/淨值標記），輸出直接列在 briefing
+python3 tools/source_credit.py resolve-due   # 來源信用帳 view claim 到期機械驗價（同上；fact claim 只列不猜，見 2b）
 ```
 回傳 `{due:[...], expired:[...]}`。`expired` 是工具自動把「逾期 >30 天未驗收」轉掉的，當作無結果。
 
@@ -194,6 +228,21 @@ python3 tools/thesis_ledger.py due
     --price-impact-pct <float> --impact-decomp "thesis +X%/multiple −Z%=net −W%"
   ```
   `fair_value_before/after` 取自 Step 0.65 fundamentals cache 的三錨點計算；全部選填，有數就帶。
+
+**2b. facts_due 驗收流程（來源信用帳，fact 型主張）**
+
+`source_credit.py resolve-due` 只自動驗 view 型主張（用價格算超額 α）；**fact 型主張只列不猜**，`due` 回傳 `facts_due` 供人工核對：
+- 找官方證據（財報 / 8-K / 公司公告 / 官方數據）核對該筆 `claim` 的 `metric`/`value`
+- hit：方向對且 `|actual−value|/|value| ≤ 0.5`；partial：方向對但超幅；miss：方向錯；找不到對照數字 → 留 `pending` 不猜
+- 有結論才 `resolve`：
+  ```
+  python3 tools/source_credit.py resolve --id <id> --verdict hit|partial|miss --actual "<官方數字+出處>" --confirm-date <YYYY-MM-DD>
+  ```
+- 只列一行，**不改變任何建議**（同 A4 影子紀律）：
+  ```
+  🐦 來源驗收：{source_id}@{tier} {ticker} {claim 摘要} → {verdict}
+  ```
+  無到期 fact 則略過此行。
 
 **3.（已除役 2026-07-30）** 舊 naked-call-watchlist 3 閘門檢查已移除 —— 該清單為 6/5 反應式閘門時代產物（方法論 6/13 已被預掛 GTC 買梯取代），檔案歸檔至 `research/archive/`。樂透機會由 Section 11.5 掃描 + 價格警報器承接，不再每日讀舊清單。
 
@@ -356,6 +405,7 @@ quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
    - **不執行**「弱勢持續 → 減碼」等自動規則
    - actionable 改寫為「等 N+1 個交易日 settle 再判斷結構」
    - 若強行給建議，必須先 confirm fundamental 數字（revenue / EPS / guide）方向，不能只看 price action
+   - **豁免（R9 修訂 2026-08-04）**：財報後、**預登錄的基本面 gate 行動**（guide/backlog/book-to-bill 印出即執行，如 PWR 7/30 型補滿）不受 +48h 限制；被停用的只有技術訊號與即興 price-action 動作
 4. **輸出格式（必須含 base rate）：**
 
    ```markdown
@@ -372,8 +422,18 @@ quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
 6. **財報叢集曝險（book 級檢查，必做）**：
    - 計算「未來 7 個日曆日內有財報的持倉」合計佔組合 %（權重從 Step 0b 持倉算）
    - 表格後固定輸出一行：`📊 財報叢集：未來 7 日窗內持倉合計 X%（N 檔）`
-   - **> 20% → 🔴 叢集警示**（進 Key Alerts）：提示 ① 該窗內 Swing Risk 🔴 / 梯級到價的認列桶倉位**提前 harvest**（財報前落袋，不賭 binary）② 暫停對同窗 ticker 新增曝險（現股與選擇權皆是，選擇權本有 ±48h 禁令）③ 窗內合計曝險與各檔 beat rate 一併列出供判斷
+   - **> 20% → 🔴 叢集警示**（進 Key Alerts）：提示 ① 該窗內 Swing Risk 🔴 / 梯級到價的認列桶倉位**提前 harvest**（財報前落袋，不賭 binary）② 暫停對同窗 ticker 新增曝險（現股與選擇權皆是，選擇權本有 ±48h 禁令）——**此即 R18（影子計分中）：每次實際擋下一個想做的加碼，同一次執行 `python3 tools/shadow_signals.py block --ticker XXX --price <當時價> --size <USD> --note "<理由+財報窗>"`**（見 `feedback/earnings-reaction-window.md` C 段）③ 窗內合計曝險與各檔 beat rate 一併列出供判斷
    - 10–20% → 🟡 資訊性標註，不強制動作
+
+7. **財報後 7 項體檢（20 秒 checkbox，2026-08-19 起，源 `research/隨手筆記59-棋局思維-earnings-cycle.md`）**：
+   對**過去 7 日內已發財報**的持倉，各輸出一行機械 scorecard（資料源：8-K/press release + guide；缺項標 `?` 不猜）：
+   ```
+   {ticker} 7-check: Rev✅ EPS✅ RevGuide⬆️ EPSGuide➡️ Margin⬆️ Pricing✅ TAM✅ → 6/7
+   ```
+   七項 = Revenue beat / EPS beat / Rev guide raised / EPS guide raised / Margin expansion / Pricing power / TAM growing-structural。
+   - **≥6/7 → 「體檢過」**：作 thesis resolve 與 R9 預登錄 gate 行動的快速依據
+   - **≤3/7 → 「體檢弱」**：進 Key Alerts、該倉列入下次 review 覆判（不自動賣，仍走根因分類）
+   - Pricing power / TAM 兩項可引用最近一次 call 的既有判讀（附訊號 age）；guide 兩項權重高於本季 beat 兩項（Numbers lag：本季數字是上季 guide 的兌現，會動股價的是還沒發布的數字）
 
 > 詳見 `feedback/earnings-reaction-window.md` 與 `feedback/weak-signal-root-cause.md`
 
@@ -454,6 +514,7 @@ quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
 - **台股月營收轉負**：tw_monthly 任一檔 `turned_negative == true` → `🔴 需求證偽候選：{名} 月營收 YoY 轉負 → 提前檢討 ON/DIOD，不等財報`
 - **Revision book decel**：`book_decel == true` → `🟠 revision 動能減速（寬度 {breadth_pos_pct}%，7d {momentum_7d_pp}pp）`；`book_rollover == true` → 升 `🔴 revision 寬度跌破 50%`
 - **🔴 回檔行為熔斷（R15）**：讀 `briefing-out/cache/account-metrics.json` → `equity.circuit_breaker_active == true`（帳戶自峰回落 >10%）→ 固定顯示 `🔴 回檔熔斷生效中（峰 {peak_date} −{current_drawdown_pct}%）：信念桶禁淨減碼；清倉/降桶決定強制隔夜（寫理由過根因分類，次日確認）；僅機械單（梯級 harvest/旗標 forced/既掛 GTC）照常`（規則 `feedback/holding-period-discipline.md`；cache 缺失 → 跳過不猜）
+- **🐦 來源訊號**：Step 0.68 cache 中 tier ∈ {trusted, core} 且 `has_number == true` 且貼文 48h 內 → `🐦 {ticker} {source_id}@{tier}：{claim 摘要}（"{raw_quote 節錄}"）`；每檔最多 1 行、全 Key Alerts 最多 3 行；Probation 不得出現於此（僅 §9.6）；display-only，不改變任何建議
 
 ### 7. 計畫進度 Quick
 - 近期待辦狀態（✅🔄⏳）
@@ -632,6 +693,7 @@ mcp__fmp-mcp__getDCFValuation(ticker)
 2. 財報硬數字（財報後 30 天內）→ `confidence: high`。⚠️ **FMP `getEarningsTranscript` 已實測 402（2026-07-28，免費層無逐字稿）**，改走：SEC 8-K 財報 exhibit（`mcp__sec-edgar-mcp__analyze_8k` / `get_filing_content`，Item 2.02 附 earnings PR 全數字）或 EODHD news body 財報報導
 3. EODHD raw news body（Step 0.67 `news-articles.json`，需 `"content" in fields_available`）→ `confidence: medium`（一般新聞常缺晶圓級細節）
 3b. Leading cache pricing_watch（Step 0.55 `pricing_watch.memory/power[].excerpt` — 關鍵字預過濾 + 逐字 excerpt ≤240 字）→ `confidence: medium`；excerpt 可直接作 raw_quote 來源（仍須裁剪為 ≤120 字逐字引用），涵蓋非持倉訊號源（TSM/SNDK/STM/TXN 報價與 SK hynix/Samsung/Infineon 發布）
+3c. 來源訊號 cache（Step 0.68 `twitter-signals.json`）→ Trusted/Core tier → `confidence: medium`；Probation → `confidence: low`，**不入 ledger**（同其餘 low confidence 只在文字呈現）；post 全文（裁至 ≤120 字逐字）即 raw_quote 來源。**引用即代表 add-claim**——凡在本節或 Key Alerts 用某則貼文的主張支持判斷，該次必須 `python3 tools/source_credit.py add-claim ...` 登錄，否則不算已驗證過的引用（同旗標紀律「講了要記」）
 4. 宏觀 calendar（`macro-snapshot.json` regime_tag + `get_economic_calendar(high_impact_only=True)`）→ 宏觀主題 thesis 輸入
 
 **訊號 record shape（Claude 輸出，不寫 JSON 到 cache）：**
@@ -639,7 +701,7 @@ mcp__fmp-mcp__getDCFValuation(ticker)
 metric: wafer_starts / capex / ASP_QoQ / segment_revenue / utilization / Fed_rate / CPI
 value: "+8% QoQ"（逐字含單位）
 direction: up | down | flat
-ticker/theme, source_url_or_desc, source_type: news|sec_8k|transcript|macro, date
+ticker/theme, source_url_or_desc, source_type: news|sec_8k|transcript|macro|twitter|substack|rss, date
 confidence: high | medium | low
 raw_quote: "<逐字引用，≤120 字>"    ← 無此欄 = 不成立
 ```
@@ -663,12 +725,35 @@ python3 tools/thesis_ledger.py add --ticker <T> --slug <slug> \
   --source signal-inference \
   --ev "signal: <metric> <value>, <source>, conf=<confidence>"
 ```
+若訊號來自來源信用帳（X/Substack/RSS claim），`--ev` 改用可回溯到 `source-credit.jsonl` claim id 的格式：
+```
+--ev "signal: <metric> <value>, src=<source_id>@<tier>, claim=<id>, conf=<confidence>"
+```
 
 **誠實退化（必守）：** 若此 tier 的 ≥3% 持倉全部回傳「只有 narrative，無量化數字」→ 整段輸出：
 ```
 §9.5 訊號擷取：本期無可量化信號（只有 narrative news，無 SEC 8-K / 逐字稿量化句）
 ```
 不輸出任何推測數字，不改寫 qualitative 為 quantitative。
+
+### 9.6 🐦 來源訊號（僅 Deep tier）
+
+**目的：** 陳列 Step 0.68 cache 中本期所有可計分主張（含 Probation，此處是唯一可以出現 Probation 的地方），並附來源信用帳現況，供人工判讀與 `add-claim` 登錄。
+
+**輸出表（每則主張一行，無主張則整段省略）：**
+
+| source | tier | ticker | 主張 | raw_quote（首 80 字） | posted | claim id / 動作 |
+|--------|------|--------|------|----------------------|--------|-----------------|
+| semi_daily | trusted | ON | SiC 通路缺貨延續 | "channel checks show SiC..." | 8/24 | 已 add-claim（src-2026-…） |
+| example_view_source | probation | MU | 記憶體漲價未歇 | "DRAM contract prices..." | 8/23 | 待 add-claim |
+
+- 每則主張若當期已在 briefing 其他段落被引用（Key Alerts / T3.5 / prior），claim id 欄填實際 id；未引用者填「未引用，僅陳列」
+- Probation 主張**只陳列，不作任何 prior 或 alert 依據**
+
+**末行信用帳統計**（`python3 tools/source_credit.py stats` 輸出摘要）：
+```
+📊 來源信用帳：N 個來源（Trusted X / Core Y / Probation Z）｜本期新增 M 則｜累計 hit_rate {overall}%（n={n_scored}）
+```
 
 ### 10. Market Dynamics
 - `mcp__fmp-mcp__getBiggestGainers` + `getBiggestLosers`
@@ -860,6 +945,12 @@ Agent(subagent_type="data-collector"):
 **T3. News & Catalysts（past 24h）**
 `mcp__yfinance-advanced__get_yahoo_finance_news` 取 top 5 持倉的新聞，各取 1-2 篇 24h 內最重要的。篩選標準：有具體事件（財報、合約、產品發布、監管）優先，無實質 catalyst 跳過。**最多 3 條進入 Telegram 輸出。**
 
+**T3.5. 🐦 來源訊號（Trusted+，signal-only）**
+
+資料：Step 0.68 `twitter-signals.json`。從 tier ∈ {trusted, core} 且 `has_number == true` 且貼文 48h 內者挑選，每檔最多 1 則，**全訊息最多 3 則**。**引用即代表 add-claim**——選入本節的貼文，同一次執行 `python3 tools/source_credit.py add-claim ...` 登錄（同 §9.5 3c 紀律）。
+
+無符合門檻的貼文，或 cache `status ∈ {"skipped"}` / stale → **整段省略**（比照 T2.5 慣例）。
+
 **T4. Sector Rotation**
 `mcp__technical-mcp__get_sector_rotation()` → 取全 sector ETF 相對 SPY 的 leading / improving / weakening / lagging 分類。只顯示各分類各 1-2 個代表 sector。
 
@@ -910,6 +1001,10 @@ Agent(subagent_type="data-collector"):
 ## News & Catalysts
 ...
 
+## 🐦 來源訊號（Trusted+，signal-only，無則省略整段）
+- {ticker}：{claim 摘要}（{source_id}@{tier}，{posted 距今}h 前）— "{raw_quote 節錄}"
+（最多 3 則；無符合門檻貼文則省略整段）
+
 ## 💰 估值 & Thesis（signal-only，無訊號則省略整段）
 ### 估值偏離
 - 最被低估：{ticker} 現價 $X vs 公允基準 $X（−X%，三錨點中位）；A1 PE={X}/A2 PEG錨={X}/A3 PT錨={X}
@@ -946,6 +1041,10 @@ Agent(subagent_type="data-collector"):
 📰 News & Catalysts
   • {ticker}: {一句話} ({source})
   （無 catalyst 則略過整個 section）
+
+🐦 來源訊號
+  • {ticker}: {claim 摘要}（{source_id}@{tier}）
+  （無符合門檻貼文則略過整個 section，最多 3 則）
 
 📅 Earnings This Week
   • {ticker} {M/D} {盤前/盤後} ({beat_count}/{total} beat, +{avg_surprise}%) — {focus 重點}
@@ -996,6 +1095,7 @@ Agent(subagent_type="data-collector"):
 - 數字：K（千）、M（百萬）、% 縮寫
 - 無 catalyst 或無 alert 的 section 完整省略（不要顯示空 section）
 - 🚦 先行指標區儀表行維持緊湊 1 行（數據面板不句子化），觸發說明行用人話；`↳ read-through` 全訊息至多 1 行
+- 🐦 來源訊號只列 Trusted+（Probation 一律不出現），最多 3 則，不得作為單獨判斷依據（display-only）
 - 目標長度 **≤3000 字元**（2026-07-28 用戶放寬，換可讀性），硬上限 4096（超過由 send_briefing 自動分則）
 - `briefing-out/` 目錄不存在時先用 Bash `mkdir -p briefing-out` 建立
 

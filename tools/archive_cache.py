@@ -40,6 +40,7 @@ TARGETS = [
     "fundamentals-snapshot.json",
     "macro-snapshot.json",
     "news-articles.json",
+    "twitter-signals.json",
     "earnings-history.json",
     "earnings-dates.json",
     "pmcc-scan.json",

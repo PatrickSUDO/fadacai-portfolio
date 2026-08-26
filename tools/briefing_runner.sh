@@ -29,9 +29,14 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-RETRY_MAX="${RETRY_MAX:-3}"
+RETRY_MAX="${RETRY_MAX:-5}"
 FRIDAY_CODEX="${FRIDAY_CODEX:-true}"
 SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
+# telegram tier 規定模型 = Sonnet（CLAUDE.md 模型分工）。2026-08-04/05 連兩日
+# 5 次 headless run 全被 API mid-stream 斷流殺掉，每次跑 55-72 分鐘 —— 未指定
+# 模型時繼承大模型，run 時間拉長 = 長 stream 曝險最大化。Sonnet 縮短單次時間
+# 兼回歸文件規範；可用 BRIEFING_MODEL 覆寫。
+BRIEFING_MODEL="${BRIEFING_MODEL:-sonnet}"
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
@@ -72,6 +77,11 @@ uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_news.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "news refresh failed (non-fatal, briefing continues without news cache)"
 
+log "Refreshing X source signals (X API v2, pay-per-use, cost-capped)..."
+uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "twitter refresh failed (non-fatal, briefing continues without source signals)"
+
 log "Refreshing leading indicators cache (FRED/yfinance/EODHD/TWSE-TPEx)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_leading.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
@@ -87,6 +97,15 @@ python3 "$SCRIPT_DIR/trade_ledger.py" snapshot-orders \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "order snapshot failed (non-fatal; attribution for today's fills may fall back to journal parsing)"
 
+# Optional untracked local hooks (machine-local watchers etc.; kept out of the
+# repo by design). Non-fatal: a failing hook never blocks the briefing.
+if [[ -x "$SCRIPT_DIR/briefing_local_hooks.sh" ]]; then
+  log "Running local hooks..."
+  "$SCRIPT_DIR/briefing_local_hooks.sh" \
+    >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "local hooks failed (non-fatal)"
+fi
+
 log "Refreshing account metrics (R15 drawdown circuit breaker input)..."
 python3 "$SCRIPT_DIR/account_metrics.py" scan \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
@@ -98,6 +117,11 @@ log "Recording shadow signals (A4 overvaluation flags)..."
 python3 "$SCRIPT_DIR/shadow_signals.py" flag \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "shadow signal flagging failed (non-fatal, records only)"
+
+log "Resolving due source-credit claims (views scored by price; facts listed only)..."
+python3 "$SCRIPT_DIR/source_credit.py" resolve-due \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "source credit resolve-due failed (non-fatal)"
 
 # Freeze today's decision inputs AFTER the caches above have refreshed. Like the
 # order snapshot, a day not archived cannot be backfilled — and without the original
@@ -130,7 +154,7 @@ while [[ $attempt -lt $RETRY_MAX ]]; do
   # way to be answered headless and the job hangs until the alarm timeout.
   # (NOTE: this does NOT bypass macOS TCC file-access dialogs — those need
   #  Full Disk Access granted to /bin/bash. See docs/briefing-auto-send.md.)
-  if perl -e 'alarm shift; exec @ARGV' "$CLAUDE_TIMEOUT" claude -p "$PROMPT" --dangerously-skip-permissions >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err"; then
+  if perl -e 'alarm shift; exec @ARGV' "$CLAUDE_TIMEOUT" claude -p "$PROMPT" --model "$BRIEFING_MODEL" --dangerously-skip-permissions >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err"; then
     log "Claude briefing completed successfully"
     success=true
     break
@@ -141,8 +165,9 @@ while [[ $attempt -lt $RETRY_MAX ]]; do
     fi
     log "Claude exited with code $EXIT_CODE"
     if [[ $attempt -lt $RETRY_MAX ]]; then
-      log "Retrying in $((attempt * 30))s…"
-      sleep $((attempt * 30))
+      # 60s/120s/180s/240s 遞增 backoff — API 斷流常是短窗不穩，攤開重試時點
+      log "Retrying in $((attempt * 60))s…"
+      sleep $((attempt * 60))
     fi
   fi
 done

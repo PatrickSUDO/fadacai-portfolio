@@ -13,7 +13,7 @@ This is an investment research and portfolio management workspace. The user acti
    - `/briefing telegram` — Telegram push tier (~2-3 min)：盤中推送專用，產出 briefing-out/ 兩個檔案
    - `--send` 旗標（任何 tier 可加）：執行完後推送 Telegram + email 副本
    - 例：`/briefing telegram --send`、`/briefing full --send`
-   - launchd 每個交易日 CEST 17:00 自動執行 `/briefing telegram --send`（週五加 `--codex`）
+   - launchd 每個交易日 CEST 17:00 自動執行 `/briefing telegram --send`（週五加 `--codex`）；runner 固定 `--model sonnet`（`BRIEFING_MODEL` 覆寫）、重試 5 次（2026-08-05 五修：API mid-stream 斷流連殺對策）。三次以上全滅 → 互動 session 手動 `/briefing telegram --send` 補發（dedup 防重複）
    - Setup 文件：`docs/briefing-auto-send.md`
 2. `/portfolio-review` — full deep report with live data via MCP
 3. `/stock-analysis TICKER` — individual stock deep dive
@@ -35,11 +35,7 @@ Add `--codex` to any of the above (except `/mcp-health`, `/trade-journal`) to ap
 - **B2. 機會掃描** (`/codex:rescue`) — surface hot themes/tickers not in current portfolio. `/briefing full/deep`, `/portfolio-review`, `/todo` only.
 - **B3. 輪動分析** (`/codex:rescue`) — sector + stock rotation (leading/lagging vs SPY, money flow, 3 actionable rotation moves). Same 3 skills.
 
-#### 為什麼預設用「獨立第一性」而不是「對立面審查」
-
-舊版 B1 是 `/codex:adversarial-review`（攻擊 thesis），這是 **confirmation bias by design**：要它找 bug 它一定找出 bug，即使 thesis 完全成立。結果是兩邊「分歧」很多但大部分由 framing 製造，不是真實見解衝突。
-
-獨立第一性分析讓 Claude 和 Codex 從同樣 raw data 出發、各自跑 Step 0e、不知道對方結論。**真實共識 = 高信心**；**真實分歧 = 值得深入的學習點**。
+獨立第一性（而非對立面審查）是預設，因為 attacker mode 是 confirmation bias by design——要它找 bug 它一定找出 bug，分歧多半是 framing 製造的。兩邊盲跑同樣 raw data：真實共識 = 高信心，真實分歧 = 學習點。
 
 #### 進階：`--codex-adversarial`（opt-in 壓力測試）
 
@@ -77,13 +73,17 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 - `research/` — 投資論文與研究筆記
 - `research/trade-ledger.jsonl` — 結構化成交帳（含 `origin` 誰決定 / `exec_via` 怎麼下單）；工具 `tools/trade_ledger.py`
 - `research/order-registry.json` — 在掛單快照累積（券商只回在掛單，斷天補不回來 → briefing 每次 `snapshot-orders`）
-- `research/shadow-signals.jsonl` — 影子訊號旗標（記錄不阻擋）；工具 `tools/shadow_signals.py`
+- `research/shadow-signals.jsonl` — 影子訊號旗標（記錄不阻擋）；工具 `tools/shadow_signals.py`。兩類 signal：A4 高估旗標（`flag` 自動掃）+ **R18 財報窗被擋加碼**（`block --ticker X --price Y --size Z --note "..."` 手動登錄——凡財報窗禁令實際擋下一個想做的加碼，同一次必登錄；`score` 30 天熟成後驗「被擋的買進是否跑輸基準」，見 `feedback/earnings-reaction-window.md` C 段）
+- `research/ev-ledger.jsonl` — **EV 分布事前登錄帳（機率校準自驗）**；工具 `tools/ev_ledger.py add/resolve-due/stats`。stock-analysis / ev-check 收尾 `add`（機率+三情境公允價+EV 原樣入帳），briefing 到期 `resolve-due` 機械驗價（個股 yfinance / PORTFOLIO 對 equity-marks，零判斷），/trade-review 每期讀 `stats`（EV 誤差 by horizon/model、Brier、校準表）。**修正只進 prompt/規則層（RULES-LEDGER 帶命中率），不建 ML 模型 — n>150 筆獨立已解決樣本前不重評**（2026-08-03 設計裁決：小 n + 高相關標的 + Goodhart 風險）
 - `research/last-trade-review.txt` — 上次交易檻討日期（briefing 據此算 >14 天到期提醒）
 - `research/position-flags.json` — **未結旗標登記（欠一個決定的部位）**。工具 `tools/trade_ledger.py flag/defer/resolve-flag/flags`
 - `briefing-out/cache/archive/YYYY-MM-DD/` — **每日決策輸入凍結快照**（fundamentals/macro/news/earnings/pmcc/leading）。工具 `tools/archive_cache.py`，briefing_runner 自動跑，保留 120 天日快照 + 之後每月首日
 - `research/leading-config.json` — **發現層先行指標配置**（cross-read 鏈、pricing 關鍵字/symbols、SMH 寬度成分、台股月營收清單、decel 閾值）；改持倉/鏈/閾值時手動編輯，`tools/fetch_leading.py` 讀取
-- `briefing-out/cache/leading-indicators.json` — **先行指標快照**（三儀表 credit velocity/VIX 期限/半導體寬度 + 財報 cross-read 排序 + 記憶體/功率報價新聞 + revision 二階導 + 台股月營收）。工具 `tools/fetch_leading.py`（TTL 20h，`--force`/`--only`/DRY_RUN=1），briefing_runner 每日預載、archive_cache 凍結。**所有旗標 display-only（記錄不阻擋，同影子訊號 A4）**，命中率由 /trade-review 驗證後才可升閘門。revision 二階導有兩法：archive-diff（需快照累積）+ **vendor 7d 曲線**（EODHD Fundamentals Data Feed `epsTrend7daysAgo` 等欄位，自首日可用）；breadth 成分自動抓 SMH ETF holdings（靜態清單為 fallback）。fundamentals-snapshot 同步帶 `quarterly_trends[]`（6 季 GM%/庫存天數，缺貨 thesis 證偽指標）
-- `research/price-alerts.json` — **自動價格警報**（launchd `com.fadacai.price-alerts` 每 15 分輪詢，盤中 ET 09:25–16:10 生效 → Telegram）。工具 `tools/price_alerts.py add/list/remove/test`；Firstrade 非官方 lib 無警報 endpoint 故以 yfinance 自建。凡 briefing/review 產出「價格觸發待辦」（收租觸發、撿回條件、短腿破位）應同步 `add` 進來，Mac 睡眠期間不輪詢
+- `briefing-out/cache/leading-indicators.json` — **先行指標快照**（三儀表 + 財報 cross-read + 報價新聞 + revision 二階導 + 台股月營收）。工具 `tools/fetch_leading.py`（TTL 20h），briefing_runner 每日預載、archive_cache 凍結。**所有旗標 display-only（記錄不阻擋，同 A4）**，/trade-review 驗過命中率才可升閘門。細部方法（revision 兩法、SMH 成分、quarterly_trends）見工具內註釋與 `research/leading-config.json`
+- `research/price-alerts.json` — **自動價格警報**（launchd `com.fadacai.price-alerts` 每 15 分輪詢，盤中 ET 09:25–16:10 生效 → Telegram）。工具 `tools/price_alerts.py add/list/remove/test`；Firstrade 非官方 lib 無警報 endpoint 故以 yfinance 自建。凡 briefing/review 產出「價格觸發待辦」（收租觸發、撿回條件、短腿破位）應同步 `add` 進來，Mac 睡眠期間不輪詢。**Note 格式（2026-08-19 強制，動作優先）**：note 開頭必為 `→ 動作：<收到訊息當下該做/不該做什麼>`，接前置閘門（名額/確認條件/否決條件）；觀察型觸發（到價 ≠ 進場）必須明寫「這不是買進訊號」——收訊人不需任何上下文就知道下一步。條件已失效的警報（如價格跌穿整個觸發帶）要撤舊換新，不留殭屍警報每日重複發
+- `research/source-config.json` — **來源信用系統：私有來源白名單 + X 抓取配置 + 計分門檻**（gitignore，schema 範例見 `docs/source-config.example.json`）。`platform ∈ x|substack|rss|podcast|manual`；`kind ∈ fact|view`；`tier` 只由 `tools/source_credit.py tiers` 機械寫回，不手改
+- `research/source-credit.jsonl` — **來源信用帳**：每則可計分主張的登錄與驗收記錄（gitignore）。工具 `tools/source_credit.py add-claim/due/resolve/resolve-due/stats/tiers/list`；fact 型主張只列不猜、人工核對官方數字；view 型到期自動用價格驗價（同 `shadow_signals.py` 邏輯）。**所有 tier display-only**，驗滿 ≥2 期 `/trade-review` 且 Trusted+ hit_rate≥65%/mean lead>0 才可升硬閘門（R21，見 `feedback/RULES-LEDGER.md`）。細節見 `docs/source-credit.md`
+- `briefing-out/cache/twitter-signals.json` — **來源訊號快照**（TTL 20h）。工具 `tools/fetch_twitter.py`（X API v2，按量計費，`max_reads_per_run` 硬上限，成本估算見 `docs/source-credit.md`），briefing_runner 每日預載、archive_cache 凍結。Probation tier 僅 briefing §9.6 陳列，Trusted+ 才可進 Key Alerts / Telegram
 
 ### 模型版本記錄（因應模型換代）
 新規則寫入 `feedback/RULES-LEDGER.md` 時填 `作者` 欄；`/trade-review` 補正歸因時帶 `--model` / `--effort`。
@@ -104,10 +104,7 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 
 ### 工具
 ```bash
-python3 tools/generate_html.py briefing 2026-06-10 [--push]
-python3 tools/generate_html.py portfolio-review briefing-out/portfolio-review-2026-06-07.md [--push]
-python3 tools/generate_html.py stock-analysis briefing-out/stock-analysis-NVDA-2026-06-10.md [--push]
-python3 tools/generate_html.py options-strategy briefing-out/options-strategy-NVDA-2026-06-10.md [--push]
+python3 tools/generate_html.py <briefing|portfolio-review|stock-analysis|options-strategy> <日期或 md 路徑> [--push]
 ```
 - 無 `--push`：只在 `briefing-out/html/` 存一份本地 HTML
 - 有 `--push`：同步到 `$REPORTS_REPO_PATH` 並 git push（Netlify 自動部署）
@@ -181,7 +178,7 @@ REPORTS_REPO_PATH=/path/to/fadacai-reports  # private repo local clone
    - 算 expected value：Σ(機率 × 各情境公允價)，與現價比較
    - **強制呼叫 `probability-honesty-checker` agent**（見下方）— 不可手動套機率
    - **Fair PE 三錨點推導（不可手寫猜測）：** A1=EODHD `pe_ratio`（現行市場隱含）；A2=`peg_ratio×成長率`（成長合理倍數，AI龍頭目標PEG 1.5，其餘 1.0）；A3=`wall_street_target÷forward_EPS`（分析師隱含）。**A3 的 base forward_EPS 取真實賣方共識：`fundamentals-snapshot.json forward_estimates.curr_fy.eps_avg`（缺→next_fy.eps_avg，再缺→`eps_ttm×(1+growth)` 近似）；cache `self_valuation.a3_fwdeps_source` 已標來源，勿手推。** 任一錨回 0.0/null → 丟棄。基準Fair PE=median(A1,A2,A3)；樂觀=max 上限current_PE×1.25；悲觀=min 下限current_PE×0.70。Forward EPS：樂觀=base×(1+min(avg_surprise_pct,15%))；悲觀=base×(1−5%~10%)。
-   - **A4 自建錨（sanity/divergence flag，不進 median，不進 EV）：** ⚠️ **2026-07-25 起影子驗證中** — A4 的**高估極端**（`A4vsA3 ≤ −35%`）經一個月前瞻檢驗有預測力（ONTO/ARM/ON/MYRG 4/4 落後，平均 −15.9% α；Spearman +0.45，n=12），低估極端無訊號。目前仍**維持不進 median、不進 EV**，僅由 `tools/shadow_signals.py` 記錄旗標並在 briefing 標 `🟣`，**不得據此改變任何建議**；跑滿 2 期 `/trade-review` 後依實際命中率決定是否升硬閘門（見 `feedback/RULES-LEDGER.md` R3）。從 `fundamentals-snapshot.json self_valuation` 讀取（`tools/fetch_fundamentals.py` 已在 cache 計算）。`own_fwdEPS = projected_revenue × net_margin ÷ shares`，revenue 用歷史 CAGR 淡化向 8% terminal，**完全不看分析師 estimate**。`own_target_price = own_fwdEPS × base_FairPE(median(A1,A2,A3))`。`A4vsA3% = (own_target − wall_street_target) / wall_street_target`——隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。`confidence=unavailable` → `(self-val N/A)`；`low` → `⚠️低信心（高波動）`；`ok` → 正常顯示。
+   - **A4 自建錨（divergence flag，不進 median、不進 EV）：** 從 `fundamentals-snapshot.json self_valuation` 直接讀（fetch_fundamentals.py 已算好，完全不看分析師 estimate；推導式在該工具內）。`A4vsA3%` 隔離「我的盈利觀 vs Street 盈利觀」（倍數固定）。⚠️ 影子驗證中（高估極端有預測力、低估無訊號，數據見 `RULES-LEDGER` R3）— 僅 shadow_signals 記錄 + briefing 標 `🟣`，**不得據此改變任何建議**，跑滿 2 期 /trade-review 才決定升閘門。顯示：`confidence=unavailable` → `(self-val N/A)`；`low` → `⚠️低信心`；`ok` → 正常。
 
 **為什麼這條重要：**
 - Claude 的分析、Codex 的 adversarial review 都會帶 framing 偏差
@@ -223,30 +220,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - 重跑 agent，明確要求 audit checklist 全勾
 - 發現原本確實偷懶 → 老實承認 + 顯示新算（見 feedback/probability-distribution-honesty.md）
 
-**⚠️ Agent 註冊限制（重要）：**
-- Claude Code session 啟動時載入 `.claude/agents/` 目錄，**session 內新增的 agent 檔案不會被動態 picked up**
-- 若呼叫返回 `Agent type 'X' not found`：(1) 確認檔案在 `.claude/agents/X.md`，(2) 該 session 暫時用 workaround，(3) 下次 session 自動載入
-
-**Workaround：當 probability-honesty-checker agent 不可用時**
-直接呼叫 `general-purpose` agent，並把 `.claude/agents/probability-honesty-checker.md` 的內容當 prompt 前綴傳入：
-
-```
-Agent(
-  subagent_type: "general-purpose",
-  prompt: "<貼上 probability-honesty-checker.md 從 '# Probability Honesty Checker' 開始的全部內容>
-
-  ---
-
-  以下是本次任務的輸入：
-
-  [Step 1 九項輸入...]
-  [額外 context...]
-
-  請按 6 步流程執行。"
-)
-```
-
-紀律不打折 — 6 步 + audit checklist 全勾的要求對 general-purpose agent 同樣適用。
+**⚠️ Agent 註冊限制：** session 內新增的 `.claude/agents/` 檔案不會動態載入。回 `Agent type not found` 時 → 該 session 改呼叫 `general-purpose` agent，把 `probability-honesty-checker.md` 全文當 prompt 前綴傳入；6 步 + audit checklist 要求不打折。
 
 ### 0f. Thesis Ledger（thesis 追蹤與到期驗收）
 
@@ -289,7 +263,7 @@ Agent(
 - **定位先行**；**主動組合支數 14–18（理想 14–16），>18 砍一進一不淨增**，>30 無益。
 - **分桶**：每倉位歸 🔵信念桶（讓它 run、只在 thesis 破或 >10% 才動）或 🟢認列循環桶（高 β/週期/肥利潤 → 系統性 harvest）；疑問時歸認列。
 - **兩層候補**：🟡L1 On-Deck（thesis 驗證+觸發明確，補空位只從 L1 拉）/ 🔵L2 Research Pool（需修復或擴 Universe）；砍倉依砍因歸層（組合理由→L1，thesis 破→L2）。
-- **機會成本閘門（桶間升級/降級/部署皆強制）**：新倉須明顯優於最弱在倉名額才進 — 相關 beta 門檻最高（須擠掉弱倉、不淨增），無相關 hedge/填缺口門檻較低；14–18 上緣時砍一進一。
+- **機會成本閘門（桶間升級/降級/部署皆強制）**：新倉須明顯優於最弱在倉名額才進 — 相關 beta 門檻最高（須擠掉弱倉、不淨增），無相關 hedge/填缺口門檻較低；14–18 上緣時砍一進一。**前置行業濾網（2026-08-19）**：名字對名字比較之前先問「該行業 TAM 是否 GROWING-STRUCTURAL（擴張中）」——衰退行業內的相對強者不進 bench（不做垃圾桶尋寶；行業比較前三名即可，不花時間分辨第一 vs 第二）。
 - **停利再投入飛輪（汰弱留強的閉環，總原則）**：認列循環桶**系統性 harvest 峰值強度**（revision 轉折/題材降溫的肥利潤）+ **砍真弱**（thesis 破 OR 最弱動能無催化）→ **盈餘必配對 redeploy 決策，第一順位投入「加速中強度」**（信念桶領導者 / L1 中 revision 上修的領漲者），**不讓現金閒置滲漏**（每次 harvest 同一次 review 內要嘛 redeploy 上行、要嘛標明 dry powder 理由 + 觸發）。定義鎖死：**「弱」= fundamental 惡化或最弱動能無催化，非當日紅K**（per `feedback/weak-signal-root-cause.md`）；**「強」= estimate 上修/成長加速，非當日超買**（per `feedback/momentum-valuation-symmetry.md`）；funding 源用**已實現獲利 + 真弱倉，非砍虧損倉**（與上面「禁砍 loser 加碼 winner」相容——飛輪靠 realized gain 轉動，不靠認列虧損）。Guardrails（單倉>10%、14–18 支、相關度、去相關 hedge sleeve）是飛輪**護欄不是矛盾**：集中往強度跑、但不破紅線。詳 `feedback/momentum-valuation-symmetry.md`。
 - **梯級停利（認列桶 harvest 的機械化觸發，2026-07-01）**：未實現 +30%/+60%/+100% 各賣 15%/15%/20%，之後每 +50pp 賣 10%；**保底 30% runner 永不因停利出場**（只因 thesis 破/汰弱換強/>10% 才動）。GTC 預掛下一級價、每次 full review 校正；revision 轉折 → 提前下一級；revision 上修中不提前。樂透 +100% 賣半；LEAPS >+80% 評估 roll-up 收本金留曝險。信念桶與 hedge sleeve 不適用。詳 `feedback/tiered-profit-taking.md`。
 - **Revision 訊號 coverage 分級**：分析師數 N≥15 全權重；8–14 半權重（須與 trend/成長數據互相印證）；<8 不單獨觸發加減碼（改靠 P3 硬數字 + beat rate + guide）。上次財報後 >45 天的 revision 視為 stale。
@@ -309,21 +283,12 @@ Agent(
 - `mcp__yfinance-advanced__*` — real-time quotes, options chains, financials, news, recommendations (primary)
 - `mcp__sec-edgar-mcp__*` — SEC filings, XBRL financials, insider trading (Form 4), 8-K events, segment data
 - `mcp__fmp-mcp__*` — stock peers, market movers, company profiles (free tier; most endpoints need paid plan)
-- `mcp__technical-mcp__*` — technical indicators (RSI, MACD, Bollinger Bands, ATR, momentum score, support/resistance)
-  - `get_technical_indicators(ticker, period)` — full single-ticker analysis
-  - `get_support_resistance(ticker, period)` — S/R levels + 52W range
-  - `get_batch_indicators(tickers, period)` — compact multi-ticker summary
-- `mcp__polymarket-mcp__*` — prediction market probabilities (demo mode, read-only)
-  - `search_markets(query)` — search for events by keyword
-  - `get_trending_markets()` — trending prediction markets
-- `mcp__eodhd-mcp__*` — EODHD financial data (ticker format: "AAPL.US"; needs session restart after server.py changes to pick up new tools)
-  - `get_news(ticker, days, limit)` — **raw news articles with full body** (up to 1500 chars content), symbols[], tags[], sentiment. Use when you need article body for P3 signal extraction (wafer starts, capex, ASP data). Distinct from get_news_sentiment which discards body/symbols/tags. Also cached daily by `tools/fetch_news.py` → `briefing-out/cache/news-articles.json` (TTL 6h, top 8 articles/ticker, 600-char excerpts).
-  - `get_news_sentiment(ticker, days, limit)` — news with AI sentiment scores
-  - `get_sentiment_trend(ticker, days)` — aggregated daily sentiment trajectory (-1 to +1)
-  - `get_fundamentals_snapshot(ticker)` — **one-call valuation bundle**: PE/PEG/margins/ROE/eps_ttm/revenue_ttm/qtrly growth YoY/wall_street_target/analyst_ratings/52w/beta/SMA. **Free-tier-safe substitute for 402-gated fmp ratios/PT endpoints.** Known data gaps: pe_ratio=0.0/peg=0.0 → drop that anchor. ticker format: "MU.US"
-  - `get_earnings_history(ticker, quarters)` — trailing 8Q EPS beat base-rate: `{beat_pct, avg_surprise_pct, beats, quarters_counted}` + next_earnings. **Primary source for probability-honesty-checker Step 1d.** Caveat: avg_surprise_pct unreliable for low-EPS-base stocks (AMD shows +152% artifact — use beat COUNT, not avg%); cross-check vs local earnings-history.json cache
-  - `get_economic_calendar(from_date, to_date, country, high_impact_only, limit)` — CPI/NFP/FOMC/PCE with forecast vs previous vs actual. `high_impact_only=True` for macro catalysts. country="US" (2-letter); feeds probability-honesty-checker Step 1i forward catalyst dates
-  - `get_macro_indicator(country, indicator, limit)` — annual macro time series (inflation_consumer_prices_annual, real_interest_rate, gdp_growth_annual…). country="USA" (3-letter). **Annual/lagged — regime context only, not high-frequency signals**
+- `mcp__technical-mcp__*` / `mcp__polymarket-mcp__*` / `mcp__eodhd-mcp__*` — 工具清單與參數由各 server instructions 每 session 自動注入，此處只記 server 端沒有的實戰 caveat：
+  - eodhd 改 server.py 後需重啟 session 才載入新工具
+  - `get_fundamentals_snapshot` = 402-gated fmp ratios/PT 的免費層替代；`pe_ratio=0.0/peg=0.0` → 丟該錨
+  - `get_earnings_history` = probability-checker Step 1d 首選；⚠️ 低 EPS 基期股 avg_surprise 不可靠（AMD +152% artifact — 用 beat 次數不用 avg%），與本地 earnings-history.json cache 交叉
+  - `get_news` 每日快取 `tools/fetch_news.py` → `briefing-out/cache/news-articles.json`（TTL 6h）；P3 訊號抽取要 body 用它，不用 get_news_sentiment
+  - `get_macro_indicator` 年頻滯後 — 只當 regime 背景，不當高頻訊號
 - Use parallel agent dispatch for batch data fetching across multiple tickers
 
 ## MCP Retry & Fallback Policy
@@ -342,13 +307,7 @@ Agent(
   ```bash
   python3 tools/fmp_query.py <toolName> [--args '<json>']
   ```
-  常用範例：
-  - `python3 tools/fmp_query.py getBiggestGainers`
-  - `python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`
-  - `python3 tools/fmp_query.py getEarningsCalendar --args '{"from":"2026-06-28","to":"2026-07-28"}'`
-  - `python3 tools/fmp_query.py getCompanyProfile --args '{"symbol":"AAPL"}'`
-  - `python3 tools/fmp_query.py getMostActiveStocks`
-  結果直接是 JSON，等同 MCP tool 的 structured output。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
+  例：`python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`（無參數工具省略 --args）。結果直接是 JSON。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
 - **FMP 免費層實測清單（2026-07-28 全面掃描）**：✅ 可用 — `getTreasuryRates`（全曲線）、`getHistoricalIndustryPE`/`getIndustryPESnapshot`（行業 PE 日頻，`fetch_leading.py` 半導體估值溫度計用）、`getSectorPESnapshot`、`getSectorPerformanceSnapshot`、`getAftermarketQuote`（盤前盤後報價）、`getShareFloat`、`getDividendsCalendar`、`getIndexQuote`（^VIX 可、^VIX3M 402）、加上原有 peers/movers/profile/earnings-calendar。❌ 402 — transcripts、COT、Senate/House trades、stock news、press releases、analyst estimates、grades、price targets、financial scores、economic calendar、SP500 constituents、insider stats（**§9.5 逐字稿改走 SEC 8-K exhibit**）
 
 ## Research Boundaries
@@ -390,4 +349,4 @@ Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + age
 
 **長 context：** session > 100k 時先 `/compact`，再繼續執行。換主題先 `/clear`。
 
-**手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model opus`、`/model sonnet`、`/model sonnet` 切換後再呼叫。
+**手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model opus` / `/model sonnet` 切換後再呼叫。

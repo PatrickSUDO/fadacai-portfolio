@@ -151,7 +151,15 @@ python3 tools/trade_ledger.py flags
 ```bash
 python3 tools/thesis_ledger.py orphans
 python3 tools/thesis_ledger.py stats
+python3 tools/ev_ledger.py resolve-due && python3 tools/ev_ledger.py stats
 ```
+
+**4-0. EV 分布校準（機率誠實的結果端驗證）**
+
+`ev_ledger.py stats` 輸出 EV 誤差（by horizon/model）+ Brier + 校準表（給的機率 vs 實際落桶頻率）。判讀紀律：
+- **n<30 的分組只記錄方向，不改規則**；相關樣本（同跨一段行情的多筆）算一筆證據，不按筆數計
+- 系統性偏差確立（如「30-60d 一致過度樂觀」連兩期同向）→ 修正對象是 **probability-honesty-checker 的形狀規則表 / 各 skill prompt**，寫入 `RULES-LEDGER` 帶命中率追蹤 — **不建 ML 模型**（n>150 獨立已解決樣本前不重評，見 AGENTS.md）
+- Goodhart 警戒：校準變好但分布變窄（永遠給 hedged 分布）= 假改善，對照分布寬度一起看
 
 **4a. A4 高估旗標（影子模式，Phase 1 只記錄不阻擋）**
 
@@ -194,6 +202,26 @@ python3 tools/thesis_ledger.py resolve --id <id> --verdict passed|failed|partial
 ```
 
 `partial` 強制 `--price-verdict`：營運達標但市場不認 → `missed`。
+
+**4d. 來源信用帳（來源信用 tier 閘，R21 影子計分中）**
+
+```bash
+python3 tools/source_credit.py resolve-due
+python3 tools/source_credit.py stats
+python3 tools/source_credit.py tiers --dry-run
+```
+
+輸出每來源一行：
+
+| 來源 | tier | n_scored | hit_rate | mean_lead_time_days | vague_ratio | backtest_share | proposed_tier |
+|---|---|---|---|---|---|---|---|
+
+判讀紀律：
+- **n_scored < 3** → 只記錄不下結論（樣本太小）
+- **backtest_share > 0.8** → 標「僅回測」，實盤期樣本不足前不當已驗證命中率
+- **noise**（`vague_ratio > 0.7` 且 `n_total ≥ 5`）→ 建議該來源 `disable`（連續講不可驗證的模糊主張）
+- **tier 只抄 `tiers --dry-run` 輸出**，不手改 `research/source-config.json`；抽查認可後才拿掉 `--dry-run` 套用
+- **R21 升級條件**（display-only → 可作硬閘門輸入）：連續 **2 期** `/trade-review` 內，Trusted+ 來源 `hit_rate ≥ 0.65` 且 `mean_lead_time_days > 0`（真的有領先，不是巧合追認）才討論升級；未達標維持 §9.6 display-only
 
 ## Step 5 — 更新規則命中率帳本
 
@@ -244,6 +272,7 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 ## 4. 影子訊號
 [A4 旗標命中率表 + 是否建議升閘門]
 [thesis hit_rate vs pnl_hit_rate + orphan 處理結果]
+[來源信用帳 tier 表 + 是否達 R21 升級門檻]
 
 ## 5. 規則計分變動
 [本期哪幾條 +命中 / +失效，附證據]

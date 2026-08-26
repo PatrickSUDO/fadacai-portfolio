@@ -1,0 +1,61 @@
+{
+  "version": "2026-08-26",
+  "note": "display-only. tier is only ever rewritten mechanically by tools/source_credit.py tiers (writes tier/tier_since/tier_history only); every other field is hand-edited. No tier may drive a Verdict / position-size recommendation until it has survived >=2 /trade-review cycles.",
+  "sources": [
+    {
+      "id": "example_fact_source",
+      "platform": "x",
+      "handle": "example_handle",
+      "url": "https://x.com/example_handle",
+      "kind": "fact",
+      "domains": ["semis", "memory"],
+      "tier": "probation",
+      "tier_since": "2026-08-26",
+      "tier_lock": false,
+      "tier_history": [],
+      "x_user_id": null,
+      "enabled": true,
+      "added": "2026-08-26",
+      "notes": "placeholder fact-type source — quantified, falsifiable claims scored by magnitude_check() once a human supplies the confirmed actual number"
+    },
+    {
+      "id": "example_view_source",
+      "platform": "podcast",
+      "handle": "example_handle_2",
+      "url": "https://example.com/example_handle_2",
+      "kind": "view",
+      "domains": ["macro"],
+      "tier": "probation",
+      "tier_since": "2026-08-26",
+      "tier_lock": false,
+      "tier_history": [],
+      "x_user_id": null,
+      "enabled": true,
+      "added": "2026-08-26",
+      "notes": "placeholder view-type source — directional calls on a named ticker, scored automatically against price + benchmark alpha; claims with --tickers none are unscorable background only"
+    }
+  ],
+  "x_fetch": {
+    "enabled": true,
+    "max_reads_per_run": 60,
+    "per_account_limit": 10,
+    "lookback_hours": 48,
+    "exclude": ["retweets", "replies"],
+    "cost_per_read_usd": 0.005,
+    "keywords": ["example keyword"],
+    "extra_tickers": ["TICKER1"],
+    "aliases": {"Example Corp": "TICKER1"}
+  },
+  "credit_thresholds": {
+    "half_life_days": 90,
+    "stale_days": 14,
+    "fact_magnitude_tolerance": 0.5,
+    "view_horizons_allowed": [30, 60],
+    "view_default_horizon_days": 30,
+    "fact_expire_after_days": 30,
+    "trusted": {"min_hits": 3, "min_hit_rate": 0.65},
+    "core": {"min_hits": 6, "min_hit_rate": 0.75, "min_distinct_tickers": 2},
+    "demote": {"misses_in_last_n": 2, "last_n": 5, "min_n_for_rate": 4, "max_hit_rate": 0.5},
+    "noise": {"max_vague_ratio": 0.7, "min_total": 5}
+  }
+}
