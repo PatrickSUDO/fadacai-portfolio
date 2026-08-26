@@ -36,3 +36,7 @@ venv/
 
 # Seeking Alpha（個人訂閱數據與抓取工具，一律不入 commit / 不上公開 repo）
 tools/fetch_sa_quant.py
+
+# machine-local hooks/watchers (never committed)
+tools/local_*
+tools/briefing_local_hooks.sh

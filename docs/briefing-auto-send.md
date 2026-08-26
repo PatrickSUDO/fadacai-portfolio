@@ -198,12 +198,15 @@ which claude
 - `pmset repeat wakepoweron … 16:59 weekdays` — 16:59 喚醒，涵蓋 17:00 發送窗。
 
 **保持清醒（關鍵）** — 實測 16:59 scheduled wake 只是 dark-wake，2 秒後就釋放、可能在 17:00 前又睡回去，導致 launchd 推遲 17:00 job（症狀：`launchctl print` 顯示 `runs` 沒增加）。解法：
-- **`com.fadacai.caffeinate` LaunchAgent**（`tools/launchd/com.fadacai.caffeinate.plist`）在 16:59 weekdays 跑 `caffeinate -u -t 5520`，把 Mac 從 16:59 撐到 18:31 — 足以涵蓋 runner 最壞情況（3 次 claude retry × 900s timeout + 資料快取刷新 ≈ 50 分鐘）。
+- **`com.fadacai.caffeinate` LaunchAgent**（`tools/launchd/com.fadacai.caffeinate.plist`）在 16:59 weekdays 跑 `caffeinate -u -t 5520`，把 Mac 從 16:59 撐到 18:31 — 涵蓋 runner 常態情況（Sonnet 單次 ~15-20 分 + 快取刷新）；極端多次重試會超出此窗，屆時依賴 AC `sleep 0` 保持清醒。
 - 安裝：`cp tools/launchd/com.fadacai.caffeinate.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.fadacai.caffeinate.plist`
 
 ## 故障排除：自動推送失敗 / 卡死
 
-- **`claude -p` 卡滿 900s timeout ×3**：headless 跑遇到 Claude 工具權限提示無法回答。runner 已加 `--dangerously-skip-permissions`（信任的自動化、跑自己的 repo）。注意此旗標**不**繞過 macOS TCC 檔案彈窗。
+- **`claude -p` 卡滿 timeout ×N**：headless 跑遇到 Claude 工具權限提示無法回答。runner 已加 `--dangerously-skip-permissions`（信任的自動化、跑自己的 repo）。注意此旗標**不**繞過 macOS TCC 檔案彈窗。
 - **`Operation not permitted`（TCC）**：repo 在 `~/Desktop`（受保護）。launchd job 第一次存取會跳「取用桌面」彈窗，按一次「允許」後就持續有效（不需每天按）。若真的反覆跳，把 `/bin/bash` 加進 系統設定→隱私權→完整取用磁碟。
 - **`runs` 不增加 / 今天沒跑**：dark-wake 沒撐住 → 見上方 caffeinate。
+- **`.env` 語法錯誤殺死 runner（2026-08-03 四修）**：往 `.env` 加含 `;` `(` `)` 空格的原始字串（cookie/UA/JSON）**必須包單引號**——bash `source` 會直接 syntax error、exit 2，連 launchd.log 都不寫（log mtime 停格是指紋）。互動 session 正常（Python loader 容忍）但自動排程全滅。指紋：`launchctl print … | grep "last exit"` 非 0 + `launchd.err` 出現 `.env: line N: syntax error`。修完用 `bash -c 'set -a; source ./.env'` 驗證。
+- **API mid-stream 斷流連殺（2026-08-04/05 五修）**：`launchd.log` 出現 `API Error: Response stalled mid-stream` / `Connection closed mid-response`，每次 run 跑 50-70 分鐘後死 = Anthropic 端串流中斷，非本機問題。**根因放大器 = runner 未指定模型繼承大模型**，run 時間遠超 telegram tier 規定的 Sonnet。已修（`tools/briefing_runner.sh`）：① `claude -p` 加 `--model "$BRIEFING_MODEL"`（預設 `sonnet`，env 可覆寫）② `RETRY_MAX` 預設 3→**5** ③ backoff 改 60s 遞增（60/120/180/240s）。
+- **三／五次全滅後手動補發 SOP**：先殺殘留程序（`pkill -f "claude -p /briefing"` 再殺 runner PID），然後在互動 session 直接跑 `/briefing telegram --send` —— `send_briefing.py` 的 dedup 保證與稍後任何自動重跑不重複推送。
 - **手動補發**：`launchctl kickstart -k gui/$(id -u)/com.fadacai.briefing`（會真的推一封）。

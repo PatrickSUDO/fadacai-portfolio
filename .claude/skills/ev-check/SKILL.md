@@ -78,6 +78,16 @@ Agent(
 )
 ```
 
+### Step 3.5: EV ledger 事前登錄（強制，agent 輸出後執行）
+
+```
+python3 tools/ev_ledger.py add --ticker PORTFOLIO --slug <主題>-<horizon> \
+  --horizon-days <N> --spot <帳戶即時總值> \
+  --p-bull XX --p-base XX --p-bear XX --ev-pct <X.XX> \
+  --source ev-check --model <本次模型>
+```
+機率/EV 直接抄 agent 輸出；spot 用帳戶即時總值（resolve 時對 `research/equity-marks.json` 最近標記）。到期由 briefing `resolve-due` 驗收，校準由 /trade-review 讀 `stats`。
+
 ### Step 4: 顯示 agent 完整輸出
 
 不刪減、不簡化、不重寫。直接呈現 agent 的 6 步流程 + 精簡輸出。

@@ -79,12 +79,12 @@ flowchart TD
     CODEX["🤖 Codex（opt-in）<br/>--codex flag<br/>B1 獨立第一性分析<br/>B2 機會掃描 · B3 輪動"]
     SONNET & OPUS -->|opt-in| CODEX
 
-    subgraph AutoSend ["📲 每日自動推送（ET 11:30）"]
+    subgraph AutoSend ["📲 每日自動推送（launchd 排程，時間自訂）"]
         direction LR
         LAUNCHD["⏰ launchd<br/>com.fadacai.briefing<br/>NYSE 交易日才跑<br/>週五加 --codex"]
-        RUNNER["🔧 briefing_runner.sh<br/>~/.local/bin/<br/>TCC-safe wrapper"]
+        RUNNER["🔧 tools/briefing_runner.sh<br/>--model sonnet · retry 5<br/>TCC-safe wrapper"]
         OUT_FILES["📄 briefing-out/<br/>YYYY-MM-DD-full.md<br/>YYYY-MM-DD-telegram.txt"]
-        TG["📱 Telegram Bot<br/>emoji 純文字 < 1500 字"]
+        TG["📱 Telegram Bot<br/>emoji 純文字 ≤3000 字<br/>+ 私有 HTML 報告站連結"]
         EMAIL["📧 Gmail SMTP<br/>精簡版 + 完整 markdown"]
         SENDLOG["📋 send-log.jsonl"]
     end
@@ -168,7 +168,8 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 | `EODHD_API_TOKEN` | 基本面快取（`fetch_fundamentals.py`）：PE/PEG/分析師PT/盈餘 beat rate/季度成長 | [EODHD 申請](https://eodhd.com/financial-apis/)（All-In-One 含 Fundamentals）|
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | 日報推送到 Telegram | `@BotFather` / `getUpdates` |
 | `SMTP_*` / `EMAIL_*` | 日報 email 副本 | Gmail App Password |
-| `BRIEFING_*` / `FRIDAY_CODEX` / `RETRY_MAX` 等 | launchd 自動推送行為 | 見 `.env.example` 註解 |
+| `BRIEFING_MODEL` / `FRIDAY_CODEX` / `RETRY_MAX` 等 | launchd 自動推送行為（headless 模型預設 `sonnet`、重試預設 5） | 見 `.env.example` 註解 |
+| `REPORT_SITE_TOKEN` / `REPORT_SITE_URL` / `REPORTS_REPO_PATH` | 私有 HTML 報告站（Netlify，`generate_html.py --push`；Telegram 訊息末自動附連結） | 自建 private repo + Netlify |
 
 以上**全部選用**——不設也能用所有互動式 slash command，只是少了自動推送、總經快照與三錨點估值快取。
 
@@ -252,7 +253,11 @@ DRY_RUN=1 python3 tools/send_briefing.py latest   # Dry-run（不實際發送）
 
 ## Telegram 自動推送
 
-每個 NYSE 交易日 **ET 11:30**（夏令 UTC 15:30 / 冬令 UTC 16:30，荷蘭時間恆為 17:30）自動推送盤中決策摘要。週五加 `--codex` 第二意見。
+每個 NYSE 交易日在你設定的 launchd 排程時間自動推送盤中決策摘要（排程用系統本地時區解讀，休市日自動跳過）。架構特色：
+- **睡眠免疫**：排程前 `pmset` 喚醒 + `caffeinate` 保清醒，闔蓋/睡眠中的 Mac 也能準時發
+- **失敗安靜、補發冪等**：失敗只記 log 不推錯誤訊息（Telegram 只收正式報告）；手動補發 `/briefing telegram --send`，`send_briefing.py` dedup 保證不重複推送
+- **headless 韌性**：生成固定用 Sonnet（`BRIEFING_MODEL` 可覆寫）縮短單次 run 曝險、單窗內最多重試 5 次（遞增 backoff）
+- 週五自動加 `--codex` 第二意見
 
 ### Telegram 訊息格式
 
@@ -370,17 +375,20 @@ tail -1 briefing-out/send-log.jsonl
 ### 架構說明
 
 ```
-launchd (每日 ET 11:30，NYSE 交易日)
+launchd（排程時間自訂，NYSE 交易日才跑）
     │
     ▼
-~/.local/bin/fadacai_briefing_runner.sh   ← TCC-safe wrapper
+tools/briefing_runner.sh                  ← TCC-safe wrapper
     ├── check_trading_day.py              ← NYSE 休市日 exit 0
     ├── 週五 → CODEX_FLAG="--codex"
     ├── [non-fatal] fetch_macro.py        ← FRED 總經快取（TTL 36h）
     ├── [non-fatal] earnings_history.py   ← yfinance 盈餘快取（TTL 24h）
     ├── [non-fatal] fetch_fundamentals.py ← EODHD 基本面快取（TTL 24h）；含 A4 自建估值（CAGR→own_fwdEPS→own_target）
     ├── [non-fatal] fetch_news.py         ← EODHD 新聞全文快取（TTL 6h）；P3 訊號擷取的 body 來源
-    └── claude -p "/briefing telegram --send $CODEX_FLAG"
+    ├── [non-fatal] fetch_leading.py      ← 先行指標五 block（TTL 20h）
+    ├── [non-fatal] archive_cache.py      ← 每日決策輸入凍結快照（120 天）
+    ├── [non-fatal] shadow_signals.py flag + trade_ledger.py snapshot-orders
+    └── claude -p "/briefing telegram --send $CODEX_FLAG" --model sonnet   ← RETRY_MAX 5、backoff 60s 遞增
             │
             ▼
         .claude/skills/briefing/SKILL.md (telegram tier)
@@ -421,6 +429,8 @@ launchd (每日 ET 11:30，NYSE 交易日)
 | Telegram 沒收到 | 確認 `TELEGRAM_CHAT_ID` 是你的個人 chat id，不是群組 id |
 | `exchange_calendars not installed` | `pip3 install exchange_calendars`（有 fallback，非致命） |
 | launchd.log 空白 | job 還在跑（claude 需要 2-5 分鐘），等待後再看 |
+| `.env: line N: syntax error` + 三窗全滅 | `.env` 有未加引號的特殊字元值（cookie/JSON）→ 包單引號後 `bash -c 'set -a; source ./.env'` 驗證 |
+| `API Error: ... mid-stream` 連續殺掉 headless run | Anthropic 端串流不穩；確認 runner 有 `--model sonnet`（縮短單次 run）、必要時互動 session 手動 `/briefing telegram --send` 補發（dedup 防重複） |
 
 ---
 
@@ -449,7 +459,7 @@ launchd (每日 ET 11:30，NYSE 交易日)
 | `feedback/` | 交易風格規則，所有 skill 每次必讀 | 手動（學習後更新） |
 | `research/` | 個股投資論文（MU 記憶體週期、HDD AI 儲存等） | 手動 |
 | `.env` | Telegram + SMTP 設定（**gitignored**，cp .env.example） | 手動 |
-| `tools/` | Pipeline 腳本：`send_briefing.py`、`check_trading_day.py`、`briefing_runner.sh`、`fetch_macro.py`、`fetch_fundamentals.py`（EODHD 基本面 + 7d/30d/60d/90d revision 曲線 + 6 季 GM%/庫存天數 + A4 自建估值快取）、`fetch_news.py`（EODHD 新聞全文快取，TTL 6h）、`fetch_leading.py`（發現層先行指標，見 docs/leading-indicators.md）、`earnings_history.py`、`thesis_ledger.py`、`trade_ledger.py`（成交歸因 / 旗標紀律 / α 計分）、`shadow_signals.py`（影子訊號帳本）、`archive_cache.py`（每日決策輸入凍結，120 天）、`price_alerts.py`（價格警報 → Telegram，launchd 15 分鐘輪詢）、`pmcc_scan.py`、`event_vol_scan.py`、`test_self_valuation.py` / `test_thesis_ledger.py`（單元測試） | git tracked |
+| `tools/` | Pipeline 腳本：`send_briefing.py`、`check_trading_day.py`、`briefing_runner.sh`（headless 生成，`--model sonnet` + retry 5）、`fetch_macro.py`、`fetch_fundamentals.py`（EODHD 基本面 + 7d/30d/60d/90d revision 曲線 + 6 季 GM%/庫存天數 + A4 自建估值快取；`--ticker` 單票補抓）、`fetch_news.py`（EODHD 新聞全文快取，TTL 6h）、`fetch_leading.py`（發現層先行指標，見 docs/leading-indicators.md）、`earnings_history.py`、`thesis_ledger.py`、`ev_ledger.py`（EV 分布**事前登錄**帳：機率+三情境公允價原樣入帳，到期機械驗價，機率校準自驗）、`trade_ledger.py`（成交歸因 / 旗標紀律 / α 計分）、`account_metrics.py`（帳戶級四指標：期間報酬/CAGR/MDD/Sharpe + 回檔熔斷旗標）、`shadow_signals.py`（影子訊號帳本：A4 高估旗標 + R18 財報窗被擋加碼的 `block` 登錄與計分）、`archive_cache.py`（每日決策輸入凍結，120 天）、`price_alerts.py`（價格警報 → Telegram，launchd 15 分鐘輪詢）、`pmcc_scan.py`、`event_vol_scan.py`、`generate_html.py`（報告 → 私有 Netlify 報告站）、`fmp_query.py`（FMP session 過期旁路 helper）、`simple_dcf.py`、`sync_agents_skills.py`（.claude → .agents 鏡像生成）、`test_self_valuation.py` / `test_thesis_ledger.py`（單元測試） | git tracked |
 | `briefing-out/` | 每日 briefing 輸出 + 發送 log（**gitignored**） | 自動生成 |
 | `briefing-out/cache/` | 預載快取：`macro-snapshot.json` / `earnings-history.json` / `earnings-dates.json` / `fundamentals-snapshot.json`（含 A4 `self_valuation`，TTL 24h）/ `news-articles.json`（全文 600-char excerpts，TTL 6h）/ `leading-indicators.json`（先行指標五 block，TTL 20h）— **日報 zero-latency 數據層**；`archive/YYYY-MM-DD/` 每日凍結全部決策輸入（120 天，之後每月首日），供盲測重推導與 revision 二階導 | 自動（runner + launchd） |
 | `docs/briefing-auto-send.md` | Telegram 設定完整教學 | git tracked |
@@ -475,7 +485,7 @@ launchd (每日 ET 11:30，NYSE 交易日)
 每個 Verdict / Recommendation 前強制填寫：核心 thesis（可驗證命題）+ 證偽條件（2-3 個 falsifiable 觀察點）+ 機率分布（EV 計算）。確保結論有 ground truth 依據，不是 narrative。
 
 **Telegram 每天幾點收到？**
-美東 ET 11:30（NYSE 交易日），對應荷蘭時間夏令 17:30 / 冬令 17:30（自動 DST-aware）。
+由你在 plist `StartCalendarInterval` 自訂（系統本地時區解讀，NYSE 交易日才跑）。沒收到 = 該發送窗失敗，除錯路徑見 `docs/briefing-auto-send.md` 疑難排解。
 
 ---
 
@@ -493,6 +503,8 @@ launchd (每日 ET 11:30，NYSE 交易日)
 - **發現層先行指標（`tools/fetch_leading.py`）** — 財報 gate 是裁決層（慢而準），發現層另設五組比財報更早的硬數字前哨：三儀表（HY OAS 速度 / VIX 期限結構 / 半導體寬度）+ 行業 PE 溫度計與國債曲線、財報季 cross-read 排序（早報者 → 晚報持倉的讀序 prior）、記憶體/功率報價新聞監測、**revision 二階導雙法**（archive-diff × vendor 7d 曲線互驗）、台股功率元件月營收（TWSE/TPEx 免金鑰）。全部 **display-only（記錄不阻擋）**，命中率由 `/trade-review` 驗證後才可升閘門。詳見 [`docs/leading-indicators.md`](docs/leading-indicators.md)。
 - **交易檢討自我進化引擎（`/trade-review` + `tools/trade_ledger.py`）** — 每兩週歸因每筆成交是「系統決策」還是「脫離 plan 的自主決策」，計算三並列指標：交易 α（對實際使用的基準回歸，半導體對 SMH）、持有 α（沒有它，純交易指標會獎勵頻繁進出）、up/down beta capture（漲不上跌得凶的量化）。**旗標紀律**：欠決定的部位必須 `flag` 登記附 deadline，延後計次、第 3 次強制執行 — 修的是「警示只活在散文裡而永不執行」這個實測最貴的漏口。規則命中率帳本（`feedback/RULES-LEDGER.md`）讓每條 feedback 規則用實測存廢，不由模型換代裁決。
 - **自動價格警報（`tools/price_alerts.py`）** — 券商 lib 無警報 endpoint，自建：launchd 15 分鐘盤中輪詢 yfinance，跌破/突破/N 日新高三型條件 → Telegram（複用日報同一 bot），`once_per_day` 防洗版；警報定義與觸發狀態存 `research/price-alerts.json`。
+- **EV 事前登錄帳（`tools/ev_ledger.py`）** — 每次 stock-analysis / ev-check 收尾把「機率分布 + 三情境公允價 + EV」**原樣**登錄（pre-registration），到期由日報機械驗價（個股抓收盤、組合對淨值標記，零判斷）；`/trade-review` 讀 `stats`（EV 誤差 by horizon、Brier、校準表）——讓「機率有沒有算準」自己留下可計分的痕跡。修正只進 prompt/規則層，n>150 筆前不建 ML 模型（防 Goodhart）。
+- **規則也要被計分：財報窗禁令 A/B/C 拆分（2026-08-04）** — 掛帳 0 命中 0 失效 60 天的「±48h 禁令」被拆成三條各自計分：A 技術訊號停用（保留 + 補「財報後預登錄基本面 gate 行動」豁免）、B 選擇權不開新倉（維持保守）、C 財報前不加碼（**R18 影子計分**：每次實際擋下加碼就 `shadow_signals.py block` 登錄，30 天熟成後驗「被擋的買進是否跑輸基準」，兩期後由命中率裁決升閘門或廢除）。廢除跟保留一樣需要數據。
 
 ## 如何擴展
 

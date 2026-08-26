@@ -307,7 +307,9 @@ def main() -> int:
         return 1
 
     # Guard: skip if already fully sent today (prevents duplicate from runner retry)
-    if not dry_run and already_sent_today(date_str):
+    # FORCE_RESEND=1 bypasses the guard for intentional manual re-sends (updated content)
+    force_resend = os.environ.get("FORCE_RESEND", "").strip() in ("1", "true", "yes")
+    if not dry_run and not force_resend and already_sent_today(date_str):
         print(f"⏭️  {date_str} 已成功發送過，跳過重複發送")
         return 0
 

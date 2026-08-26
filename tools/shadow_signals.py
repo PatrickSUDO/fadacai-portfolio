@@ -23,11 +23,21 @@ PE cannot separate them at n=2, so `high_pe` is recorded as an attribute and sco
 as a hypothesis rather than applied as a rule. Shadow mode blocks nothing, so
 pre-filtering would only destroy the evidence needed to settle the question.
 
-Storage: research/shadow-signals.jsonl  (one flag per line, deduped by ticker+date)
+Second tenant (2026-08-04): the R18 earnings-window blocked-add flag. The "財報前
+±48h 不加新曝險" rule (briefing cluster warning, split out of R9) had never been
+scored — it kept blocking adds without ever proving the blocks were right. Phase 1
+keeps the rule blocking as before, but every add it actually blocks must be recorded
+here in the same breath (`block` subcommand). Both signal types share the same
+correctness semantics: the flag claims you should not be (more) long, so it is
+correct when the name then underperforms its benchmark.
+
+Storage: research/shadow-signals.jsonl  (one flag per line, deduped by ticker+date+signal)
 
 Usage
   python3 tools/shadow_signals.py flag                 # from the fundamentals cache
   python3 tools/shadow_signals.py flag --asof 2026-07-25
+  python3 tools/shadow_signals.py block --ticker AMD --price 508.90 --size 2500 \
+      --note "8/4 反彈日部署候選，8/4 AMC 財報窗被 R18 擋"   # record a blocked add
   python3 tools/shadow_signals.py score                # flags at least 30 days old
   python3 tools/shadow_signals.py list --open
 """
@@ -48,6 +58,7 @@ HIGH_PE = 200.0               # recorded as an attribute, NOT an exclusion (see 
 MATURE_DAYS = 30              # a flag is scorable this many days after being raised
 
 SIGNAL_A4 = "a4-overvalued"
+SIGNAL_BLOCKED = "earnings-window-blocked-add"
 
 
 def _today(asof=None):
@@ -136,6 +147,31 @@ def cmd_flag(args):
     return 0
 
 
+def cmd_block(args):
+    """Record an add that the R18 earnings-window rule actually blocked."""
+    asof = _today(args.asof).isoformat()
+    row = {
+        "date": asof,
+        "ticker": args.ticker.upper(),
+        "signal": SIGNAL_BLOCKED,
+        "ref_price": args.price,
+        "size_usd": args.size,
+        "note": args.note,
+        "mode": "shadow",
+        "status": "open",
+    }
+    existing = load_signals(args.signals)
+    key = (row["date"], row["ticker"], row["signal"])
+    if key in {(r["date"], r["ticker"], r["signal"]) for r in existing}:
+        _emit({"skipped": "duplicate", "key": list(key)})
+        return 0
+    save_signals(existing + [row], args.signals)
+    _emit({"recorded": row,
+           "scoring": ("`score` after 30 days: flag_correct = the blocked buy "
+                       "underperformed its benchmark = the ban was right")})
+    return 0
+
+
 def cmd_score(args):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from trade_ledger import benchmark_for, eod_series, load_env, _asof_close  # noqa: PLC0415
@@ -172,9 +208,10 @@ def cmd_score(args):
         if not (p0 and p1 and b0 and b1):
             continue
         alpha = (p1 / p0 - 1) - (b1 / b0 - 1)
-        # The flag claims the name is overvalued, so it is right when the name
-        # underperforms its benchmark.
-        scored.append({**{k: r[k] for k in ("date", "ticker", "signal", "divergence_pct")},
+        # Both signal types claim you should not be (more) long — a4-overvalued on
+        # valuation, earnings-window-blocked-add on the blocked buy — so either is
+        # right when the name underperforms its benchmark.
+        scored.append({**{k: r.get(k) for k in ("date", "ticker", "signal", "divergence_pct")},
                        "benchmark": bench,
                        "price_then": p0, "price_now": p1,
                        "excess_alpha_pct": round(alpha * 100, 1),
@@ -195,9 +232,15 @@ def cmd_score(args):
         "scored": len(scored),
         "overall": _band(scored),
         # The DDOG-vs-ARM question: is A4 unreliable on triple-digit multiples?
+        "by_signal": {
+            sig: _band([s for s in scored if s["signal"] == sig])
+            for sig in sorted({s["signal"] for s in scored})
+        },
         "by_pe_band": {
-            f"pe_over_{HIGH_PE:.0f}": _band([s for s in scored if s["high_pe"]]),
-            f"pe_under_{HIGH_PE:.0f}": _band([s for s in scored if not s["high_pe"]]),
+            f"pe_over_{HIGH_PE:.0f}": _band([s for s in scored if s["high_pe"]
+                                             and s["signal"] == SIGNAL_A4]),
+            f"pe_under_{HIGH_PE:.0f}": _band([s for s in scored if not s["high_pe"]
+                                              and s["signal"] == SIGNAL_A4]),
         },
         "detail": sorted(scored, key=lambda s: s["excess_alpha_pct"]),
         "baseline": ("2026-07-25 backtest over the 2026-06-24 snapshot: 4/4 correct "
@@ -231,6 +274,12 @@ def _build_parser():
     f = sub.add_parser("flag", help="evaluate rules against the fundamentals cache")
     f.add_argument("--verbose", action="store_true", help="list excluded tickers and why")
 
+    b = sub.add_parser("block", help="record an add blocked by the R18 earnings window")
+    b.add_argument("--ticker", required=True)
+    b.add_argument("--price", type=float, required=True, help="price at the moment of the blocked add")
+    b.add_argument("--size", type=float, default=None, help="USD size the add would have been")
+    b.add_argument("--note", default="", help="why the add was wanted / which window blocked it")
+
     s = sub.add_parser("score", help="score flags that have matured")
     s.add_argument("--mature-days", type=int, default=MATURE_DAYS)
 
@@ -242,7 +291,7 @@ def _build_parser():
 def main(argv=None):
     args = _build_parser().parse_args(argv)
     try:
-        return {"flag": cmd_flag, "score": cmd_score, "list": cmd_list}[args.cmd](args)
+        return {"flag": cmd_flag, "block": cmd_block, "score": cmd_score, "list": cmd_list}[args.cmd](args)
     except Exception as exc:                                    # noqa: BLE001
         _emit({"error": str(exc), "cmd": args.cmd})
         return 1
