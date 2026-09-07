@@ -286,7 +286,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
   - `get_option_chain(symbol, exp_date="")` — 券商選擇權鏈；`exp_date` 空 → 回到期日清單（格式 `YYYYMMDD`，也吃 `YYYY-MM-DD`）
   - `get_option_greeks(symbol, exp_date)` — 券商計算的 delta/gamma/theta/vega/rho + IV（流動性差的履約價回 `--`）
   - `get_single_quote` / `get_watchlist_quote` — real-time quotes
-  - ⚠️ **選擇權開倉不可用**（ref 1562）：底層 lib `OrderType` 只有 `BO`/`SO`，payload 無 open/close 判別欄位，API 端拒絕。選擇權一律 App 手掛；但 `get_orders` 快照會讓手掛單自動進交易帳，記錄缺口已補
+  - **單腿選擇權可經 MCP 開倉與平倉（2026-09-07 探測後修復）**：`preview_option_order` / `place_option_order` 的 `order_type` 用 `buy_to_open | sell_to_close | sell_to_open | buy_to_close`（`buy`/`sell` = 開倉別名）。**平倉必須用 `*_to_close`**，否則 API 當開倉 → ref 1103；裸賣 call 無 100 股 → ref 1200（Level 2 正常擋）。七月的 ref 1562 已不再出現（多標的 / day / gt90 皆 preview 200）。**兩腿 spread 也可經 MCP**：`preview_option_spread` / `place_option_spread`（每腿 symbol + 四碼 transaction + contracts，`limit_type=debit|credit`，`net_price`）；**複式單只能 day、券商只在 ET 7AM–4PM 收單（否則 ref 1110）**，三腿以上與 GTC 仍不支援 → `tg_send.py` 推 App 手掛。API schema 見 `firstrade-server/docs/option-order-api.md`；探測腳本 `tools/probe_*.py`（只 preview）
 - `mcp__yfinance-advanced__*` — real-time quotes, options chains, financials, news, recommendations (primary)
 - `mcp__sec-edgar-mcp__*` — SEC filings, XBRL financials, insider trading (Form 4), 8-K events, segment data
 - `mcp__fmp-mcp__*` — stock peers, market movers, company profiles (free tier; most endpoints need paid plan)

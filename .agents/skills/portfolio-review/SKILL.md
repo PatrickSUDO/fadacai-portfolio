@@ -393,7 +393,7 @@ python3 tools/pmcc_scan.py --json briefing-out/cache/pmcc-scan.json
 - `PMCC_CANDIDATE` → 進 `plan.md`「🟣 PMCC 候選池」；對照現有 LEAPS 持倉（是否從裸持轉收租）。附短腿建議（strike ≥ BE、δ≈0.30、跨財報 flag）
 - `WATCH`（多為 LEAPS debit 太貴）→ 記錄，等 IV 降或深回檔再評
 - `EXCLUDE_LET_RUN`（revision 加速 / target 噴）→ **不封頂**，這是飛輪 ④ 的 redeploy 領漲者，別誤 PMCC
-- 跨財報短腿 → 走 `feedback/options-leaps-playbook.md` 的 ±48h + timing 決策；firstrade MCP 開不了選擇權 → App 手掛
+- 跨財報短腿 → 走 `feedback/options-leaps-playbook.md` 的 ±48h + timing 決策；單腿與兩腿 spread 皆可經 MCP（`preview_option_order` / `preview_option_spread`，spread 只能 day 且 ET 7AM–4PM）；三腿以上仍 App 手掛（`tg_send.py`）
 - **反幻覺**：pmcc_scan 用 yfinance/EODHD，短腿 credit 為機械估；掛單前主程拉即時鏈定案（盤前 OI/IV 不可靠，工具已標註）
 
 **輸出格式（把 scan 表濃縮，只列 CANDIDATE + WATCH）：**

@@ -302,4 +302,4 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 - **與 plan 一致的用戶判斷在紀錄上無法與系統區分**，會被計入 system。所以「你自己決定」實際是「你**脫離 plan** 的決策」，不是你全部的判斷。
 - **`get_orders` 只回在掛單**，已成交/已取消會從券商端消失 → order_id 歸因只能前瞻。快照斷天會產生無法歸因的缺口。
 - **2026-06 之前的成交沒有 journal 理由欄**，origin 永久 unknown，不必嘗試補。
-- **選擇權開倉仍需 App 手掛**（ref 1562，底層 lib 無 open/close 判別欄位，不可修）。
+- **選擇權已可經 MCP**（2026-09-07）：單腿 `order_type` 用 `buy_to_open` / `sell_to_close` 等四碼（平倉必用 `*_to_close`）；兩腿 spread 用 `preview_option_spread` / `place_option_spread`（day only、ET 7AM–4PM）。三腿以上或 GTC 複式單仍 App 手掛（`tg_send.py`）。
