@@ -16,6 +16,11 @@
 - **EV 事前登錄帳（`tools/ev_ledger.py`）** — 每次 stock-analysis / ev-check 收尾把「機率分布 + 三情境公允價 + EV」**原樣**登錄（pre-registration），到期由日報機械驗價（個股抓收盤、組合對淨值標記，零判斷）；`/trade-review` 讀 `stats`（EV 誤差 by horizon、Brier、校準表）——讓「機率有沒有算準」自己留下可計分的痕跡。修正只進 prompt/規則層，n>150 筆前不建 ML 模型（防 Goodhart）。
 - **規則也要被計分：財報窗禁令 A/B/C 拆分（2026-08-04）** — 掛帳 0 命中 0 失效 60 天的「±48h 禁令」被拆成三條各自計分：A 技術訊號停用（保留 + 補「財報後預登錄基本面 gate 行動」豁免）、B 選擇權不開新倉（維持保守）、C 財報前不加碼（**R18 影子計分**：每次實際擋下加碼就 `shadow_signals.py block` 登錄，30 天熟成後驗「被擋的買進是否跑輸基準」，兩期後由命中率裁決升閘門或廢除）。廢除跟保留一樣需要數據。
 
+- **運氣 vs 技能的統計紀律（`tools/rule_stats.py`，2026-09）** — 舊門檻「命中 ≥2 = 已驗證」純擲硬幣達成率 25%，25 條規則同測預期 6 條假驗證。改為**巧合機率制**：失效 0 且巧合 ≤5%（獨立命中 ≥5）才算已驗證，5–25% 為初步支持；命中只算規則建立日後的獨立事件（原始案例不計、同批算 1），每筆附 `[up]/[down]` regime 標籤，單一 regime 的命中在另一 regime 視同未驗證。每筆結案分四格：結果落在事前分布外 = **模型漏了一支分支，不是運氣**；證偽條件觸發未動 = 決策錯；thesis 對但 realized < EV = 「對但沒用」（priced-in 候選，`ev_ledger.py stats` 自動列出）；thesis 錯但賺 = 運氣好，不計命中。帳戶級 α 要 t≥2 需要 資訊比率 × √年 ≥ 2，所以檢討重心放在兩週就能累積 n 的過程指標（規則遵循率、旗標紀律、Brier skill score），並**事前寫死放棄條件**（R26：24 個月後 Brier skill ≤0 且持有 α 對 SMH ≤0 → 轉被動，不辯解不延期）。
+- **機械執行層：不信任模型的自律** — 判斷層規則跳過不留痕跡，所以能變工具的都變工具，分三層：① 工具在寫入點就擋（`ev_ledger.py add` 帶 thesis 必填 `--p-up-given-thesis`，缺就拒寫）；② 每日排程跑 `rule_stats.py ledger-audit --check`（巧合欄過期 / 狀態與數字矛盾 / 新案例缺 regime 標籤），失敗直接推 Telegram，不經模型；③ Claude Code PostToolUse hook 對每份 `trade-review-*.md` 跑 `review_lint.py`（缺段 / 結論 >2 條 / 收尾未做 → exit 2 回進對話）。檢查邏輯 100% 程式；剩下的邊界是「lint 查段落有沒有，不查數字對不對」。
+- **持倉守門與資金紀律（`tools/position_guard.py`，R23–R25）** — 每日把「寫在規則裡靠人記」的機制跑成檢查：R14 新倉 30 天閘、R23 認列桶自峰回撤線（+20% 啟動，自峰 −20%/−30% 各減 1/3，警報自動掛撤）、R8 梯級停利 GTC 缺口、>10% 單倉硬線、檔數上限、財報 ±48h 窗、桶別缺口、旗標逾期；exit 2 = 缺口逐條進 Key Alerts。R24 閒置現金機械停泊 SGOV（券商現金不計息）；R25 避險 sleeve（GLD/XLE）結構性持有、不套動能規則。做不到的單（收盤確認單、選擇權）用 `tg_send.py` 一句話一單推 Telegram 讓人手掛。
+- **新想法先回測再進系統（`tools/backtests/`）** — 例：13F 與國會議員抄單，用 House Clerk 官方申報 PDF 做申報日事件回測、用 GURU/GVIP/NANC/KRUZ 實盤 ETF 做代理，α 的 t 值全 <2、申報延遲吃光短期資訊、賣單反指標 → 不加入。結論與腳本留底，可重跑。
+
 ## 如何擴展
 
 - **新增 skill**：在 `.claude/skills/<name>/SKILL.md` 建立，frontmatter 設 `user_invocable: true` + `description`，內文遵循 `CLAUDE.md` 的 Step 0 統一規範。
