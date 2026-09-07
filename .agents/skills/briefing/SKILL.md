@@ -272,7 +272,9 @@ launchd 路徑下 `tools/briefing_runner.sh` 已預取此兩項；**手動執行
 ```bash
 python3 tools/shadow_signals.py flag          # A4 高估旗標，記錄不阻擋
 python3 tools/trade_ledger.py snapshot-orders # 在掛單快照（歸因 ground truth）
+python3 tools/position_guard.py --sync-alerts --render-plan   # 持倉守門（2026-09-02 P3）：R14 天數/R23 arm+警報同步/R8 GTC 缺口/>10%/檔數/財報窗/桶別缺口 → 渲染 plan.md 標記區；exit 2 = 有缺口 → 缺口逐條進 Key Alerts（不得省略）
 python3 tools/trade_ledger.py orders          # 讀回：死單 + 不在 plan 的在掛單
+python3 tools/rule_stats.py ledger-audit --check   # 規則帳本一致性；launchd 路徑 runner 已預跑（失敗直接推 Telegram），手動 briefing 才需自己跑；exit 2 → 違規逐條進 Key Alerts
 ```
 
 **1. A4 高估旗標（🟣 影子模式）**
@@ -979,11 +981,16 @@ Agent(subagent_type="data-collector"):
 
 ### 檔案輸出（每次執行均寫出，無論有無 --send）
 
-**T8a. 完整 Markdown → `briefing-out/YYYY-MM-DD-full.md`**
+**T8a. 完整 Markdown → `briefing-out/YYYY-MM-DD-full.md`（詳細層 = Email 與網頁版的本體）**
 
-使用 Write tool 寫入。**敘事段落全部走 `feedback/briefing-voice-style.md` 口吻**（section 骨架與數據點照下方模板一項不漏；開場加 2-4 句 big picture 導言、每區內容寫成完整句子帶解讀）。格式：
+> **三層分工（2026-09-02 用戶指定）：** `full.md` 是**最詳細的版本**（Email 與網頁直接用它）；`telegram.txt` 是它的**摘要層**（每區 1-2 句 + 動作）。**兩者文字不得相同**——Telegram 只保留結論與動作，full.md 保留完整推理、表格、全部數據點。Email 不再附 Telegram 文字（`send_briefing.py` 已改）。
+
+使用 Write tool 寫入。**敘事段落全部走 `feedback/briefing-voice-style.md` 口吻**（section 骨架與數據點照下方模板一項不漏；開場加 2-4 句 big picture 導言、每區內容寫成完整句子帶解讀）。**詳細層必含（Telegram 省略的）**：① 持倉狀態表（直接貼 `research/position-state.json` 渲染的表，含桶/權重/持有天/自峰回撤/R23/在掛賣單/旗標/財報日，與 guard 缺口清單）② 每檔估值三錨點表（現價/公允基準/A1/A2/A3/A4 分歧）③ 先行指標完整儀表（各 block 數字，非一行摘要）④ 旗標/thesis 到期/警報的完整清單與 deadline ⑤ 來源訊號逐則（含 raw_quote）⑥ 有 Codex 時的並排比較。markdown 表格在本檔允許且鼓勵。格式：
 ```markdown
-# Briefing Telegram YYYY-MM-DD
+# Daily Briefing YYYY-MM-DD（詳細版）
+
+## 持倉狀態（position_guard 生成表 + 缺口）
+...
 
 ## Earnings Window
 ...
@@ -1031,9 +1038,9 @@ Agent(subagent_type="data-collector"):
 ...
 ```
 
-**T8b. Telegram 純文字 → `briefing-out/YYYY-MM-DD-telegram.txt`**
+**T8b. Telegram 純文字 → `briefing-out/YYYY-MM-DD-telegram.txt`（摘要層）**
 
-使用 Write tool 寫入，格式嚴格遵守（純文字 + emoji，無 markdown，無表格，無 bold/italic/link）：
+使用 Write tool 寫入，格式嚴格遵守（純文字 + emoji，無 markdown，無表格，無 bold/italic/link）。**這是 full.md 的濃縮，不是複製**：每區只留結論 + 動作（1-2 句），推理/表格/逐檔數據留在 full.md；讀者要細節點網頁版連結。目標 ≤3000 字元不變，但**能更短就更短**——同樣資訊已在 full.md 時，Telegram 的價值是「今天該注意什麼、該做什麼」。
 
 ```
 📊 M/D HH:MM（發送時間，本地時區）
@@ -1092,6 +1099,7 @@ Agent(subagent_type="data-collector"):
 - 純文字，emoji 作區塊分隔
 - 無 `**`、`_`、`[text](url)` 等 markdown 語法
 - **口吻（2026-07-28 起）**：每區 1-3 句**完整句子**取代電報碎片，同區數據點全保留（`feedback/briefing-voice-style.md` 內容不變定律 + before/after 範例）；先講結論、數字帶解讀
+- **增量優先（2026-08-31 用戶指定，voice 檔鐵則 4）**：產出前先讀前一交易日 `briefing-out/YYYY-MM-DD-telegram.txt` 比對——跨日重複且無變動的項目（同旗標重述/同觸發帶等待/同 thesis 完好）**不再展開**，收進一行 `⏸ 無變化：X / Y / Z` 或省略；重複但有變動只寫 delta。例外：🔴 警示、今明 deadline 待辦、R15 熔斷狀態仍須一行。讀者昨天讀過的句子今天不該再讀到
 - 數字：K（千）、M（百萬）、% 縮寫
 - 無 catalyst 或無 alert 的 section 完整省略（不要顯示空 section）
 - 🚦 先行指標區儀表行維持緊湊 1 行（數據面板不句子化），觸發說明行用人話；`↳ read-through` 全訊息至多 1 行
@@ -1330,7 +1338,7 @@ raw data 區只能放 fact 數值，**不能放** derived label：
 
 ## Output Format
 - 繁體中文
-- **口吻（2026-07-28 起強制）**：所有敘事文字走「懂行朋友講盤」體，規範見 `feedback/briefing-voice-style.md`（股癌式直白 + 游庭皓式晨報導讀）。**鐵則：內容不變定律** — 每個 section/數字/旗標/待辦一項不漏，只改「怎麼說」；先講結論、數字帶解讀不裸列、術語首次給白話；開場 2-4 句 big picture、結尾一小段「明天看什麼」。機率/EV/旗標的數據結構照舊，禁止用語氣詞替代機率
+- **口吻（2026-07-28 起強制）**：所有敘事文字走「懂行朋友講盤」體，規範見 `feedback/briefing-voice-style.md`（股癌式直白 + 游庭皓式晨報導讀）。**鐵則：內容不變定律** — 每個 section/數字/旗標/待辦一項不漏，只改「怎麼說」；先講結論、數字帶解讀不裸列、術語首次給白話；開場 2-4 句 big picture、結尾一小段「明天看什麼」。機率/EV/旗標的數據結構照舊，禁止用語氣詞替代機率。**跨日選材走 voice 檔鐵則 4 增量優先（2026-08-31）：與前一交易日輸出比對，無變動項目收一行「⏸ 無變化」或省略、有變動只寫 delta（🔴 警示與今明 deadline 待辦例外仍列）——內容不變定律管單次改寫、鐵則 4 管跨日選材，不衝突**
 - **禁裸參數名**：`curr_fy`、`decel_flag`、`pct_above_50dma` 這類內部欄位名不得直接出現在報告文字，一律翻完整名稱（本財年、上修減速旗標、站上 50 日線比例…完整對照表見 `feedback/briefing-voice-style.md` 規則 4b）；溯源需要時才括號附欄位名。市場慣用英文（EPS/PE/capex/guide/beat/IV/DTE/delta）不受限
 - 簡潔 markdown 表格（表格是內容不是口吻，保留）
 - 所有金額為 USD

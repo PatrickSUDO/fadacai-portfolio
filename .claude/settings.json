@@ -18,5 +18,20 @@
       "mcp__fmp-mcp",
       "mcp__polymarket-mcp"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/review_lint.py\" --hook",
+            "timeout": 30,
+            "statusMessage": "review_lint"
+          }
+        ]
+      }
+    ]
   }
 }

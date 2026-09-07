@@ -117,6 +117,23 @@ def fetch_rolling_high(symbol: str, lookback: int, today) -> float | None:
         return None
 
 
+def fetch_peak_close(symbol: str, since_iso: str, today) -> float | None:
+    """自 since 起的收盤峰值（不含今日）— R23 認列桶自峰回撤線用。"""
+    import yfinance as yf
+
+    try:
+        hist = yf.Ticker(symbol).history(start=since_iso)
+        closes = hist["Close"].dropna()
+        if len(closes) and closes.index[-1].date() == today:
+            closes = closes.iloc[:-1]
+        if closes.empty:
+            return None
+        return float(closes.max())
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] history failed {symbol}: {e}", file=sys.stderr)
+        return None
+
+
 def evaluate(dry_run: bool = False, force: bool = False) -> int:
     ts = now_et()
     if not force and not in_market_window(ts):
@@ -152,6 +169,16 @@ def evaluate(dry_run: bool = False, force: bool = False) -> int:
                     f"• {sym} ${px:,.2f} 創 {a.get('lookback', 60)} 日新高"
                     f"（前高 ${threshold:,.2f}）— {a['note']}"
                 )
+        elif typ == "peak_dd":
+            px = fetch_last_prices([sym]).get(sym)
+            peak = fetch_peak_close(sym, a.get("since", "2026-01-01"), ts.date())
+            if px is not None and peak is not None:
+                threshold = peak * (1 - a["level"] / 100.0)
+                if px <= threshold:
+                    line = (
+                        f"• {sym} ${px:,.2f} 自峰 ${peak:,.2f} 回撤 {(px / peak - 1) * 100:.1f}%"
+                        f"（≤ −{a['level']:g}% 線 ${threshold:,.2f}）— {a['note']}"
+                    )
         else:
             print(f"[warn] unknown alert type: {typ}", file=sys.stderr)
             continue
@@ -187,6 +214,8 @@ def cmd_list() -> int:
         state = "✅ active" if is_active(a, today_iso) else f"⏸ {a.get('status') or 'cooldown/expired'}"
         if a["type"] == "rolling_high":
             cond = f"{a['symbol']} > {a.get('lookback', 60)}日高"
+        elif a["type"] == "peak_dd":
+            cond = f"{a['symbol']} ≤ 自峰 −{a['level']:g}%（峰自 {a.get('since')}）"
         else:
             cmp_str = "≤" if a["type"] == "price_below" else "≥"
             cond = f"{a['symbol']} {cmp_str} {a['level']:g}"
@@ -202,6 +231,12 @@ def cmd_add(args) -> int:
     if args.rolling_high:
         typ, level, lookback = "rolling_high", None, args.rolling_high
         default_id = f"{args.symbol}-high{args.rolling_high}d"
+    elif args.peak_dd is not None:
+        if not args.since:
+            print("error: --peak-dd 需要 --since YYYY-MM-DD（峰值起算日＝建倉日）", file=sys.stderr)
+            return 1
+        typ, level, lookback = "peak_dd", args.peak_dd, None
+        default_id = f"{args.symbol}-peakdd{args.peak_dd:g}"
     elif args.below is not None:
         typ, level, lookback = "price_below", args.below, None
         default_id = f"{args.symbol}-below-{args.below:g}"
@@ -232,6 +267,8 @@ def cmd_add(args) -> int:
         entry["level"] = level
     if lookback is not None:
         entry["lookback"] = lookback
+    if typ == "peak_dd":
+        entry["since"] = args.since
     if args.expires:
         entry["expires"] = args.expires
 
@@ -274,6 +311,9 @@ def main() -> int:
     p_add.add_argument("--below", type=float)
     p_add.add_argument("--above", type=float)
     p_add.add_argument("--rolling-high", type=int, metavar="N")
+    p_add.add_argument("--peak-dd", type=float, metavar="PCT",
+                       help="R23：現價 ≤ 自 --since 起收盤峰值 × (1−PCT/100) 時觸發")
+    p_add.add_argument("--since", metavar="YYYY-MM-DD", help="--peak-dd 峰值起算日（建倉日）")
     p_add.add_argument("--note", required=True)
     p_add.add_argument("--mode", choices=["once", "once_per_day"], default="once_per_day")
     p_add.add_argument("--expires", metavar="YYYY-MM-DD")

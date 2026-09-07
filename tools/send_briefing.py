@@ -194,7 +194,11 @@ def send_email(telegram_text: str, full_md: str, date_str: str,
     email_to = require("EMAIL_TO")
 
     subject = f"📊 Daily Briefing {date_str}"
-    body_plain = f"{telegram_text}\n\n{'─' * 40}\n\n{md_to_plain(full_md)}"
+    # 2026-09-02 用戶指定：Email = 詳細版（full.md）本體，不再夾 Telegram 摘要文字（Telegram 是摘要層、Email/網頁是詳細層）。
+    # 只從 telegram_text 抽網頁連結放在最上方。
+    m_url = re.search(r"🔗 網頁版：(\S+)", telegram_text)
+    header = f"🔗 網頁版：{m_url.group(1)}\n\n{'─' * 40}\n\n" if m_url else ""
+    body_plain = header + md_to_plain(full_md)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

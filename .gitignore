@@ -40,3 +40,6 @@ tools/fetch_sa_quant.py
 # machine-local hooks/watchers (never committed)
 tools/local_*
 tools/briefing_local_hooks.sh
+
+# backtest download cache (tools/backtests/)
+/tools/backtests/data/

@@ -38,6 +38,26 @@ SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
 # 兼回歸文件規範；可用 BRIEFING_MODEL 覆寫。
 BRIEFING_MODEL="${BRIEFING_MODEL:-sonnet}"
 
+# 2026-09-02：launchd 加了 21:00 CEST 備援窗（17:00 因 Mac 睡眠漏跑時補）。若今天已成功推送則直接退出，
+# 避免第二窗重燒一次 claude session（send_briefing.py 本身也有 dedup，這裡提前擋在 claude 之前）。
+if SEND_LOG="$SCRIPT_DIR/../briefing-out/send-log.jsonl" python3 - <<'PY'
+import json, datetime, pathlib, sys, os
+log = pathlib.Path(os.environ["SEND_LOG"])
+today = datetime.date.today().isoformat()
+try:
+    for line in log.read_text().splitlines():
+        r = json.loads(line)
+        if r.get("date") == today and not r.get("dry_run") and r.get("telegram") == "ok":
+            sys.exit(0)
+except FileNotFoundError:
+    pass
+sys.exit(1)
+PY
+then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] today already sent (send-log) — skip (backup window)"
+  exit 0
+fi
+
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
 # ── NYSE calendar check ────────────────────────────────────────────────────
@@ -117,6 +137,19 @@ log "Recording shadow signals (A4 overvaluation flags)..."
 python3 "$SCRIPT_DIR/shadow_signals.py" flag \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "shadow signal flagging failed (non-fatal, records only)"
+
+# RULES-LEDGER consistency (skill-vs-luck.md): runs without the model; a failure
+# goes straight to Telegram so it cannot be skipped by a lazy /trade-review.
+log "Checking RULES-LEDGER consistency (rule_stats ledger-audit --check)..."
+if ! RULES_CHECK=$(python3 "$SCRIPT_DIR/rule_stats.py" ledger-audit --check 2>&1); then
+  log "RULES-LEDGER check FAILED — pushing to Telegram"
+  printf '%s\n' "$RULES_CHECK" >> "$LOG_DIR/launchd.log"
+  printf '⚠️ RULES-LEDGER 一致性檢查失敗（briefing_runner）\n%s\n→ 動作：下次 /trade-review 前先修帳本（python3 tools/rule_stats.py ledger-audit --write，再補 regime 標籤 / 狀態欄）\n' "$RULES_CHECK" \
+    | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "tg_send failed (non-fatal)"
+else
+  log "RULES-LEDGER consistent"
+fi
 
 log "Resolving due source-credit claims (views scored by price; facts listed only)..."
 python3 "$SCRIPT_DIR/source_credit.py" resolve-due \

@@ -66,10 +66,12 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 7. **B1 機率分布反偷懶（必嵌 prompt）**：Codex 走一次性 prompt 無我們的 `probability-honesty-checker` agent，會落回 default mirror（25/50/25）。故 B1 prompt 的機率分布段**必須內嵌 5 步強制流程 + 禁用 default mirror shape**（見各 skill B1 模板的「嚴禁偷懶」段，源自 `feedback/probability-distribution-honesty.md`）。比較 Claude vs Codex EV 前先確認 Codex 機率非 default，否則分歧是「Codex 偷懶」而非真實見解衝突。
 
 ## Key Files
-- `plan.md` — 投資計畫（板塊目標、策略佇列、觀察清單、策略原則）— 只在用戶要求時更新
+- `plan.md` — **狀態版（2026-09-02 重建）**：三條硬線 + 持倉表生成區（`tools/position_guard.py --render-plan` 自動寫入，禁手改）+ 唯一一張候補表 + R19 pair 追蹤。手改只限候補表與硬線，且只在用戶要求時。歷史決策全文 `research/plan-history.md`（凍結）
+- `research/roster.json` — **桶別唯一資料源**（信念/認列/sleeve/樂透）；每檔持倉必須登記，否則 guard 報缺口；改桶別改這裡不改散文
+- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期 → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
 - `journal/` — 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
-- `feedback/RULES-LEDGER.md` — **規則自己的命中率帳本**（失效 ≥2 次 → 強制覆審）；由 `/trade-review` 每兩週更新
+- `feedback/RULES-LEDGER.md` — **規則自己的命中率帳本**（失效 ≥2 次 → 強制覆審）；由 `/trade-review` 每兩週更新；巧合欄與一致性檢查 `tools/rule_stats.py ledger-audit [--write|--check]`，產出檢查 `tools/review_lint.py`，判準 `feedback/skill-vs-luck.md`（R26 放棄條件 2028-09-06 裁決）
 - `research/` — 投資論文與研究筆記
 - `research/trade-ledger.jsonl` — 結構化成交帳（含 `origin` 誰決定 / `exec_via` 怎麼下單）；工具 `tools/trade_ledger.py`
 - `research/order-registry.json` — 在掛單快照累積（券商只回在掛單，斷天補不回來 → briefing 每次 `snapshot-orders`）
@@ -80,18 +82,18 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 - `briefing-out/cache/archive/YYYY-MM-DD/` — **每日決策輸入凍結快照**（fundamentals/macro/news/earnings/pmcc/leading）。工具 `tools/archive_cache.py`，briefing_runner 自動跑，保留 120 天日快照 + 之後每月首日
 - `research/leading-config.json` — **發現層先行指標配置**（cross-read 鏈、pricing 關鍵字/symbols、SMH 寬度成分、台股月營收清單、decel 閾值）；改持倉/鏈/閾值時手動編輯，`tools/fetch_leading.py` 讀取
 - `briefing-out/cache/leading-indicators.json` — **先行指標快照**（三儀表 + 財報 cross-read + 報價新聞 + revision 二階導 + 台股月營收）。工具 `tools/fetch_leading.py`（TTL 20h），briefing_runner 每日預載、archive_cache 凍結。**所有旗標 display-only（記錄不阻擋，同 A4）**，/trade-review 驗過命中率才可升閘門。細部方法（revision 兩法、SMH 成分、quarterly_trends）見工具內註釋與 `research/leading-config.json`
-- `research/price-alerts.json` — **自動價格警報**（launchd `com.fadacai.price-alerts` 每 15 分輪詢，盤中 ET 09:25–16:10 生效 → Telegram）。工具 `tools/price_alerts.py add/list/remove/test`；Firstrade 非官方 lib 無警報 endpoint 故以 yfinance 自建。凡 briefing/review 產出「價格觸發待辦」（收租觸發、撿回條件、短腿破位）應同步 `add` 進來，Mac 睡眠期間不輪詢。**Note 格式（2026-08-19 強制，動作優先）**：note 開頭必為 `→ 動作：<收到訊息當下該做/不該做什麼>`，接前置閘門（名額/確認條件/否決條件）；觀察型觸發（到價 ≠ 進場）必須明寫「這不是買進訊號」——收訊人不需任何上下文就知道下一步。條件已失效的警報（如價格跌穿整個觸發帶）要撤舊換新，不留殭屍警報每日重複發
+- `research/price-alerts.json` — **自動價格警報**（launchd `com.fadacai.price-alerts` 每 15 分輪詢，盤中 ET 09:25–16:10 生效 → Telegram）。工具 `tools/price_alerts.py add/list/remove/test`；Firstrade 非官方 lib 無警報 endpoint 故以 yfinance 自建。凡 briefing/review 產出「價格觸發待辦」（收租觸發、撿回條件、短腿破位）應同步 `add` 進來，Mac 睡眠期間不輪詢。**Note 格式（2026-08-19 強制，動作優先）**：note 開頭必為 `→ 動作：<收到訊息當下該做/不該做什麼>`，接前置閘門（名額/確認條件/否決條件）；觀察型觸發（到價 ≠ 進場）必須明寫「這不是買進訊號」——收訊人不需任何上下文就知道下一步。條件已失效的警報（如價格跌穿整個觸發帶）要撤舊換新，不留殭屍警報每日重複發。**R23 自峰回撤線（2026-09-02，`feedback/peak-drawdown-line.md`）**：認列桶部位未實現一旦達 +20%（armed），briefing 同次必掛 `--peak-dd 20` 與 `--peak-dd 30 --since <建倉日>` 兩支警報（id `SYM-R23-peakdd20/30`）；觸發 → 收盤確認 → 隔日執行 → `flag`/`resolve-flag --action trimmed`
 - `research/source-config.json` — **來源信用系統：私有來源白名單 + X 抓取配置 + 計分門檻**（gitignore，schema 範例見 `docs/source-config.example.json`）。`platform ∈ x|substack|rss|podcast|manual`；`kind ∈ fact|view`；`tier` 只由 `tools/source_credit.py tiers` 機械寫回，不手改
 - `research/source-credit.jsonl` — **來源信用帳**：每則可計分主張的登錄與驗收記錄（gitignore）。工具 `tools/source_credit.py add-claim/due/resolve/resolve-due/stats/tiers/list`；fact 型主張只列不猜、人工核對官方數字；view 型到期自動用價格驗價（同 `shadow_signals.py` 邏輯）。**所有 tier display-only**，驗滿 ≥2 期 `/trade-review` 且 Trusted+ hit_rate≥65%/mean lead>0 才可升硬閘門（R21，見 `feedback/RULES-LEDGER.md`）。細節見 `docs/source-credit.md`
 - `briefing-out/cache/twitter-signals.json` — **來源訊號快照**（TTL 20h）。工具 `tools/fetch_twitter.py`（X API v2，按量計費，`max_reads_per_run` 硬上限，成本估算見 `docs/source-credit.md`），briefing_runner 每日預載、archive_cache 凍結。Probation tier 僅 briefing §9.6 陳列，Trusted+ 才可進 Key Alerts / Telegram
 
 ### 模型版本記錄（因應模型換代）
 新規則寫入 `feedback/RULES-LEDGER.md` 時填 `作者` 欄；`/trade-review` 補正歸因時帶 `--model` / `--effort`。
-**用途是排覆審順序，不是推翻依據** —— 更新的模型不同意一條已驗證規則（命中 ≥2、失效 0）時，除非有新硬數據否則模型輸。否則每次換代就把累積實證清零，那是「無腦 follow」的反面，同樣不靠證據運作。
+**用途是排覆審順序，不是推翻依據** —— 更新的模型不同意一條已驗證規則（失效 0、巧合 ≤5%）時，除非有新硬數據否則模型輸。否則每次換代就把累積實證清零，那是「無腦 follow」的反面，同樣不靠證據運作。
 **要比較新舊模型只有一種乾淨作法：盲測重推導** —— 餵 `cache/archive/` 的當日資料切點、**不給結果**，讓新模型獨立推導，再把兩者一起對照實際結果。用新模型「重審」舊決策不具資訊量（它已知道結果）。
 
 ### ⚠️ 旗標紀律（修 2026-07-25 量測出的最大回撤漏口）
-凡在 briefing / journal 寫下 **⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判** 的部位，**同一次必須 `trade_ledger.py flag`**（附 `--deadline`）。延後必須走 `defer`（**會計次**），**第 3 次自動 forced → 減碼 1/3 或明文 `resolve-flag --action withdrawn` 附理由**。
+凡在 briefing / journal 寫下 **⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判** 的部位，**同一次必須 `trade_ledger.py flag`**（附 `--deadline`）。**deadline ≤ 15 個交易日，或必須同時掛價格觸發線（2026-09-02 R11 修訂：MYRG 8/27 旗標排兩個月 deadline 期間續跌是本修訂案例）。**延後必須走 `defer`（**會計次**），**第 3 次自動 forced → 減碼 1/3 或明文 `resolve-flag --action withdrawn` 附理由**。
 
 **Why：** 旗標只活在散文裡時，每天被當新的重述而永不執行。TSLA 7/01 標降桶候選、延後 3 次（其中一次用「改收租」取代決定）→ **−52.7% / −$6,399**；ON 6/26 明文「勿再向下加碼」→ 7/06 仍加碼 32 股。兩者的 thesis-ledger `history` 都是 **0 筆** —— 沒有任何東西在數延後。自警示起算累積代價 **−$6,333**，是全書最貴的單一機制。`flags` 會顯示 `post_flag_fills`（警示後才加的碼）與 `total_cost_since_flag`（該數字逐期往下走才算修好）。
 
@@ -133,14 +135,17 @@ REPORTS_REPO_PATH=/path/to/fadacai-reports  # private repo local clone
 
 | 規則狀態 | 讀法 |
 |---|---|
-| 命中 ≥2、失效 0 | **已驗證** → 遵循；要反對需硬證據 |
-| 命中 0 / 失效 0、且建立 >60 天 | **未驗證假設** → 可質疑；引用時標「該規則尚未被實測」，並主動設計檢核 |
+| 失效 0、巧合 ≤5%（獨立命中 ≥5） | **已驗證** → 遵循；要反對需硬證據 |
+| 失效 0、巧合 5–25%（獨立命中 2–4） | 🟡 **初步支持** → 遵循，引用時附巧合機率；不得作為反對硬數據的依據 |
+| 命中 ≤1 / 失效 0、且建立 >60 天 | **未驗證假設** → 可質疑；引用時標「該規則尚未被實測」，並主動設計檢核 |
 | 失效 ≥1 | 待覆審 → 引用時**必須**說明已失效幾次 |
 | 失效 ≥2 | 🔴 強制覆審 → **不得作為唯一依據** |
 | 無結構化原始案例 | ⚠️ **不可驗證** → 降為「偏好」，不是「規則」 |
 
+命中只算建立日後的獨立事件（原始案例不計），每筆案例附 `[up]/[down]` regime 標籤；巧合欄由 `tools/rule_stats.py ledger-audit` 維護（`--check` 每日抓漏）。細則 `feedback/skill-vs-luck.md`。
+
 **兩條鐵則：**
-1. **分數決定，不是模型決定。** 若你（或更新的模型）不同意一條命中 ≥2 的規則 → 你輸，除非你有新的硬數據。不同意一條 0 命中放 >60 天的規則 → 你贏得推定。**規則存廢由實測命中率裁決，不由「哪個模型說的」裁決。** 否則每次模型換代就把累積實證清零，跟「無腦 follow」是同一枚硬幣的反面。
+1. **分數決定，不是模型決定。** 若你（或更新的模型）不同意一條已驗證（巧合 ≤5%）的規則 → 你輸，除非你有新的硬數據。不同意一條 0 命中放 >60 天的規則 → 你贏得推定。**規則存廢由實測命中率裁決，不由「哪個模型說的」裁決。** 否則每次模型換代就把累積實證清零，跟「無腦 follow」是同一枚硬幣的反面。
 2. **要求原始案例可重測，本身就是篩子。** 一條規則若無法指出「哪些標的、哪一天、當時主張什麼」，它是意見不是規則，按上表降級。
 
 （2026-07-25 建立時：10 條規則有 6 條屬「未驗證假設」，包含治了 66 次判定的 `weak-signal-root-cause.md` 門檻。誠實標示會讓 briefing 語氣變得比較不確定 —— 那是刻意的：**讓依據的強度可見，而不是所有結論聽起來一樣有信心。**）
@@ -248,10 +253,12 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - `✅ 今日 journal 已存在` → 略過偵測
 
 ## Investment Style
-- 主軸：AI/半導體、高成長科技（無板塊上限，單一個股 > 10% 才提醒）
+- 主軸：AI/半導體、高成長科技（無板塊上限；**單一個股 >10% = 硬線，強制減至 ≤10%**，2026-09-02 統一語意）
 - 避險：基建、航太、貴金屬、核能（小比例平衡）
 - Strategies: LEAPS (stock replacement, deep ITM delta 0.80-0.88), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated
+- **避險 sleeve 結構性持有（R25，2026-09-04，`feedback/hedge-sleeve.md`）**：GLD 3% + XLE 3%（≤10%）被動 ETF，`roster.json passive_sleeve`，**不計 18 檔**、不套動能/R8/R23、不因落後汰；金融 ETF 不算避險；「VIX ≥25 才建 sleeve」已廢止
+- **閒置現金停泊（R24，2026-09-04，`feedback/cash-parking.md`）**：Firstrade 現金不計息 → `閒置 = 現金 − 在掛買單 − 30 日部署需求 − 3% 緩衝` > $10k 或 >4% 時當次掛 **SGOV** GTC 買至 ≤ $5k；動用前一交易日賣（T+1）。SGOV/BIL 視同現金（`roster.json cash_equivalents`，guard 略過、不佔 18 檔、不進 α 計分；飛輪滯留檢查仍算現金）。不得用 XLF/XLE 等板塊 ETF 停泊
 
 ### 執行底層邏輯：Portfolio as a Business（強制濾鏡）
 任何 Verdict / Action / 倉位建議都先過這套濾鏡（源 `research/新手開局.md`，操作規範 `feedback/realized-pnl-business-model.md`，Step 0a 已含必讀）：
@@ -283,7 +290,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - `mcp__yfinance-advanced__*` — real-time quotes, options chains, financials, news, recommendations (primary)
 - `mcp__sec-edgar-mcp__*` — SEC filings, XBRL financials, insider trading (Form 4), 8-K events, segment data
 - `mcp__fmp-mcp__*` — stock peers, market movers, company profiles (free tier; most endpoints need paid plan)
-- `mcp__technical-mcp__*` / `mcp__polymarket-mcp__*` / `mcp__eodhd-mcp__*` — 工具清單與參數由各 server instructions 每 session 自動注入，此處只記 server 端沒有的實戰 caveat：
+- `mcp__technical__*` / `mcp__polymarket-mcp__*` / `mcp__eodhd-mcp__*` — 工具清單與參數由各 server instructions 每 session 自動注入，此處只記 server 端沒有的實戰 caveat：
   - eodhd 改 server.py 後需重啟 session 才載入新工具
   - `get_fundamentals_snapshot` = 402-gated fmp ratios/PT 的免費層替代；`pe_ratio=0.0/peg=0.0` → 丟該錨
   - `get_earnings_history` = probability-checker Step 1d 首選；⚠️ 低 EPS 基期股 avg_surprise 不可靠（AMD +152% artifact — 用 beat 次數不用 avg%），與本地 earnings-history.json cache 交叉

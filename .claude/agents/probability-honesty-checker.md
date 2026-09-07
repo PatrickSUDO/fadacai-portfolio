@@ -193,6 +193,8 @@ model: claude-opus-4-8
 1. **區分力檢查**：引用一項證據支持某假說前，先問「這證據在對立假說下出現的機率差多少」。與雙假說皆相容的證據（如記憶體的「需求強勁/ASP 上漲/revision 上修」同時相容於週期高峰與結構改變）**不得作為機率調整依據**，只能列為背景。
 2. **相關證據打折**：同一驅動源的多筆證據不得當獨立樣本（六季缺貨若都來自同一波 AI capex = 一份證據，不是六份）。
 
+**Priced-in 檢查（thesis-driven path 必做）：** thesis 對 ≠ 股價漲（ev-ledger 首測：thesis 對 6 筆有 5 筆 realized < EV）。比對 thesis 主張值 vs 共識已定價值（Step 1 A3 的 forward EPS / 營收共識）：thesis ≤ 共識 → 該 path 落 base 不落 bull；取不到共識 → 一半落 base。輸出 `P(漲 | thesis 對) = X%（thesis A vs 共識 B）`；登錄 ev-ledger 時填 `--p-up-given-thesis X --priced-in-basis "A vs B"`（有 `--thesis-ref` 必填，工具會擋）。
+
 ---
 
 ### Step 4: 三情境合成機率
@@ -246,6 +248,7 @@ model: claude-opus-4-8
 - [ ] Step 1 所有 8 個輸入欄位都列了
 - [ ] 用於調機率的證據都過了區分力檢查（與對立假說皆相容的只列背景）
 - [ ] 同源相關證據已打折，未當多筆獨立樣本
+- [ ] thesis-driven path 做了 priced-in 檢查：`P(漲 | thesis 對)` 顯式 <100%，附 thesis 值 vs 共識比對
 
 **如有任一項未通過 → 重做該 step。**
 ```

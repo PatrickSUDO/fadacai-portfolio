@@ -160,6 +160,7 @@ python3 tools/ev_ledger.py resolve-due && python3 tools/ev_ledger.py stats
 - **n<30 的分組只記錄方向，不改規則**；相關樣本（同跨一段行情的多筆）算一筆證據，不按筆數計
 - 系統性偏差確立（如「30-60d 一致過度樂觀」連兩期同向）→ 修正對象是 **probability-honesty-checker 的形狀規則表 / 各 skill prompt**，寫入 `RULES-LEDGER` 帶命中率追蹤 — **不建 ML 模型**（n>150 獨立已解決樣本前不重評，見 CLAUDE.md）
 - Goodhart 警戒：校準變好但分布變窄（永遠給 hedged 分布）= 假改善，對照分布寬度一起看
+- `stats` 的四項——獨立 n、Brier skill score（>0 才是技能）、`in_range`（分布外 = 漏分支非運氣）、thesis × 定價 2×2（「對但沒用」= priced-in 候選）——原樣抄進報告 §4，`review_lint.py` 會查
 
 **4a. A4 高估旗標（影子模式，Phase 1 只記錄不阻擋）**
 
@@ -225,13 +226,13 @@ python3 tools/source_credit.py tiers --dry-run
 
 ## Step 5 — 更新規則命中率帳本
 
-編輯 `feedback/RULES-LEDGER.md`：
+編輯 `feedback/RULES-LEDGER.md`（判準 `feedback/skill-vs-luck.md`）：
 
-1. 本期每條被觸發或被繞過的規則，更新命中/失效欄
-2. 計分**必附證據**（日期＋標的＋α 或實際數字），不接受印象式記帳
-3. **失效 ≥2 次 → 狀態改 🔴 強制覆審**
-4. 本期新發現的可測假設 → 加進「待建立的對照追蹤」表
-5. 新寫入 `feedback/*.md` 的規則，同時在帳本登錄一列
+1. 更新命中/失效：只算建立日後的獨立事件（原始案例不計、同批算 1）；每筆附證據 + `[up]/[down]`（`python3 tools/rule_stats.py regime --date <日> --bench SMH|SPY`）
+2. `python3 tools/rule_stats.py ledger-audit --write` → 狀態欄照輸出改；再跑 `--check` 必須 exit 0
+3. 結案分類：分布外 = 模型錯；證偽條件觸發未動 = 決策錯；thesis 沒兌現但賺 = 運氣（不計命中）
+4. 新規則 → 登錄一列；新假設 → 對照追蹤表
+5. R26：報 Brier skill score（獨立 n）與 `holding-alpha` 對 SMH 走向，不裁決
 
 ## Step 5.5 — 注意力預算稽核（每期必跑，2026-07-30 起）
 
@@ -243,6 +244,8 @@ python3 tools/source_credit.py tiers --dry-run
 2. **L1/L2 板凳除名**（plan.md）：L2 名字 90 天無 gate 觸發且 revision 靜止/轉負 → 除名（一句理由）；L1 觸發價失效 >60 天 → 降 L2 或除名；已進場者移出板凳。**除名 ≠ 永久淘汰**（質地理由才可判永久淘汰，per `exit-reentry-discipline.md` 分層鐵則）
 3. **價格警報覆核**：`price_alerts.py list` → 觸發多次無人行動 / 條件已過時（財報已過、thesis 已結案）→ remove
 4. **一次性清單**：research/ 下的行動清單（抄底清單類）過期 → 移 `research/archive/`，並拔掉 skill 引用
+5. **守門工具 + roster 一致性（2026-09-02 起）**：跑 `python3 tools/position_guard.py --sync-alerts --render-plan`，缺口全數處理（桶別缺口 → 更新 `research/roster.json`；已出場標的自 roster 移除；R8 GTC 缺口 → 掛單；R23 旗標 → 執行/resolve）。同時掃 R23 計分：本期每筆 `resolve-flag --action trimmed` 的 R23 旗標，+30 天價 vs 減碼價 → 命中/失效寫入 RULES-LEDGER R23。
+6. **規則本身**（用戶 2026-08-29 提議，首次大裁決後生效）：連兩期零觸發零資訊量的規則 → 標「歸檔候選」；建立滿 60 天仍 `—` 的規則 → 轉「未驗證假設」
 
 輸出：`🧹 本期清理：thesis −N / 板凳 −N / 警報 −N`（零清理也要列，證明有跑）。
 
@@ -273,10 +276,11 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 [A4 旗標命中率表 + 是否建議升閘門]
 [thesis hit_rate vs pnl_hit_rate + orphan 處理結果]
 [來源信用帳 tier 表 + 是否達 R21 升級門檻]
+[EV 校準：獨立 n / Brier skill score / in_range / 2×2；R26 走向]
 
 ## 5. 規則計分變動
-[本期哪幾條 +命中 / +失效，附證據]
-[🔴 強制覆審清單]
+[本期哪幾條 +命中 / +失效，附證據與 [up]/[down]；無計分寫「本期無計分」]
+[ledger-audit 結果 + 🔴 強制覆審清單]
 
 ## 6. 本期結論：該改哪一條規則
 **規則：** [具體到檔名與條號]
@@ -288,8 +292,9 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 
 ## 收尾
 
-- 更新 `research/last-trade-review.txt` 為今日日期（briefing 讀它算到期提醒）
-- 若改動了任何 `.claude/skills/` 或 CLAUDE.md → `python3 tools/sync_agents_skills.py`
+1. 更新 `research/last-trade-review.txt` 為今日日期（briefing 讀它算到期提醒）
+2. `python3 tools/review_lint.py briefing-out/trade-review-YYYY-MM-DD.md` **必 exit 0**（缺段 / 結論 >2 條 / 收尾沒做都會擋；擋了就補，不改 lint。寫入報告時 PostToolUse hook 會自動先跑一次，這裡再跑是確認 last-trade-review 已更新）
+3. 若改動了任何 `.claude/skills/` 或 CLAUDE.md → `python3 tools/sync_agents_skills.py`
 
 ## 已知限制（每期都要讀，避免過度推論）
 
