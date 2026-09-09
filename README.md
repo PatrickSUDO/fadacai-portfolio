@@ -16,7 +16,9 @@
 
 ## 架構
 
-![架構總覽](docs/architecture.svg)
+[![架構總覽](docs/architecture.svg)](docs/architecture.svg)
+
+> 點圖可看放大版（GitHub 會開圖片檢視器，可縮放）；完整頁面版見下方「架構」小節連結。
 
 ---
 
