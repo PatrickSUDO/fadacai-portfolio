@@ -16,9 +16,9 @@
 
 ## 架構
 
-[![架構總覽](docs/architecture.svg)](docs/architecture.svg)
+[![架構總覽](docs/architecture.svg)](https://raw.githubusercontent.com/PatrickSUDO/fadacai-portfolio/main/docs/architecture.svg)
 
-> 點圖可看放大版（GitHub 會開圖片檢視器，可縮放）；完整頁面版見下方「架構」小節連結。
+> 點圖開原始 SVG（向量圖，瀏覽器可任意縮放/Ctrl+捲動放大），比 GitHub 檔案預覽框大很多。
 
 ---
 
