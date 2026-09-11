@@ -75,9 +75,10 @@ model: claude-opus-4-8
 - Leading 板塊曝險: [list, 加總 X%]
 - Lagging 板塊曝險: [list, 加總 X%]
 
-### 1g. Sentiment 健康度（持倉檢查）
+### 1g. Sentiment 健康度（持倉檢查）— **display-only，不進機率（2026-09-11 起）**
 - 7d avg > 0: [X] 檔 / 30d avg > 0: [X] 檔
 - 急降警示（7d - 30d < -0.15）: [list]
+- **紀律：列出即可，Step 2/3 不得因 1g 上調或下調任何機率。** 影子測試（`tools/sentiment_shadow.py`，2026-09-11，33 天/26 檔）：EODHD polarity 55% 讀數 >0.90（飽和）、個股內 rank-rho 中位數 −0.03、22 檔僅 10 檔為正 → 無擇時訊號；池化的 −0.17 是橫斷面組成效應。待 /trade-review 累滿 ≥90 天重測且個股內 |rho| 中位數 ≥0.15 才可恢復為輸入。缺 1g 資料不阻擋計算。
 
 ### 1h. Thesis 健康度
 **資料來源（主 skill 必須帶入，不可手寫「感覺還好」）：**

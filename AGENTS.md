@@ -15,6 +15,8 @@ This is an investment research and portfolio management workspace. The user acti
    - 例：`/briefing telegram --send`、`/briefing full --send`
    - launchd 每個交易日 CEST 17:00 自動執行 `/briefing telegram --send`（週五加 `--codex`）；runner 固定 `--model sonnet`（`BRIEFING_MODEL` 覆寫）、重試 5 次（2026-08-05 五修：API mid-stream 斷流連殺對策）。三次以上全滅 → 互動 session 手動 `/briefing telegram --send` 補發（dedup 防重複）
    - Setup 文件：`docs/briefing-auto-send.md`
+   - **今日待辦自動執行（T6.5，2026-09-08 用戶指定）**：`/briefing telegram` 產出的「今日待辦」中，屬於機械式清理/停損、SGOV 現金停泊、或 thesis 已確認的新倉/加碼，且觸發條件量化已達成、單筆估計金額 ≤$3,000、未被任何硬線（>10%集中/財報窗/R14鎖/檔數上限/`position_guard`缺口）擋下、且無 T5.5 跨日反轉旗標者，**直接下單，不再等用戶確認**——因為用戶可能不在電腦前。Telegram 訊息內以 `✅ 已自動執行` 標註（含單號），不符合條件的仍列 `🎯` 待辦。選擇權單不適用，照舊走 `tools/tg_send.py` 手動處理。細則見 `.claude/skills/briefing/SKILL.md` Telegram Tier § T6.5；延伸自既有互動場景「警報先做再報」規則到無人值守場景
+   - **防自圓其說雙保險（2026-09-08，同上用戶指定，不用 Codex 版）**：① **T5.5 跨日一致性檢查**——每日先讀前一交易日 telegram.txt，同一 ticker 的方向性判斷若無新數據支持卻反轉/升降級，標旗且對 T6.5 自動下單構成硬性攔阻；② **T6.5 執行後強制留痕**——每筆自動下單同時登錄一筆到期會被機械驗收的 `thesis_ledger` 條目（含具體證偽點），到期由既有 Step 0.7 `due` 機制自動驗收，不靠事後記憶
 2. `/portfolio-review` — full deep report with live data via MCP
 3. `/stock-analysis TICKER` — individual stock deep dive
 4. `/options-strategy TICKER STRATEGY` — options calculation (supports multi-ticker comparison)
@@ -94,6 +96,9 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 
 ### ⚠️ 旗標紀律（修 2026-07-25 量測出的最大回撤漏口）
 凡在 briefing / journal 寫下 **⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判** 的部位，**同一次必須 `trade_ledger.py flag`**（附 `--deadline`）。**deadline ≤ 15 個交易日，或必須同時掛價格觸發線（2026-09-02 R11 修訂：MYRG 8/27 旗標排兩個月 deadline 期間續跌是本修訂案例）。**延後必須走 `defer`（**會計次**），**第 3 次自動 forced → 減碼 1/3 或明文 `resolve-flag --action withdrawn` 附理由**。
+
+**R27 認列桶狀態表述（2026-09-11，MYRG 案）：** 認列桶部位在任何輸出裡**不得單獨以「thesis 完好 / intact / 未破」作為狀態**——認列桶的決策依據是機械線（R8 梯級、R23 自峰回撤、收盤線），thesis 只能附註。必須寫「距線 ±X%、累計減碼 vs 級距、旗標 deadline」。MYRG 自峰 −43% 全程無減碼、journal 反覆「thesis 完好」（判斷對、卻成了不動的理由）即此漏口。
+**EODHD 情緒 display-only（2026-09-11，H7）：** `sentiment_trend` / 新聞 polarity 不進機率分布、不進任何 gate、不單獨觸發加減碼；影子測試 `tools/sentiment_shadow.py`（33 天：55% 讀數飽和 >0.90、個股內無擇時訊號），/trade-review 每期重跑。
 
 **Why：** 旗標只活在散文裡時，每天被當新的重述而永不執行。TSLA 7/01 標降桶候選、延後 3 次（其中一次用「改收租」取代決定）→ **−52.7% / −$6,399**；ON 6/26 明文「勿再向下加碼」→ 7/06 仍加碼 32 股。兩者的 thesis-ledger `history` 都是 **0 筆** —— 沒有任何東西在數延後。自警示起算累積代價 **−$6,333**，是全書最貴的單一機制。`flags` 會顯示 `post_flag_fills`（警示後才加的碼）與 `total_cost_since_flag`（該數字逐期往下走才算修好）。
 

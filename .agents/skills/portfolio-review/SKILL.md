@@ -462,7 +462,7 @@ python3 tools/pmcc_scan.py --json briefing-out/cache/pmcc-scan.json
          格式：「N/8 beat, +X.X% avg」。avg_surprise_unreliable=true → 只用 beat N/8，avg% 標 (unreliable-low-base)；cache 缺 → 標 (unavailable)]
      1e. 集中度: top 1 / top 5 / 最大板塊（從 Section B 板塊分配）
      1f. 板塊輪動曝險: [從 sector_rotation + Section B 計算 leading/lagging 持倉 %]
-     1g. Sentiment: 7d/30d 對比（從 Section G5）
+     1g. Sentiment: 7d/30d 對比（從 Section G5）— display-only，agent 不得據此調機率（2026-09-11）
      1h. Thesis 健康度: 各持倉 fundamental 是否 intact（從 Section G3 / G4）
      1i. Macro state: [從 briefing-out/cache/macro-snapshot.json 完整貼入]
          - fed_funds + 30d change

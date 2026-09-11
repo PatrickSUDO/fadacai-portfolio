@@ -42,7 +42,7 @@ model: claude-opus-4-8
 - 1d. Binary catalysts table（catalyst / 日期 / 影響持倉 % / base rate）
 - 1e. 集中度（top 1、top 5、最大板塊）
 - 1f. 板塊輪動曝險（leading 持倉 % / lagging 持倉 %）
-- 1g. Sentiment 健康度
+- 1g. Sentiment 健康度（display-only，不進機率；2026-09-11 影子測試無擇時訊號）
 - 1h. Thesis 健康度（從 plan.md + 近期新聞）
 - 1i. Macro state（從 macro-snapshot.json：fed_funds + 30d change / 2s10s + regime / hy_oas + regime + pct_1y / vix + regime / cpi_yoy + trend / regime_tag；agent 缺 1i 會回 INVALID INPUT）
 

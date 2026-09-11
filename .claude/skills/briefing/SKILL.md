@@ -519,6 +519,7 @@ quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
 - **🐦 來源訊號**：Step 0.68 cache 中 tier ∈ {trusted, core} 且 `has_number == true` 且貼文 48h 內 → `🐦 {ticker} {source_id}@{tier}：{claim 摘要}（"{raw_quote 節錄}"）`；每檔最多 1 行、全 Key Alerts 最多 3 行；Probation 不得出現於此（僅 §9.6）；display-only，不改變任何建議
 
 ### 7. 計畫進度 Quick
+- **認列桶部位狀態一律以機械線表述**（距 R23 線 / 收盤線 / 下一梯級 ±X%、累計減碼 vs 級距、旗標 deadline），不得只寫「thesis 完好」；同 Telegram 格式規則（2026-09-11）
 - 近期待辦狀態（✅🔄⏳）
 - 今日是否有計畫中的觸發條件被滿足（RSI 破 30、MACD 金叉等）
 - 即將到期的選擇權 vs 計畫中的關鍵日期
@@ -548,7 +549,7 @@ Agent(
       格式：「N/8 beat, +X.X% avg」。⚠️ 低基期股（AMD/CRDO/ONTO 等 avg_surprise_unreliable=true）→ 只用 beat N/8，avg% 標 (unreliable-low-base) 不進 Step 3。cache 缺 → (unavailable)]
   1e. 集中度: top 1 / top 5 / 最大板塊（從 Section 1 倉位 + B 板塊配置）
   1f. 板塊輪動曝險: leading 持倉 % / lagging 持倉 %（從 sector rotation）
-  1g. Sentiment: 7d/30d 對比（如 quick tier 無 sentiment 數據則標 N/A）
+  1g. Sentiment: 7d/30d 對比（如 quick tier 無 sentiment 數據則標 N/A）— **display-only，agent 不得據此調機率（2026-09-11 影子測試無擇時訊號，見 tools/sentiment_shadow.py）**
   1h. Thesis 健康度: 持倉 fundamental 是否 intact
   1i. Macro state: [從 Step 0.5 載入的 macro-snapshot.json 完整貼入：
       fed_funds + 30d change / yield_2s10s + regime / hy_oas + regime + pct_1y /
@@ -959,10 +960,22 @@ Agent(subagent_type="data-collector"):
 **T5. Alerts（閾值觸發）**
 根據 T1 + T2 + Step 0b 持倉數據生成 alerts（無則跳過整個 section）：
 - Earnings window ±48h 的 ticker → 標記「技術訊號暫停」
-- Sentiment 急降（T2 注意類）→ 標記「情緒惡化」
+- Sentiment 急降（T2 注意類）→ 標記「🟣 情緒惡化（影子，不阻擋）」——**EODHD 情緒自 2026-09-11 起為 display-only**：不進機率、不進任何 gate、不單獨觸發加減碼（影子測試 `tools/sentiment_shadow.py`：55% 讀數飽和 >0.90、個股內無擇時訊號）；/trade-review 每期重跑，≥90 天且個股內 |rho| 中位數 ≥0.15 才可升級
 - 任一持倉距 52w 低點 < 5%（需 `get_stock_info`）→ 標記「逼近 52w 低」
 - plan.md 中有明確 stop-loss 且接近觸發的 ticker
 - Step 0.55 🚦 旗標（credit `widening_fast` / VIX 期限 `inverted` / 寬度 `divergence_flag` / 台股月營收 `turned_negative` / `book_decel`）→ 每項 1 行前綴 🚦（無則不出，display-only）
+
+**T5.5 跨日一致性檢查（2026-09-08 新增，防自圓其說）**
+
+讀前一交易日 `briefing-out/YYYY-MM-DD-telegram.txt`（找不到 → 跳過本步，不阻擋）。對照今日 Key Alerts / 今日待辦中出現的每個 ticker：
+
+- 昨日文字中該 ticker 有方向性判斷（旗標、待辦、Alert 裡的加碼/減碼/降桶候選/勿再加碼等）
+- 且今日方向與昨日相反或明顯升降級（例：昨日「降桶候選」今日變「加碼」；昨日「勿再向下加碼」今日卻要買進）
+- 且今日看不到支持轉向的新依據（無 thesis resolve、無新財報、無 plan.md/roster.json 改動、無新價格觸發）
+
+→ 標記 `⚠️ 跨日反轉未見新數據：{ticker} 昨日「{昨日結論摘要}」→ 今日「{今日結論摘要}」，未見新催化`，列入 Key Alerts 最前面。
+
+**此標記對 T6.5 是硬性攔阻**：命中者當日一律不自動執行，即使符合 T6.5 其餘條件，也強制降回 🎯 待辦，附註「跨日反轉待人工複核」。
 
 **T6. 今日 / 明日待辦**
 從 `plan.md` 的策略佇列 + 觀察清單（⏳ 待評估）+ Step 0e 第一性分析，生成：
@@ -970,6 +983,33 @@ Agent(subagent_type="data-collector"):
 - **明日待辦**：即將到來的 catalyst（財報 next day、FOMC、plan.md 明天到期的條件）（最多 3 條）
 - 過濾純 HOLD-only、無 actionable 的項目
 - 每條格式：`• {action}（{trigger / catalyst}）`
+
+**T6.5 自動執行（今日待辦 → 直接下單，2026-09-08 用戶指定）**
+
+T6 產生的**今日待辦**（明日待辦不適用，只是預告）逐條檢查，**五條全過**才直接下單、不再列為待用戶確認的項目：
+
+1. **類別**屬於三類之一：機械式清理/停損（死單重新定價或撤單、R23 峰值回撤線觸發減碼、既定價格規則觸發的減碼）／現金停泊（R24 SGOV GTC 買單）／新倉或加碼（thesis 已確認、plan.md 候補表或 roster.json 已寫明目標股數與價位）
+2. **觸發條件是量化且已達成的**——T6 本身已要求「有明確觸發條件且已接近或已達」；若條件仍是質性判斷（例如「走強確認後再議」而無具體價位/日期），視為未達成，維持列 🎯 待辦不下單
+3. **單筆估計金額 ≤ $3,000**（股數 × 現價或限價）；超過 → 改列 🎯 待辦附建議單，等用戶確認
+4. **未被任何硬線/守門攔下**：`position_guard.py` exit 2 缺口清單中的項目、會讓單一持倉 >10%、財報 ±48h 禁令、R14 30 天鎖、檔數上限（>18）——命中任一律不自動下單，維持列 🎯 待辦並註明被什麼擋
+5. **無 T5.5 跨日反轉旗標**：同一 ticker/決定若被 T5.5 標記 `⚠️ 跨日反轉未見新數據` → 不論前四條是否過關，一律不自動下單
+
+五條全過 → 用 `mcp__firstrade-server__place_stock_order` 直接下單（股票單，含 GTC）。**選擇權單不適用本條**——依 CLAUDE.md 既有限制，選擇權 GTC 掛單/複雜組合單仍走 `tools/tg_send.py` 推送用戶手動處理。
+
+下單後：
+- 立即補跑 `python3 tools/trade_ledger.py snapshot-orders`，讓新單號進登記表（origin 歸因用）
+- 該待辦對應既有旗標（`research/position-flags.json`）→ 同一次 `resolve-flag --action <動作>` 或視情況更新
+- 該條目在 T6 輸出改標記 `✅ 已自動執行：{action}（單號 {order_id}，{價}×{股數}）`，取代原本的 `🎯`；同步進 T8a/T8b 兩層輸出
+- 下單 API 失敗/exception → 不重試，改列 `⚠️ 自動下單失敗：{action}（錯誤：{msg}）→ 待人工處理`，維持在待辦區
+- **強制留痕可被未來驗收的判斷依據**（2026-09-08 新增，防「講完就忘、沒人記得對不對」）：同一次登錄一筆到期會被機械驗收的紀錄，寫清楚「如果這次自動執行判斷錯了，會是因為什麼」：
+  ```
+  python3 tools/thesis_ledger.py add --ticker <T> --slug auto-exec-YYYYMMDD-<kebab> \
+    --thesis "<T6.5 判定的觸發條件與依據，例：CLS 走強確認滿足 plan.md 補倉條件>" \
+    --falsification "<1-2 個會證明這次自動執行是錯的具體訊號，例：補倉後 10 個交易日內跌破起手成本>" \
+    --trigger-type date --trigger-date <今日 + 10 個交易日> \
+    --source briefing --ev "auto-exec T6.5: {action}, 單號 {order_id}"
+  ```
+  到期由既有 Step 0.7 `thesis_ledger.py due` 機制自動撈出驗收，不需額外工具；`exit code 2`（slug 碰撞）→ 改用當日日期變體的 slug，不可略過不登錄
 
 **T7. Quick Take（第一性）**
 一小段人話（3-5 句，per `feedback/briefing-voice-style.md`），情緒/敘事走向。不講 RSI/MACD。內容不變：
@@ -1029,7 +1069,8 @@ Agent(subagent_type="data-collector"):
 ...
 
 ## 今日待辦
-...
+- {✅ 已自動執行：action（單號、價×股數）或 🎯 待辦：action（觸發條件）}
+- {⚠️ 自動下單失敗則附錯誤訊息}
 
 ## 明日待辦
 ...
@@ -1085,7 +1126,9 @@ Agent(subagent_type="data-collector"):
   （無 alert 則略過整個 section）
 
 🎯 今日待辦
+  ✅ {action}（單號 {order_id}，{價}×{股數}，已自動執行）
   • {action}（{trigger}）
+  ⚠️ {自動下單失敗的項目，附錯誤原因}
 
 📋 明日待辦
   • {action}（{catalyst}）
@@ -1101,7 +1144,9 @@ Agent(subagent_type="data-collector"):
 - **口吻（2026-07-28 起）**：每區 1-3 句**完整句子**取代電報碎片，同區數據點全保留（`feedback/briefing-voice-style.md` 內容不變定律 + before/after 範例）；先講結論、數字帶解讀
 - **增量優先（2026-08-31 用戶指定，voice 檔鐵則 4）**：產出前先讀前一交易日 `briefing-out/YYYY-MM-DD-telegram.txt` 比對——跨日重複且無變動的項目（同旗標重述/同觸發帶等待/同 thesis 完好）**不再展開**，收進一行 `⏸ 無變化：X / Y / Z` 或省略；重複但有變動只寫 delta。例外：🔴 警示、今明 deadline 待辦、R15 熔斷狀態仍須一行。讀者昨天讀過的句子今天不該再讀到
 - 數字：K（千）、M（百萬）、% 縮寫
+- **認列桶部位禁止單獨寫「thesis 完好 / intact / 未破」作為狀態（2026-09-11，MYRG 案）**：認列桶的決策依據是機械線不是 thesis。凡提到認列桶部位，必須寫成「距 {R23 線 / $X 收盤線 / 下一梯級} {±X%}、累計減碼 {N}/{級距應達}、旗標 {id} deadline {date}」；thesis 狀態只能作為附註。信念桶不受此限。MYRG 自峰 −43% 全程無減碼、journal 反覆記「thesis 完好」即此漏口（8/31 重建：R1 判輪動 ≥5 次皆對，但 +30% 級距單從未掛、下線 8/27 才開）
 - 無 catalyst 或無 alert 的 section 完整省略（不要顯示空 section）
+- 今日待辦區的 `✅ 已自動執行` 是真的已下單（非建議），單號可對照 `get_orders`；`⚠️ 自動下單失敗` 才需用戶處理，其餘 `🎯` 是被 T6.5 判定不符自動執行條件、仍待用戶決定
 - 🚦 先行指標區儀表行維持緊湊 1 行（數據面板不句子化），觸發說明行用人話；`↳ read-through` 全訊息至多 1 行
 - 🐦 來源訊號只列 Trusted+（Probation 一律不出現），最多 3 則，不得作為單獨判斷依據（display-only）
 - 目標長度 **≤3000 字元**（2026-07-28 用戶放寬，換可讀性），硬上限 4096（超過由 send_briefing 自動分則）
