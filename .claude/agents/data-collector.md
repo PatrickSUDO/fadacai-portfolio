@@ -1,7 +1,7 @@
 ---
 name: data-collector
 description: Pure MCP and web data fetching for portfolio skills. Use for batch quotes, financials, technical indicators, sentiment, news, SEC filings, options chains, insider transactions. NO synthesis, NO thesis, NO Verdict — return structured raw results only.
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Data Collector Agent

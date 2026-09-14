@@ -2,7 +2,7 @@
 name: portfolio-review
 description: Fetch live brokerage positions and generate a comprehensive portfolio report with sector allocation, P&L analysis, options summary, and risk assessment. Use when user asks for portfolio review.
 user_invocable: true
-model: claude-opus-4-8
+model: opus
 ---
 
 # Portfolio Review

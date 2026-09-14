@@ -2,7 +2,7 @@
 name: trade-review
 description: 每兩週交易檢討：歸因每筆成交是「系統決策」還是「你自己決策」、算基準校正 α、驗影子訊號、更新規則命中率帳本，輸出「本期該改哪一條規則」。Usage - /trade-review [2w|4w|since YYYY-MM-DD]
 user_invocable: true
-model: claude-opus-4-8
+model: opus
 ---
 
 # Trade Review — 兩週交易檢討

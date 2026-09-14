@@ -2,7 +2,7 @@
 name: options-strategy
 description: Calculate and compare options strategies (sell put, covered call, LEAPS, naked call) for a given ticker. Usage - /options-strategy TICKER STRATEGY
 user_invocable: true
-model: claude-opus-4-8
+model: opus
 ---
 
 # Options Strategy Calculator

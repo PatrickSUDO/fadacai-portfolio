@@ -2,7 +2,7 @@
 name: trade-journal
 description: Record trades, track execution vs plan, and review trade history. Usage - /trade-journal [action] where action is log, review, or summary.
 user_invocable: true
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Trade Journal

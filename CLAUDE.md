@@ -365,6 +365,8 @@ Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + age
 | data-collector subagent | **Sonnet 4.6** | 純 MCP 抓資料，反幻覺鐵則 |
 | probability-honesty-checker subagent | **Opus 4.8** | 機率紀律執法者，用旗艦 |
 
+**模型別名與動態升級（2026-09-14）：** skill / agent frontmatter 一律用別名 `opus` / `sonnet`（舊的 `claude-opus-4-8` / `claude-sonnet-4-6` ID 已隨 Claude 5 家族失效）。launchd telegram briefing 預設 `sonnet`，但 `briefing_runner.sh` 在「有事的日子」自動升 `opus`：auto-exec plan 非空 / position_guard 有缺口 / forced 或逾期旗標——因為機械判定已移到 code，Sonnet 剩下要做的是口吻與少量判斷；真正需要推理的日子才花 Opus。`BRIEFING_MODEL` 環境變數顯式指定時不覆寫。Fable 5.1 只用在互動的 /trade-review、/portfolio-review、規則修訂。
+
 **長 context：** session > 100k 時先 `/compact`，再繼續執行。換主題先 `/clear`。
 
 **手動切換：** skill frontmatter `model:` 已聲明；若 harness 未自動套用，用 `/model opus` / `/model sonnet` 切換後再呼叫。

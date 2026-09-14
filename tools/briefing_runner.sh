@@ -36,6 +36,7 @@ SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
 # 5 次 headless run 全被 API mid-stream 斷流殺掉，每次跑 55-72 分鐘 —— 未指定
 # 模型時繼承大模型，run 時間拉長 = 長 stream 曝險最大化。Sonnet 縮短單次時間
 # 兼回歸文件規範；可用 BRIEFING_MODEL 覆寫。
+BRIEFING_MODEL_ENV="${BRIEFING_MODEL:-}"     # 使用者顯式指定 → 不動態升級
 BRIEFING_MODEL="${BRIEFING_MODEL:-sonnet}"
 
 # 2026-09-02：launchd 加了 21:00 CEST 備援窗（17:00 因 Mac 睡眠漏跑時補）。若今天已成功推送則直接退出，
@@ -199,8 +200,28 @@ python3 "$SCRIPT_DIR/archive_cache.py" \
 # Must cd to REPO_ROOT so Claude Code finds .claude/skills/ and project settings
 cd "$REPO_ROOT"
 
+# ── 動態選模型（2026-09-14）：平常日 Sonnet 夠（機械判定已在 code）；「有事的日子」升 Opus ──
+#    有事 = auto-exec plan 非空 / guard 有缺口 / forced 或逾期旗標。使用者以 BRIEFING_MODEL 顯式指定時不覆寫。
+if [[ -z "$BRIEFING_MODEL_ENV" ]]; then
+  ESC=""
+  python3 - "$LOG_DIR/cache/auto-exec-plan.json" <<'PY' 2>/dev/null && ESC="auto-exec plan 非空"
+import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("plan") else 1)
+PY
+  python3 - "$REPO_ROOT/research/position-state.json" <<'PY' 2>/dev/null && ESC="${ESC:+$ESC; }guard 缺口"
+import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("gaps") else 1)
+PY
+  python3 "$SCRIPT_DIR/trade_ledger.py" flags 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if (d.get("forced_action_required") or d.get("overdue")) else 1)' 2>/dev/null \
+    && ESC="${ESC:+$ESC; }forced/逾期旗標"
+  if [[ -n "$ESC" ]]; then
+    BRIEFING_MODEL="opus"
+    log "Model escalated to opus: $ESC"
+  else
+    log "Model: sonnet (no escalation triggers)"
+  fi
+fi
+
 PROMPT="/briefing telegram --send $CODEX_FLAG"
-log "Running: claude -p \"$PROMPT\" (cwd: $REPO_ROOT)"
+log "Running: claude -p \"$PROMPT\" --model $BRIEFING_MODEL (cwd: $REPO_ROOT)"
 
 
 attempt=0

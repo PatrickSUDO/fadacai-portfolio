@@ -1,7 +1,7 @@
 ---
 name: probability-honesty-checker
 description: Forces honest first-principles probability distribution + EV calculation. Refuses to return shortcut answers like 30/45/25 or 略偏正. Required by all skills that output Verdict / 機率分布 / EV.
-model: claude-opus-4-8
+model: opus
 ---
 
 # Probability Honesty Checker

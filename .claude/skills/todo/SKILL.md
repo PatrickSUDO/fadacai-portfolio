@@ -2,7 +2,7 @@
 name: todo
 description: "生成下一個交易日的優先行動清單。當用戶問「明天開盤要做什麼」、「今天要操作什麼」、「給我待辦」、「接下來要做什麼」、「有什麼需要處理」等問題時立刻使用此 skill。也適用於盤中（「現在有什麼要做」）和盤後（「今天還有什麼沒做」）場景。不要等用戶說 /todo 才觸發，只要問的是「下一步行動」的問題就應該用。"
 user_invocable: true
-model: claude-sonnet-4-6
+model: sonnet
 ---
 
 # Portfolio Action Todo
