@@ -70,7 +70,7 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 ## Key Files
 - `plan.md` — **狀態版（2026-09-02 重建）**：三條硬線 + 持倉表生成區（`tools/position_guard.py --render-plan` 自動寫入，禁手改）+ 唯一一張候補表 + R19 pair 追蹤。手改只限候補表與硬線，且只在用戶要求時。歷史決策全文 `research/plan-history.md`（凍結）
 - `research/roster.json` — **桶別唯一資料源**（信念/認列/sleeve/樂透）；每檔持倉必須登記，否則 guard 報缺口；改桶別改這裡不改散文
-- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期 → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
+- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期、**C2 R8+R23 合計 30% runner 保底、R16 樂透停損缺口、R24 閒置現金、R28（R23 觸線區/減碼後 30 天禁加碼 `buy_locked`／減碼後跌破成本殘倉須旗標／單名累計虧損 ≥1.5% 帳戶 forced 旗標，2026-09-14 CRDO 案）** → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
 - `journal/` — 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
 - `feedback/RULES-LEDGER.md` — **規則自己的命中率帳本**（失效 ≥2 次 → 強制覆審）；由 `/trade-review` 每兩週更新；巧合欄與一致性檢查 `tools/rule_stats.py ledger-audit [--write|--check]`，產出檢查 `tools/review_lint.py`，判準 `feedback/skill-vs-luck.md`（R26 放棄條件 2028-09-06 裁決）

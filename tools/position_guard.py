@@ -7,6 +7,7 @@
   >10% 單倉硬線 / 檔數上限         財報 ±48h 窗（R9/R18）
   C2  R8+R23 合計 30% runner 保底  C3 R14 窗內 R23 不 arm（2026-09-14）
   R16 樂透桶停損單缺口            R24 閒置現金 > $10k
+  R28 a) R23 觸線區/減碼後 30 天禁加碼  b) 減碼後跌破成本 → 旗標  c) 單名累計虧損 ≥1.5% 帳戶 → forced 旗標
   桶別缺口（roster.json 沒登記的持倉）  旗標一致性（旗標/警報/thesis 三方）
 
 資料源：Firstrade live 持倉（trade_ledger.fetch_positions，失敗退回交易帳 FIFO）、
@@ -53,6 +54,12 @@ EARN_WINDOW_DAYS = 2
 RUNNER_FLOOR_PCT = 30       # C2（2026-09-14）：R8+R23 合計最多賣 70%，30% runner 對兩者合計生效
 IDLE_TRIGGER, IDLE_BUFFER_PCT = 10_000, 0.03   # R24 閒置現金
 STOP_PRICE_TYPES = {"3", "4"}  # Firstrade price_type：3=stop、4=stop-limit（R16 樂透停損單）
+# R28（2026-09-14，CRDO 案）：a) R23 armed 且自峰 ≤ −15% 或 R23 減碼後 30 天內 → 禁向下加碼
+#                             b) R23 減碼過且已跌破成本 → 不享 runner 保底，須開旗標（deadline ≤ 15 交易日）
+#                             c) 認列桶單名累計虧損（已實現+未實現，自建倉）≥ 1.5% 帳戶 → forced 旗標
+R28_BUYLOCK_DD, R28_BUYLOCK_DAYS = -15.0, 30
+R28_FLAG_MAX_CAL_DAYS = 21          # ≈ 15 個交易日
+R28_LOSS_BUDGET_PCT = 1.5
 
 
 def _load_json(p, default):
@@ -129,6 +136,33 @@ def qty_stats_since(fills, sym, since):
         sh = sh + float(f["qty"]) if f["side"] == "BOUGHT" else max(0.0, sh - float(f["qty"]))
         peak = max(peak, sh)
     return peak
+
+
+def realized_since(fills, sym, since):
+    """建倉起算的已實現損益（加權平均成本法；R28c 單名虧損預算的已實現半邊）。"""
+    sh, cost, real = 0.0, 0.0, 0.0
+    for f in fills:
+        if f["symbol"] != sym or (since and f["date"] < since):
+            continue
+        q, p = float(f["qty"]), float(f["price"])
+        if f["side"] == "BOUGHT":
+            sh += q; cost += q * p
+        elif sh > 0:
+            avg = cost / sh
+            q = min(q, sh)
+            real += q * (p - avg); cost -= q * avg; sh -= q
+    return real
+
+
+def buys_after(fills, sym, since_date):
+    return [f for f in fills if f["symbol"] == sym and f["side"] == "BOUGHT" and since_date and f["date"] > since_date]
+
+
+def open_buy_orders(registry, sym):
+    orders = registry.get("orders", registry)
+    return [oid for oid, o in orders.items()
+            if o.get("symbol") == sym and o.get("transaction") == "B" and o.get("sec_type") == 1
+            and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED"))]
 
 
 def open_stop_orders(registry, sym):
@@ -297,6 +331,39 @@ def build_state(*, sync_alerts=False):
                     break
         if bucket == "樂透" and not open_stop_orders(registry, sym):
             gaps.append(f"{sym}: 樂透桶無在掛停損單 → 掛普通停損（R16；成本線，非移動）")
+
+        # ── R28（CRDO 案）──
+        buy_lock = None
+        trim_recent = bool(trim_dt and (today - dt.date.fromisoformat(trim_dt)).days <= R28_BUYLOCK_DAYS)
+        if bucket == "認列" and armed and dd is not None and dd <= R28_BUYLOCK_DD:
+            buy_lock = f"R23 armed 且自峰 {dd:+.0f}% ≤ −15%"
+        elif bucket == "認列" and trim_recent:
+            buy_lock = f"R23 減碼 {trim_dt} 後 30 天內"
+        if buy_lock:
+            bo = open_buy_orders(registry, sym)
+            if bo:
+                gaps.append(f"{sym}: R28a 禁向下加碼（{buy_lock}）但有在掛買單 {bo} → 撤單")
+            recent = buys_after(fills, sym, trim_dt) if trim_recent else []
+            if recent:
+                gaps.append(f"{sym}: R28a 違規——R23 減碼後又買 {sum(float(b['qty']) for b in recent):g} 股（{[b['date'] for b in recent]}）→ journal 標 ⚠️ R28 bypass")
+        realized = realized_since(fills, sym, since)
+        unreal_usd = ((last - cost) * v["qty"]) if (last and cost) else 0.0
+        cum_pnl = realized + unreal_usd
+        loss_budget_hit = bool(bucket == "認列" and total and cum_pnl <= -R28_LOSS_BUDGET_PCT / 100 * total)
+        loser_after_trim = bool(bucket == "認列" and trim_dt and unreal is not None and unreal < 0)
+        if loser_after_trim or loss_budget_hit:
+            why = []
+            if loser_after_trim:
+                why.append(f"R28b R23 已減碼且跌破成本 {unreal:+.0f}%，殘倉不享 runner 保底")
+            if loss_budget_hit:
+                why.append(f"R28c 累計虧損 ${cum_pnl:,.0f}（已實現 {realized:,.0f} + 未實現 {unreal_usd:,.0f}）≥ {R28_LOSS_BUDGET_PCT}% 帳戶")
+            if not fl:
+                gaps.append(f"{sym}: {'；'.join(why)} → 開 forced 旗標（deadline ≤ 15 交易日）：清倉或明文 withdrawn")
+            else:
+                for f in fl:
+                    dl = f.get("deadline")
+                    if dl and (dt.date.fromisoformat(dl) - today).days > R28_FLAG_MAX_CAL_DAYS and not any(a.get("type") == "price_below" for a in al):
+                        gaps.append(f"{sym}: 旗標 {f['id']} deadline {dl} 超過 15 交易日且無價格線（{why[0][:20]}…）→ 縮 deadline 或掛收盤線")
         if armed:
             # 已破的線交給旗標，不要求警報存在（sync 會主動移除）
             want = {f"{sym}-R23-peakdd{p}" for p in R23_LINES if dd is None or dd > -p}
@@ -319,6 +386,8 @@ def build_state(*, sync_alerts=False):
             "open_since": since, "days_held": days, "r14_locked": r14_locked,
             "peak_qty": peak_qty, "cum_sold_pct": round(cum_sold, 1), "sellable_before_floor": int(sellable_left),
             "runner_floor_hit": runner_floor_hit,
+            "buy_locked": buy_lock, "realized_since_open": round(realized, 2), "cum_pnl_usd": round(cum_pnl, 2),
+            "loss_budget_hit": loss_budget_hit, "loser_after_trim": loser_after_trim,
             "peak_close": round(peak, 2) if peak else None, "peak_date": peak_dt,
             "drawdown_from_peak_pct": round(dd, 1) if dd is not None else None,
             "r23_armed": armed, "r23_since": r23_since if armed else None, "r23_state": r23_state,
@@ -422,6 +491,8 @@ def render_table(state):
         fl = ", ".join(r["open_flags"]) or "—"
         earn = f"{r['next_earnings']}{' ⚠️' if r['in_earnings_window'] else ''}" if r["next_earnings"] else "—"
         sold = (f"{r['cum_sold_pct']:.0f}%" + ("🛑" if r.get("runner_floor_hit") else "")) if r["bucket"] == "認列" and r.get("cum_sold_pct") else "—"
+        if r.get("buy_locked"):
+            sold += "🚫買"
         lines.append(f"| {r['symbol']} | {r['bucket'] or '❓'} | {r['qty']:g} | {r['unit_cost']:.2f} | {r['last'] or '—'} | {w} | {u} | {days} | {d} | {r23} | {sold} | {sells} | {fl} | {earn} |")
     if state["gaps"]:
         lines += ["", "**⚠️ 缺口：**"] + [f"- {g}" for g in state["gaps"]]

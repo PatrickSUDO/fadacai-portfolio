@@ -15,6 +15,7 @@ v1 覆蓋（全部是「降風險或零風險」類，T6.5 條件 3 無金額上
 
 五條件在此實作：①類別（上列五類）②量化觸發＝**前一收盤**（R17，盤中價不算）③金額上限只管新增曝險（A–C、E 為減碼/平倉、D 為現金等價，皆免）
 ④硬線：財報 ±48h（A/B/E 不執行；C 選擇權平倉仍執行）、R14 鎖住 R23（C3 裁決）、R8+R23 合計不賣穿 30% runner（C2，guard `sellable_before_floor`）、單一持倉 >10% 不由本工具處理（guard 已報）
+⑦R28a 買方硬線：輸出 `buy_locked`（R23 觸線區 / 減碼後 30 天內的認列桶名字）；T6.5 對這些名字不得下任何買單
 ⑥現金閘（C6）：輸出 `cash_gate`（可用現金 / SGOV 停泊）；可用 < $3k 且有停泊 → 加一張 SGOV 賣單（T+1），T6.5 新曝險買單延一日
 ⑤跨日反轉：讀 briefing-out/cache/crossday-flags.json（crossday_check 若有輸出）→ 命中 ticker 的 A/B 延一日
 
@@ -193,6 +194,9 @@ def main(argv):
         merged[i] = keep
     plan = merged
 
+    # R28a：買方硬線清單（T6.5 條件 4 讀此；guard 已算）
+    buy_locked = {s: p["buy_locked"] for s, p in positions.items() if p.get("buy_locked")}
+
     # C6：T6.5 新增曝險買單的現金可用性（現金停在 SGOV 時要先賣，T+1 才能用）
     parked = float(st.get("parked_cash_equiv") or 0)
     cash_available = cash - pending_buys
@@ -206,7 +210,7 @@ def main(argv):
 
     out = {"asof": today.isoformat(), "close_asof": closes.get("asof"), "mode": "dry-run" if not execute else "execute",
            "execute_unlock": EXECUTE_UNLOCK.isoformat(), "px_note": px_note,
-           "plan": plan, "skipped": skipped, "cash_gate": cash_gate,
+           "plan": plan, "skipped": skipped, "cash_gate": cash_gate, "buy_locked": buy_locked,
            "discipline": "T6.5 只執行本清單；新倉/加碼/選擇權開倉不在此；所有觸發以前一收盤判定（R17）"}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2))
