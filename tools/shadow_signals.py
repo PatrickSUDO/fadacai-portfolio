@@ -172,6 +172,31 @@ def cmd_block(args):
     return 0
 
 
+def cmd_record(args):
+    """Generic counterfactual record（2026-09-14 影子帳通用化）：把「沒做的決定」登錄成影子交易。
+
+    --correct-if under : 決定是「不買/不加碼/被擋/落選」→ 該股之後跑輸基準 = 決定對（同 block）
+    --correct-if over  : 決定是「不賣/續抱/R17 擋下賣單」→ 該股之後跑贏基準 = 決定對
+    kind 建議：cf-bench-loser（比選落選）、cf-r1-hold（判輪動不賣）、cf-r17-blocked（盤中衝動被擋）、
+               cf-t65-capped（自動執行超上限未下）、cf-r23-skip（R23 觸發但未執行）、cf-manual
+    """
+    asof = _today(args.asof).isoformat()
+    kind = args.kind if args.kind.startswith("cf-") else f"cf-{args.kind}"
+    row = {
+        "date": asof, "ticker": args.ticker.upper(), "signal": kind,
+        "ref_price": args.price, "size_usd": args.size, "note": args.note,
+        "correct_if": args.correct_if, "mode": "shadow", "status": "open",
+    }
+    existing = load_signals(args.signals)
+    key = (row["date"], row["ticker"], row["signal"])
+    if key in {(r["date"], r["ticker"], r["signal"]) for r in existing}:
+        _emit({"skipped": "duplicate", "key": list(key)})
+        return 0
+    save_signals(existing + [row], args.signals)
+    _emit({"recorded": row, "scoring": f"`score` after 30 days: flag_correct = name {'under' if args.correct_if == 'under' else 'out'}performed benchmark"})
+    return 0
+
+
 def cmd_score(args):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from trade_ledger import benchmark_for, eod_series, load_env, _asof_close  # noqa: PLC0415
@@ -208,14 +233,15 @@ def cmd_score(args):
         if not (p0 and p1 and b0 and b1):
             continue
         alpha = (p1 / p0 - 1) - (b1 / b0 - 1)
-        # Both signal types claim you should not be (more) long — a4-overvalued on
-        # valuation, earnings-window-blocked-add on the blocked buy — so either is
-        # right when the name underperforms its benchmark.
+        # a4-overvalued / earnings-window-blocked-add / cf-* with correct_if=under all claim
+        # you should not be (more) long → right when the name underperforms. cf-* with
+        # correct_if=over (held / blocked sell) → right when it outperforms.
+        correct_if = r.get("correct_if", "under")
         scored.append({**{k: r.get(k) for k in ("date", "ticker", "signal", "divergence_pct")},
-                       "benchmark": bench,
+                       "benchmark": bench, "correct_if": correct_if,
                        "price_then": p0, "price_now": p1,
                        "excess_alpha_pct": round(alpha * 100, 1),
-                       "flag_correct": alpha < 0,
+                       "flag_correct": (alpha < 0) if correct_if == "under" else (alpha > 0),
                        "high_pe": r.get("high_pe", False),
                        "days_held": (today - date.fromisoformat(r["date"])).days})
 
@@ -280,6 +306,15 @@ def _build_parser():
     b.add_argument("--size", type=float, default=None, help="USD size the add would have been")
     b.add_argument("--note", default="", help="why the add was wanted / which window blocked it")
 
+    rc = sub.add_parser("record", help="generic counterfactual: a decision NOT taken, scored at +30d")
+    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-manual")
+    rc.add_argument("--ticker", required=True)
+    rc.add_argument("--price", type=float, required=True, help="price when the decision was (not) made")
+    rc.add_argument("--size", type=float, default=None, help="USD the action would have been")
+    rc.add_argument("--correct-if", choices=["under", "over"], required=True,
+                    help="under = 沒買/被擋 → 跑輸基準算對；over = 沒賣/續抱 → 跑贏基準算對")
+    rc.add_argument("--note", default="")
+
     s = sub.add_parser("score", help="score flags that have matured")
     s.add_argument("--mature-days", type=int, default=MATURE_DAYS)
 
@@ -291,7 +326,8 @@ def _build_parser():
 def main(argv=None):
     args = _build_parser().parse_args(argv)
     try:
-        return {"flag": cmd_flag, "block": cmd_block, "score": cmd_score, "list": cmd_list}[args.cmd](args)
+        return {"flag": cmd_flag, "block": cmd_block, "record": cmd_record,
+                "score": cmd_score, "list": cmd_list}[args.cmd](args)
     except Exception as exc:                                    # noqa: BLE001
         _emit({"error": str(exc), "cmd": args.cmd})
         return 1

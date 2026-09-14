@@ -969,7 +969,9 @@ Agent(subagent_type="data-collector"):
 - plan.md 中有明確 stop-loss 且接近觸發的 ticker
 - Step 0.55 🚦 旗標（credit `widening_fast` / VIX 期限 `inverted` / 寬度 `divergence_flag` / 台股月營收 `turned_negative` / `book_decel`）→ 每項 1 行前綴 🚦（無則不出，display-only）
 
-**T5.5 跨日一致性檢查（2026-09-08 新增，防自圓其說）**
+**T5.5 跨日一致性檢查（2026-09-08 新增，防自圓其說；2026-09-14 改為工具）**
+
+**機械層**：`python3 tools/crossday_check.py briefing-out/YYYY-MM-DD-telegram.txt`——寫完 telegram.txt 時 PostToolUse hook 自動跑（有反轉 exit 2 會擋下，要求補說明）；launchd 路徑 runner 事後再跑一次並直推 Telegram。它只比對方向詞（加碼/減碼/清倉/勿加碼/旗標…）與 ticker 的共現，**判斷「有沒有新依據」仍是下面的規則**：
 
 讀前一交易日 `briefing-out/YYYY-MM-DD-telegram.txt`（找不到 → 跳過本步，不阻擋）。對照今日 Key Alerts / 今日待辦中出現的每個 ticker：
 
@@ -1001,7 +1003,8 @@ T6 產生的**今日待辦**（明日待辦不適用，只是預告）逐條檢�
 五條全過 → 用 `mcp__firstrade-server__place_stock_order` 直接下單（股票單，含 GTC）。**選擇權：平倉可自動、開倉不自動**（2026-09-14）——既有選擇權部位觸及開倉時寫死的管理線（50–75% 最大利潤、debit −50% 停損、結構失效收盤線）→ 用 `preview_option_spread`/`place_option_spread`（或單腿 `*_to_close`）day 單直接平，ET 7–16 內執行；選擇權**開倉**與三腿以上/GTC 複式單仍走 `tools/tg_send.py` 或互動 session。
 
 下單後：
-- 立即補跑 `python3 tools/trade_ledger.py snapshot-orders`，讓新單號進登記表（origin 歸因用）
+- 立即補跑 `python3 tools/trade_ledger.py snapshot-orders`，並 **`python3 tools/trade_ledger.py register-order --id <單號> --rule <R8|R23|R24|R25|T6.5|plan-L1|options-mgmt> --note "..."`**（2026-09-14：規則單不一定寫進 plan.md，不登記會被歸因鏈判成 user——本期人工補了 14 筆）
+- **影子帳（2026-09-14 通用化）**：凡「想做但沒做」都登錄，30 天後機械計分——被 $3,000 上限擋下的新增曝險 `shadow_signals.py record --kind cf-t65-capped --correct-if under`、R1 判輪動而不減碼 `--kind cf-r1-hold --correct-if over`、比選落選者 `--kind cf-bench-loser --correct-if under`、R17 擋下的盤中衝動 `--kind cf-r17-blocked --correct-if over/under`。**沒做的決定跟做了的一樣要進帳**，這是把規則驗證樣本乘 3–5 倍的唯一免費方法
 - 該待辦對應既有旗標（`research/position-flags.json`）→ 同一次 `resolve-flag --action <動作>` 或視情況更新
 - 該條目在 T6 輸出改標記 `✅ 已自動執行：{action}（單號 {order_id}，{價}×{股數}）`，取代原本的 `🎯`；同步進 T8a/T8b 兩層輸出
 - 下單 API 失敗/exception → 不重試，改列 `⚠️ 自動下單失敗：{action}（錯誤：{msg}）→ 待人工處理`，維持在待辦區

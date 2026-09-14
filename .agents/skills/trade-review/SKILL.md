@@ -35,6 +35,8 @@ python3 tools/trade_ledger.py backfill-origin --since <期初>
 python3 tools/trade_ledger.py stats
 ```
 
+歸因鏈第 1 步除了 plan.md/journal 的單號，也讀 `order-registry.json` 的 `rule_ref`（`register-order` 登記的規則單，2026-09-14）；本期若仍有規則單被判 user，代表掛單時漏了 `register-order`，列為執行力缺口。
+
 **必報三個數字**（覆蓋率是本迴路的健康指標，要逐期往上走）：
 - 本期新增成交筆數
 - `attribution_coverage_journaled_pct`（有 journal 期間的 origin 覆蓋率）
@@ -177,6 +179,10 @@ python3 tools/ev_ledger.py resolve-due && python3 tools/ev_ledger.py stats
 **計分紀律：** 按獨立標的、以**首次旗標日**的 30d α 計，逐日重複登錄不得當多筆（`score` 的 n=51 是灌水值）。
 
 **跑滿 2 期後**才決定是否升硬閘門（Phase 2）。基準線：首次前瞻檢驗 n=12、Spearman +0.45、高估組 4/4 落後平均 −15.9% α。
+
+**4a-2. 影子帳 cf-\*（2026-09-14 通用化）**
+
+`shadow_signals.py score` 的 `by_signal` 會列 `cf-bench-loser / cf-r1-hold / cf-r17-blocked / cf-t65-capped / cf-r23-skip`。每類按**獨立標的**報 n / hit_rate / mean α；**這些是規則的免費驗證樣本**：`cf-r1-hold` 命中率直接餵 R1、`cf-r23-skip` 餵 R23、`cf-bench-loser` 餵 L1 比選（落選者若跑贏入選者 → 比選邏輯覆審）、`cf-t65-capped` 餵 T6.5 上限是否該再放。n<5 只記方向。本期若 cf-\* 為 0 筆 → 寫「影子帳未使用」並列為執行力缺口（該登錄沒登錄）。
 
 **4b. thesis 中途證偽（不是等觸發日才看）**
 

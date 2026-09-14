@@ -229,3 +229,23 @@ if [[ "$success" != "true" ]]; then
   log "All $RETRY_MAX attempts failed — see briefing-out/launchd.err (no Telegram error notify by design)"
   exit 1
 fi
+
+# ── Post-run mechanical checks（2026-09-14：散文規則被跳過的漏口改由 code 補）──
+TODAY="$(TZ=America/New_York date +%F)"   # briefing 檔名以美東交易日為準
+OUT_DIR="$LOG_DIR"
+# journal 缺檔 → 機械補檔（歸因/旗標稽核的資料層不能斷天）
+log "Post-run: journal stub if missing..."
+python3 "$SCRIPT_DIR/journal_stub.py" "$TODAY" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "journal_stub failed (non-fatal)"
+# T5.5 跨日一致性：今日 telegram vs 昨日；有反轉直推 Telegram（不經模型）
+if [[ -f "$OUT_DIR/$TODAY-telegram.txt" ]]; then
+  log "Post-run: cross-day consistency check..."
+  if ! XDAY=$(python3 "$SCRIPT_DIR/crossday_check.py" "$OUT_DIR/$TODAY-telegram.txt" 2>&1); then
+    printf '%s\n' "$XDAY" >> "$LOG_DIR/launchd.log"
+    printf '⚠️ T5.5 跨日反轉（briefing_runner 機械檢查）\n%s\n→ 動作：這些 ticker 今日若被 T6.5 自動執行，明早 briefing 需在 Key Alerts 寫明新依據；無新依據則視為違規進 /trade-review\n' "$XDAY" \
+      | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+      || log "tg_send failed (non-fatal)"
+  else
+    log "Cross-day consistency OK"
+  fi
+fi

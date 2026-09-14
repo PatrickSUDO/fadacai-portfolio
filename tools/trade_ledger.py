@@ -315,6 +315,15 @@ def plan_order_refs(root=ROOT):
             continue
         for m in _REF_RE.finditer(path.read_text(encoding="utf-8")):
             refs.add(m.group(1) or m.group(2))
+    # 2026-09-14：規則單（R23/R24/R25/T6.5）由 guard/briefing 直接掛，不一定寫進 plan.md，
+    # 改由 `register-order --id --rule` 在 order-registry 標 rule_ref；這裡一併視為 system。
+    try:
+        reg = load_registry()
+        for oid, e in (reg.get("orders") or {}).items():
+            if e.get("rule_ref"):
+                refs.add(oid.split("-")[-1])
+    except Exception:  # noqa: BLE001 — registry optional
+        pass
     return refs
 
 
@@ -1461,6 +1470,21 @@ def cmd_flags(args):
     return EXIT_OK
 
 
+def cmd_register_order(args):
+    """Tag an order as rule-driven so backfill-origin scores it system without a plan.md line.
+    Registry entry is created if the snapshot hasn't seen the order yet (just-placed orders)."""
+    reg = load_registry()
+    reg.setdefault("orders", {})
+    e = reg["orders"].setdefault(args.order_id, {"first_seen": date.today().isoformat(), "state": "REGISTERED-PRE-SNAPSHOT"})
+    e["rule_ref"] = args.rule
+    if args.note:
+        e["rule_note"] = args.note
+    e["rule_registered_at"] = date.today().isoformat()
+    save_registry(reg)
+    print(json.dumps({"registered": args.order_id, "rule_ref": args.rule,
+                      "effect": "plan_order_refs() now treats this id as system-placed"}, ensure_ascii=False))
+
+
 def cmd_annotate(args):
     fills = load_fills(args.ledger)
     hit = next((f for f in fills if f["id"] == args.fill_id), None)
@@ -1560,6 +1584,12 @@ def _build_parser():
     o = sub.add_parser("orders", help="resting orders with age + dead-order flags")
     o.add_argument("--all", action="store_true", help="include orders that left the book")
 
+    ro = sub.add_parser("register-order",
+                        help="tag a resting/just-placed order as rule-driven (system origin) without a plan.md line")
+    ro.add_argument("--id", dest="order_id", required=True, help="e.g. G42621-1776")
+    ro.add_argument("--rule", required=True, help="R8 | R23 | R24 | R25 | T6.5 | plan-L1 | options-mgmt ...")
+    ro.add_argument("--note", default="")
+
     a = sub.add_parser("annotate", help="manually set a fill's decision origin")
     a.add_argument("--id", dest="fill_id", required=True)
     a.add_argument("--origin", required=True, choices=sorted(VALID_ORIGINS))
@@ -1589,6 +1619,7 @@ def main(argv=None):
             "resolve-flag": cmd_resolve_flag,
             "flags": cmd_flags,
             "annotate": cmd_annotate,
+            "register-order": cmd_register_order,
         }[args.cmd]
         return handler(args) or EXIT_OK
     except Exception as exc:                                   # noqa: BLE001

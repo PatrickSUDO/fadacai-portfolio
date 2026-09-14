@@ -29,6 +29,12 @@
             "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/review_lint.py\" --hook",
             "timeout": 30,
             "statusMessage": "review_lint"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/crossday_check.py\" --hook",
+            "timeout": 30,
+            "statusMessage": "crossday_check"
           }
         ]
       }
