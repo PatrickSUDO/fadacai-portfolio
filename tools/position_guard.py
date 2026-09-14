@@ -139,7 +139,9 @@ def qty_stats_since(fills, sym, since):
 
 
 def realized_since(fills, sym, since):
-    """建倉起算的已實現損益（加權平均成本法；R28c 單名虧損預算的已實現半邊）。"""
+    """建倉起算的已實現損益 + 帳本口徑殘餘股數/平均成本（加權平均成本法）。
+    R28c 單名虧損預算：已實現與未實現**同一口徑**（都用交易帳平均成本）；Firstrade 的 unit_cost 是
+    另一套 lot 法，混用會讓同一檔算出不同數（CRDO 9/14：−$4.6k vs −$2.0k）。回 (realized, ledger_qty, ledger_avg)。"""
     sh, cost, real = 0.0, 0.0, 0.0
     for f in fills:
         if f["symbol"] != sym or (since and f["date"] < since):
@@ -151,7 +153,7 @@ def realized_since(fills, sym, since):
             avg = cost / sh
             q = min(q, sh)
             real += q * (p - avg); cost -= q * avg; sh -= q
-    return real
+    return real, sh, (cost / sh if sh > 1e-6 else None)
 
 
 def buys_after(fills, sym, since_date):
@@ -346,8 +348,12 @@ def build_state(*, sync_alerts=False):
             recent = buys_after(fills, sym, trim_dt) if trim_recent else []
             if recent:
                 gaps.append(f"{sym}: R28a 違規——R23 減碼後又買 {sum(float(b['qty']) for b in recent):g} 股（{[b['date'] for b in recent]}）→ journal 標 ⚠️ R28 bypass")
-        realized = realized_since(fills, sym, since)
-        unreal_usd = ((last - cost) * v["qty"]) if (last and cost) else 0.0
+        realized, ledger_qty, ledger_avg = realized_since(fills, sym, since)
+        # 口徑統一：帳本股數對得上 live 股數（±1）才用帳本平均成本算未實現；對不上（早期 lot 不在帳本）退回 Firstrade 成本並標記
+        if ledger_avg and abs(ledger_qty - v["qty"]) <= 1.0:
+            unreal_usd, basis = ((last - ledger_avg) * v["qty"] if last else 0.0), "ledger"
+        else:
+            unreal_usd, basis = (((last - cost) * v["qty"]) if (last and cost) else 0.0), "firstrade(帳本股數不符)"
         cum_pnl = realized + unreal_usd
         loss_budget_hit = bool(bucket == "認列" and total and cum_pnl <= -R28_LOSS_BUDGET_PCT / 100 * total)
         loser_after_trim = bool(bucket == "認列" and trim_dt and unreal is not None and unreal < 0)
@@ -387,6 +393,7 @@ def build_state(*, sync_alerts=False):
             "peak_qty": peak_qty, "cum_sold_pct": round(cum_sold, 1), "sellable_before_floor": int(sellable_left),
             "runner_floor_hit": runner_floor_hit,
             "buy_locked": buy_lock, "realized_since_open": round(realized, 2), "cum_pnl_usd": round(cum_pnl, 2),
+            "ledger_unit_cost": round(ledger_avg, 2) if ledger_avg else None, "pnl_basis": basis,
             "loss_budget_hit": loss_budget_hit, "loser_after_trim": loser_after_trim,
             "peak_close": round(peak, 2) if peak else None, "peak_date": peak_dt,
             "drawdown_from_peak_pct": round(dd, 1) if dd is not None else None,
@@ -400,6 +407,15 @@ def build_state(*, sync_alerts=False):
     n = len([r for r in rows if r["symbol"] not in passive])  # R25：被動 sleeve ETF 不計檔數
     if n > max_pos:
         gaps.append(f"檔數 {n} > 上限 {max_pos} → 砍一進一（R14 鎖定中：{[r['symbol'] for r in rows if r['r14_locked']]}）")
+    # R20 撿回條目雙分支驗證（2026-09-14 程式化）：pending reentry-* 必含回檔與走強兩分支
+    for t in theses.get("theses", []):
+        if t.get("status") != "pending" or "reentry" not in (t.get("slug") or "") or t.get("ticker") in held:
+            continue  # 已撿回/在倉者不是撿回條目（LITE 8/14 案）
+        txt = (t.get("thesis") or "") + " ".join(t.get("falsification") or [])
+        has_low = any(k in txt for k in ("回檔", "①", "跌回", "接回"))
+        has_high = any(k in txt for k in ("走強", "②", "創新高", "追強", "重新提名"))
+        if not (has_low and has_high):
+            gaps.append(f"{t['id']}: R20 撿回條目單分支（缺{'回檔' if not has_low else '走強'}分支）→ `thesis_ledger.py add` 同 slug 覆寫成雙分支")
     # roster 內已不在倉的名字 → 提醒清理
     stale = [s for b in roster.get("buckets", {}).values() for s in b if s not in held]
     if stale:

@@ -1437,13 +1437,103 @@ def cmd_defer(args):
     return EXIT_OK if res["action"] == "deferred" else EXIT_GENERIC
 
 
+REENTRY_LOW, REENTRY_HIGH, REENTRY_DUE_DAYS, REENTRY_ALERT_DAYS = 0.90, 1.10, 45, 60
+
+
+def _last_close(sym, asof=None):
+    try:
+        import yfinance as yf
+        h = yf.Ticker(sym).history(period="7d")["Close"].dropna()
+        return float(h.iloc[-1]) if len(h) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def register_reentry(ticker, exit_price, *, reason, size_usd=None, asof=None, source_flag=None):
+    """出場 → 撿回條目自動化（R20 雙分支，2026-09-14 程式化）。
+    ① reentry thesis（due +45d）②兩支價格警報（回檔 −10% / 走強 +10%，各需 revision 條件）③影子帳 cf-reentry（30d 後計「砍對了嗎」）。
+    以前這三件事靠模型記得寫，STRL 7/02、LITE 7/06 都漏過。"""
+    import subprocess
+    asof = asof or date.today().isoformat()
+    d0 = date.fromisoformat(asof)
+    out = {"ticker": ticker, "exit_price": exit_price}
+    lo, hi = round(exit_price * REENTRY_LOW, 2), round(exit_price * REENTRY_HIGH, 2)
+    # ① thesis（用 thesis_ledger 模組，去重/碰撞照它的規則）
+    try:
+        import thesis_ledger as tl
+        led = tl.load_ledger(tl.DEFAULT_LEDGER)
+        res = tl.add_thesis(
+            led, ticker=ticker, slug="reentry-dual-branch",
+            thesis=(f"{asof} 出場 @{exit_price:.2f}（{reason[:60]}）；R20 雙分支撿回：①回檔分支 收盤 ≤ {lo}（−10%）且 30 日 revision 未惡化（down ≤ up）"
+                    f"→ starter ≤2%；②走強分支 收盤 ≥ {hi}（+10%）且 30 日 revision 淨上修（up > down）→ 重新提名比選、starter ≤2%（H10）。只漲不夠、只跌不夠，兩分支皆需 revision 條件"),
+            falsification=["30 日 revision 轉淨下修（down > up）→ 放棄撿回、降 L2 保留監測",
+                           "任一分支到價但 revision 條件未過 → 不動，登 cf-reentry 影子"],
+            trigger_type="date", trigger_date=(d0 + timedelta(days=REENTRY_DUE_DAYS)).isoformat(),
+            metric="收盤 vs 出場價 ±10% + fundamentals-snapshot forward_estimates revisions_up/down_30d",
+            source="exit-reentry", ev=f"出場價 {exit_price:.2f}；flag {source_flag or '-'}", asof=asof)
+        tl.save_ledger(tl.DEFAULT_LEDGER, led)
+        out["thesis"] = res
+    except Exception as e:  # noqa: BLE001
+        out["thesis"] = {"error": str(e)[:120]}
+    # ② 價格警報（note 動作優先格式，2026-08-19）
+    try:
+        import price_alerts as pa
+        al = pa.load_alerts()
+        exp = (d0 + timedelta(days=REENTRY_ALERT_DAYS)).isoformat()
+        common = ("這不是買進訊號。先查 30 日 revision（`fundamentals-snapshot.json forward_estimates revisions_up/down_30d`）："
+                  "{cond}；通過 → 重新提名、過機會成本閘門、starter ≤2%（H10）；未通過 → 不動。兩者皆登 `shadow_signals.py record --kind cf-reentry`。")
+        for aid, typ, lvl, cond in (
+            (f"{ticker}-reentry-low", "price_below", lo, "回檔分支①：down ≤ up 才可接"),
+            (f"{ticker}-reentry-high", "price_above", hi, "走強分支②：up > down 才算走強，只漲不算"),
+        ):
+            al["alerts"] = [a for a in al["alerts"] if a["id"] != aid]
+            al["alerts"].append({"id": aid, "symbol": ticker, "type": typ, "level": lvl,
+                                 "note": f"→ 動作：{common.format(cond=cond)} R20 撿回（resolve-flag exited 自動掛，{asof}）",
+                                 "mode": "once_per_day", "created": asof, "status": None, "last_fired": None,
+                                 "fired_count": 0, "expires": exp})
+        pa.save_alerts(al)
+        out["alerts"] = [f"{ticker}-reentry-low@{lo}", f"{ticker}-reentry-high@{hi}"]
+    except Exception as e:  # noqa: BLE001
+        out["alerts"] = {"error": str(e)[:120]}
+    # ③ 影子帳：出場本身是一個「不再持有」的決定，30 天後若跑輸基準 = 砍對
+    try:
+        cmd = [sys.executable, str(ROOT / "tools" / "shadow_signals.py"), "record", "--kind", "cf-reentry",
+               "--ticker", ticker, "--price", str(exit_price), "--correct-if", "under",
+               "--note", f"出場 {asof}（{reason[:50]}）；30d 後跑輸 = 砍對；跑贏 ≥10% = ICHR 型錯砍"]
+        if size_usd:
+            cmd += ["--size", str(round(size_usd, 2))]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        out["shadow"] = "recorded" if r.returncode == 0 else f"error: {(r.stderr or r.stdout)[-120:]}"
+    except Exception as e:  # noqa: BLE001
+        out["shadow"] = f"error: {str(e)[:120]}"
+    return out
+
+
 def cmd_resolve_flag(args):
     data = load_flags(args.flags)
     res = resolve_flag(data, flag_id_=args.flag_id, action=args.action, note=args.note,
                        realized_pnl=args.realized_pnl, asof=args.asof)
     save_flags(data, args.flags)
+    if res["action"] == "resolved" and args.action == "exited":
+        f = next(x for x in data["flags"] if x["id"] == args.flag_id)
+        if args.permanent_reason:
+            res["reentry"] = {"skipped": "permanent（質地理由）", "reason": args.permanent_reason,
+                              "rule": "exit-reentry-discipline 1：僅 mandate 不符/質地劣化/財務疑慮可判永久淘汰；組合理由不得"}
+        else:
+            px = args.exit_price or _last_close(f["ticker"], args.asof)
+            if px is None:
+                res["reentry"] = {"error": "無出場價（--exit-price）且抓不到收盤 → 撿回條目未建，請補跑 reentry"}
+            else:
+                res["reentry"] = register_reentry(f["ticker"], px, reason=args.note, size_usd=args.size_usd,
+                                                  asof=args.asof, source_flag=args.flag_id)
     _emit(res)
     return EXIT_OK if res["action"] == "resolved" else EXIT_GENERIC
+
+
+def cmd_reentry(args):
+    """手動補建撿回條目（清倉不是經旗標時用，例如 R8 全清 / 用戶 App 手砍）。"""
+    _emit(register_reentry(args.ticker, args.exit_price, reason=args.reason, size_usd=args.size_usd, asof=args.asof))
+    return EXIT_OK
 
 
 def cmd_flags(args):
@@ -1544,6 +1634,17 @@ def _build_parser():
                     help="trimmed | exited | withdrawn | rolled | held-with-reason")
     rf.add_argument("--note", required=True)
     rf.add_argument("--realized-pnl", type=float, default=None, dest="realized_pnl")
+    rf.add_argument("--exit-price", type=float, default=None, dest="exit_price",
+                    help="action=exited 時的出場價（缺則抓最近收盤）；自動建 R20 雙分支撿回條目 + 兩支警報 + cf-reentry 影子")
+    rf.add_argument("--size-usd", type=float, default=None, dest="size_usd", help="出場部位金額（影子帳用）")
+    rf.add_argument("--permanent-reason", default=None, dest="permanent_reason",
+                    help="質地理由永久淘汰（mandate 不符/質地劣化/財務疑慮）→ 不建撿回；組合理由不得用")
+
+    re_ = sub.add_parser("reentry", help="手動補建撿回條目（非經旗標的清倉：R8 全清 / App 手砍）")
+    re_.add_argument("--ticker", required=True)
+    re_.add_argument("--exit-price", type=float, required=True, dest="exit_price")
+    re_.add_argument("--reason", required=True)
+    re_.add_argument("--size-usd", type=float, default=None, dest="size_usd")
 
     sub.add_parser("flags", help="open flags: days outstanding, deferrals, cost since raised")
 
@@ -1617,6 +1718,7 @@ def main(argv=None):
             "flag": cmd_flag,
             "defer": cmd_defer,
             "resolve-flag": cmd_resolve_flag,
+            "reentry": cmd_reentry,
             "flags": cmd_flags,
             "annotate": cmd_annotate,
             "register-order": cmd_register_order,

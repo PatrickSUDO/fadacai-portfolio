@@ -35,6 +35,12 @@
             "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/crossday_check.py\" --hook",
             "timeout": 30,
             "statusMessage": "crossday_check"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/briefing_lint.py\" --hook",
+            "timeout": 30,
+            "statusMessage": "briefing_lint"
           }
         ]
       }

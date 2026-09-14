@@ -178,7 +178,7 @@ def cmd_record(args):
     --correct-if under : 決定是「不買/不加碼/被擋/落選」→ 該股之後跑輸基準 = 決定對（同 block）
     --correct-if over  : 決定是「不賣/續抱/R17 擋下賣單」→ 該股之後跑贏基準 = 決定對
     kind 建議：cf-bench-loser（比選落選）、cf-r1-hold（判輪動不賣）、cf-r17-blocked（盤中衝動被擋）、
-               cf-t65-capped（自動執行超上限未下）、cf-r23-skip（R23 觸發但未執行）、cf-manual
+               cf-t65-capped（自動執行超上限未下）、cf-r23-skip（R23 觸發但未執行）、cf-reentry（出場，resolve-flag exited 自動登；砍對 = 跑輸）、cf-r28-buylock（R28a 擋下的加碼）、cf-manual
     """
     asof = _today(args.asof).isoformat()
     kind = args.kind if args.kind.startswith("cf-") else f"cf-{args.kind}"
@@ -307,7 +307,7 @@ def _build_parser():
     b.add_argument("--note", default="", help="why the add was wanted / which window blocked it")
 
     rc = sub.add_parser("record", help="generic counterfactual: a decision NOT taken, scored at +30d")
-    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-manual")
+    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-manual")
     rc.add_argument("--ticker", required=True)
     rc.add_argument("--price", type=float, required=True, help="price when the decision was (not) made")
     rc.add_argument("--size", type=float, default=None, help="USD the action would have been")
