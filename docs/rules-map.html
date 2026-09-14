@@ -1,0 +1,228 @@
+<title>fadacai 規則地圖</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --ink:#1c2630; --ink-2:#4b5a68; --ink-3:#7a8794;
+    --paper:#f2f4f6; --panel:#ffffff; --line:#d7dde3; --line-2:#e8ecef;
+    --code:#0f766e; --code-bg:#e6f4f2;      /* 已程式化 */
+    --prose:#b7791f; --prose-bg:#fbf1dc;    /* 靠模型記得 */
+    --judge:#5b6b7a; --judge-bg:#e9edf1;    /* 判斷型，不該程式化 */
+    --risk:#b42318; --risk-bg:#fbe9e6;      /* 衝突 / 漏口 */
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"IBM Plex Sans","Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e6ebef; --ink-2:#b4bfc9; --ink-3:#8593a0;
+      --paper:#141a20; --panel:#1c242c; --line:#33404b; --line-2:#28323b;
+      --code:#3ecfbf; --code-bg:#12332f; --prose:#e0a83a; --prose-bg:#3a2d10;
+      --judge:#9fb0bf; --judge-bg:#27313a; --risk:#f0705f; --risk-bg:#3d1b17;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e6ebef; --ink-2:#b4bfc9; --ink-3:#8593a0;
+    --paper:#141a20; --panel:#1c242c; --line:#33404b; --line-2:#28323b;
+    --code:#3ecfbf; --code-bg:#12332f; --prose:#e0a83a; --prose-bg:#3a2d10;
+    --judge:#9fb0bf; --judge-bg:#27313a; --risk:#f0705f; --risk-bg:#3d1b17;
+  }
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65;margin:0}
+  main{max-width:960px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:28px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em;text-wrap:balance}
+  h2{font-size:19px;font-weight:600;margin:48px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
+  h3{font-size:15px;font-weight:600;margin:24px 0 8px;color:var(--ink-2)}
+  p{max-width:68ch;margin:6px 0}
+  .lede{color:var(--ink-2);max-width:72ch}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:10px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin:18px 0 4px;font-size:13px}
+  .chip{display:inline-block;padding:1px 8px;border-radius:3px;font-family:var(--mono);font-size:12px;font-weight:500;white-space:nowrap}
+  .c-code{background:var(--code-bg);color:var(--code)} .c-prose{background:var(--prose-bg);color:var(--prose)}
+  .c-judge{background:var(--judge-bg);color:var(--judge)} .c-risk{background:var(--risk-bg);color:var(--risk)}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
+  .kpi b{display:block;font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+  .kpi span{font-size:12px;color:var(--ink-3)}
+  figure{margin:14px 0 0;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:16px;overflow-x:auto}
+  figcaption{font-size:13px;color:var(--ink-2);margin-top:10px;max-width:80ch}
+  pre.mermaid{margin:0;background:transparent;font-family:var(--mono)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--panel);border:1px solid var(--line)}
+  .tbl{overflow-x:auto;margin-top:10px}
+  th{ text-align:left;font-weight:600;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+  td{padding:8px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.id{font-family:var(--mono);font-size:12.5px;white-space:nowrap;color:var(--ink-2)}
+  .sev{font-family:var(--mono);font-size:11px;font-weight:600;padding:1px 6px;border-radius:2px}
+  .s-high{background:var(--risk-bg);color:var(--risk)} .s-mid{background:var(--prose-bg);color:var(--prose)} .s-low{background:var(--judge-bg);color:var(--judge)}
+  ol.plan{padding-left:20px;max-width:80ch} ol.plan li{margin:8px 0}
+  .note{font-size:13px;color:var(--ink-3);max-width:80ch}
+  @media (max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+<main>
+<h1>fadacai 規則地圖</h1>
+<p class="lede">27 條規則、10 個待驗假設、22 份 feedback 檔——它們在每天的管線裡各站哪個位置、誰在執行、哪幾條互相打架、還有哪些只活在散文裡。2026-09-14 全機制稽核。</p>
+<p class="meta">來源：RULES-LEDGER.md（R1–R27, H1–H10）、CLAUDE.md、briefing/trade-review SKILL、briefing_runner.sh、position_guard.py、settings.json hooks</p>
+
+<div class="legend">
+  <span><span class="chip c-code">code</span> 工具/hook/runner 執行，不靠記得</span>
+  <span><span class="chip c-prose">prose</span> 寫在 skill 裡，靠模型當下記得</span>
+  <span><span class="chip c-judge">judge</span> 判斷型，只能給模板不能程式化</span>
+  <span><span class="chip c-risk">conflict</span> 兩條規則對同一情境給不同指令</span>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><b>21</b><span>機制已 code 化（含今日新增 6 個）</span></div>
+  <div class="kpi"><b>9</b><span>仍靠散文，其中 6 個可程式化</span></div>
+  <div class="kpi"><b>7</b><span>判斷型，維持模板不強制 code</span></div>
+  <div class="kpi"><b>6</b><span>規則衝突需要明文優先序</span></div>
+</div>
+
+<h2>一、每日管線：誰在哪一步執行</h2>
+<figure>
+<pre class="mermaid">
+flowchart TB
+  classDef code fill:#e6f4f2,stroke:#0f766e,color:#0f4f49
+  classDef prose fill:#fbf1dc,stroke:#b7791f,color:#6b4507
+  classDef judge fill:#e9edf1,stroke:#5b6b7a,color:#2e3a45
+  classDef risk fill:#fbe9e6,stroke:#b42318,color:#7a160f
+
+  subgraph PRE["runner 預跑（launchd 17:00 CEST，不經模型）"]
+    direction TB
+    A1["cache 刷新<br/>macro / earnings / fundamentals(A4, priced_in)<br/>news / X / leading / rotation_corr(H8)"]:::code
+    A2["snapshot-orders<br/>歸因 ground truth"]:::code
+    A3["account_metrics<br/>R15 熔斷旗標"]:::code
+    A4["shadow_signals flag<br/>A4 高估影子(R3)"]:::code
+    A5["ledger-audit --check<br/>失敗直推 Telegram"]:::code
+    A6["review_due<br/>trade-review 14d / portfolio 30d / SA 35d<br/>到期直推 Telegram"]:::code
+    A7["archive_cache<br/>凍結當日輸入"]:::code
+    A1-->A2-->A3-->A4-->A5-->A6-->A7
+  end
+
+  subgraph MODEL["claude -p /briefing telegram --send（Sonnet）"]
+    direction TB
+    B0["Step 0.75 position_guard --sync-alerts<br/>R4 10% / 檔數 / R8 缺口 / R14 鎖 /<br/>R23 arm+警報 / 財報窗 / 桶別缺口 / R19 pair"]:::code
+    B1["thesis_ledger due · ev_ledger resolve-due<br/>source_credit resolve-due"]:::code
+    B2["Key Alerts 判讀<br/>R1/R2 根因分類 · R5 · R12/R13 VOI"]:::judge
+    B3["R27 認列桶只寫機械線距離"]:::prose
+    B4["T5.5 跨日一致性"]:::code
+    B5["T6.5 今日待辦自動執行<br/>5 條件：類別 / 量化觸發 / 上限 / 硬線 / 無反轉"]:::prose
+    B6["下單後：snapshot-orders · register-order<br/>resolve-flag · thesis 留痕 · shadow record"]:::prose
+    B7["寫 full.md / telegram.txt"]:::prose
+    B0-->B1-->B2-->B3-->B4-->B5-->B6-->B7
+  end
+
+  subgraph HOOK["PostToolUse hooks（寫檔即觸發）"]
+    direction TB
+    H1["review_lint<br/>trade-review 報告完整性"]:::code
+    H2["crossday_check --hook<br/>telegram.txt 反轉 → exit 2 擋下"]:::code
+  end
+
+  subgraph POST["runner 事後（不經模型）"]
+    direction TB
+    P1["journal_stub<br/>缺檔機械補檔"]:::code
+    P2["crossday_check<br/>反轉直推 Telegram"]:::code
+    P3["send_briefing → Telegram + email + HTML"]:::code
+  end
+
+  subgraph ALERT["盤中 15 分輪詢（price_alerts，launchd）"]
+    direction TB
+    L1["R23 線 / 用戶裁決收盤線 / BCS 結構線 / VIX 重掃"]:::code
+    L2["R17：盤中觸價只通知，收盤確認後才由隔日 T6.5 執行"]:::prose
+    L1-->L2
+  end
+
+  PRE-->MODEL
+  B7-.->HOOK
+  MODEL-->POST
+  ALERT-.->B5
+</pre>
+<figcaption>圖 1 · 一天的執行鏈。綠＝不經模型也會發生；黃＝模型當下要記得；灰＝本來就該是人/模型判斷。今天以前，黃色區有 5 格（提醒、跨日檢查、journal、歸因登記、認列桶表述）——9/14 把前四個移進綠色。剩下最大的黃格是 <b>T6.5 本身</b>：機械單的判定與下單仍由模型執行。</figcaption>
+</figure>
+
+<h2>二、一個部位會遇到哪些規則（依桶別）</h2>
+<figure>
+<pre class="mermaid">
+flowchart TB
+  classDef code fill:#e6f4f2,stroke:#0f766e,color:#0f4f49
+  classDef prose fill:#fbf1dc,stroke:#b7791f,color:#6b4507
+  classDef judge fill:#e9edf1,stroke:#5b6b7a,color:#2e3a45
+  classDef risk fill:#fbe9e6,stroke:#b42318,color:#7a160f
+
+  S(["新訊號 / 候補"]) --> G1{"行業濾網<br/>TAM growing-structural?"}:::judge
+  G1 -- 否 --> X1(["不進 bench"])
+  G1 -- 是 --> G2{"機會成本閘門<br/>優於最弱在倉? 18 檔砍一進一"}:::judge
+  G2 --> G3{"R18 財報 ±48h?<br/>R14 / R15 / 10% 硬線"}:::code
+  G3 -- 擋 --> SH["shadow record cf-*<br/>沒做的決定也入帳"]:::prose
+  G3 -- 過 --> E["H10 起手 ≤2%<br/>priced_in>+150% → ≤1.5%<br/>回檔梯 / 走強確認補（R20 雙分支）"]:::prose
+  E --> B{"桶別 roster.json"}:::code
+
+  B -- 信念 --> C1["讓它 run<br/>R8/R23 豁免"]:::code
+  C1 --> C2{">10% 硬線?"}:::code
+  C2 -- 是 --> C3["強制減至 ≤10%<br/>R15 熔斷不豁免"]:::code
+  C2 -- 否 --> C4["只在 thesis 破時動<br/>證偽條件由 thesis_ledger due 驗"]:::code
+
+  B -- 認列 --> R1["R8 梯級 +30/+60/+100<br/>賣 15/15/20%，保底 30% runner"]:::code
+  R1 --> R2["R23 曾達 +20% 後 arm<br/>自峰 −20%/−30% 各減 1/3"]:::code
+  R2 --> R3{"R1 根因分類<br/>(a)thesis破 (b)財報 (c)輪動 (d)噪音"}:::judge
+  R3 -- 只有(a)才汰弱 --> R4["旗標 R11：deadline ≤15 交易日<br/>defer 計次，第 3 次 forced"]:::code
+  R4 --> R5["R27 表述：距線 ±X%，不寫「thesis 完好」"]:::prose
+
+  B -- sleeve --> V1["R25 結構性持有<br/>不計 18 檔、不套 R8/R23、合計 ≤10%"]:::code
+  B -- 樂透 --> V2["R16 建倉即掛停損<br/>+100% 賣半"]:::prose
+  B -- 現金 --> V3["R24 閒置 >$10k → SGOV<br/>動用前一日賣（T+1）"]:::prose
+
+  R2 -. 衝突 C1 .-> R3
+  R1 -. 衝突 C2 .-> R2
+  G3 -. 衝突 C3 .-> R2
+</pre>
+<figcaption>圖 2 · 桶別決定規則集。信念桶只有兩個出口（10% 硬線、thesis 破）；認列桶疊了三層賣方機制（R8、R23、R1→R11），衝突就集中在這裡。虛線是第三節列出的前三個衝突。</figcaption>
+</figure>
+
+<h2>三、互相打架的規則</h2>
+<div class="tbl"><table>
+<thead><tr><th>#</th><th>衝突</th><th>情境</th><th>現況誰贏</th><th>建議明文優先序</th><th>嚴重度</th></tr></thead>
+<tbody>
+<tr><td class="id">C1</td><td>R23 自峰回撤線 vs R1 根因分類</td><td>認列桶在板塊 washout 日觸 −20% 線。R1 說「(c) 輪動不減碼」，R23 說「機械減 1/3」</td><td>R23（AMD 9/2、DDOG 9/3 都在 washout 日開火，隨後 +7%）</td><td>不改到 10/2–10/8 首批計分；若失效 → R23 一段加「個股相對 SMH 獨立弱勢」條件（R1 的 (c) 成為 R23 的豁免）</td><td><span class="sev s-high">HIGH</span></td></tr>
+<tr><td class="id">C2</td><td>R8 梯級停利 vs R23 疊加</td><td>同一認列桶部位先被 R8 賣 15/15/20%，再被 R23 減 1/3 ×2。兩者各自算，沒有合併的 30% runner 保底</td><td>各算各的——理論上可賣到剩 <b>≈17%</b>，低於 R8 的 30% 保底</td><td>R23 的減碼計入 R8 級距、R8 的 30% runner 保底對兩者合計生效；由 position_guard 算「累計已賣 %」擋超賣</td><td><span class="sev s-high">HIGH</span></td></tr>
+<tr><td class="id">C3</td><td>R14 30 天鎖 vs R23 線 / 選擇權停損</td><td>新倉 30 天內觸 R23 線（CLS 9/10 stale arm 案）或 BCS debit −50%。R14 例外只列「thesis 破 / 財報爆雷 / 旗標 forced」</td><td>模糊——CLS 用 T5.5 擋下，選擇權停損直接執行</td><td>明寫：R14 鎖住 R23（新倉不 arm）；R14 不管選擇權（管理線在開倉時寫死，屬 R16 型）</td><td><span class="sev s-mid">MID</span></td></tr>
+<tr><td class="id">C4</td><td>R15 熔斷「信念桶禁淨減碼」vs 10% 硬線</td><td>熔斷生效中（現在 −11.9%），信念桶突破 10%</td><td>硬線贏（plan.md 寫「信念桶不豁免」）</td><td>已一致，只缺一句話寫在 R15 條文裡</td><td><span class="sev s-low">LOW</span></td></tr>
+<tr><td class="id">C5</td><td>R17 收盤確認 vs T6.5 在 11:00 ET 執行</td><td>briefing 跑在盤中。走強分支買單（CLS 9/9）用盤中價執行；防守單若也用盤中價就違反 R17</td><td>目前防守單全靠「隔日」語意（收盤已確認）；買方用盤中價</td><td>T6.5 條件 2 明寫：防守單觸發以<b>前一收盤</b>判定；買方走強分支可用盤中價但需 ≥ 觸發價</td><td><span class="sev s-mid">MID</span></td></tr>
+<tr><td class="id">C6</td><td>R24 SGOV T+1 vs T6.5 當日買單</td><td>現金停在 SGOV，T6.5 當天要買 ≤$3,000；沒有現金可用性檢查</td><td>靠 margin 撐（有 BP 所以沒爆過）</td><td>T6.5 加「可用現金 ≥ 單金額，否則先掛 SGOV 賣、單延一日」；guard 算閒置現金時一併輸出</td><td><span class="sev s-mid">MID</span></td></tr>
+<tr><td class="id">C7</td><td>R9 豁免 vs R18 禁令（財報後 48h）</td><td>R9：財報後預登錄 gate 行動不受 +48h 限制；R18：±48h 不加新曝險</td><td>實務上 R9 豁免在用（PWR 7/30）</td><td>明寫：R9 豁免只對「財報前已登錄 thesis gate 的行動」；R18 管所有臨場加碼。兩者不衝突，只是沒寫在一起</td><td><span class="sev s-low">LOW</span></td></tr>
+</tbody></table></div>
+<p class="note">沒列進來的疑似衝突：R5「漲多不賣」vs R8 梯級——由桶別分開（信念 vs 認列），不衝突；R25 sleeve 豁免 R23 但受 10% 合計上限——一致；T5.5 vs T6.5——優先序已明文（反轉即擋）。</p>
+
+<h2>四、每個機制現在靠什麼執行</h2>
+<div class="tbl"><table>
+<thead><tr><th>規則</th><th>機制</th><th>執行層</th><th>狀態</th><th>可程式化？</th></tr></thead>
+<tbody>
+<tr><td class="id">R4</td><td>單倉 >10% 硬線、18 檔上限</td><td>position_guard</td><td><span class="chip c-code">code</span></td><td>—</td></tr>
+<tr><td class="id">R8</td><td>梯級停利 GTC 缺口</td><td>position_guard（缺口）；掛單由模型</td><td><span class="chip c-code">code</span> / <span class="chip c-prose">prose</span></td><td>掛單可進 auto_exec</td></tr>
+<tr><td class="id">R11</td><td>旗標 deadline / defer 計次 / forced</td><td>trade_ledger flags</td><td><span class="chip c-code">code</span></td><td>—</td></tr>
+<tr><td class="id">R14</td><td>新倉 30 天鎖</td><td>position_guard 🔒</td><td><span class="chip c-code">code</span></td><td>—</td></tr>
+<tr><td class="id">R15</td><td>回檔熔斷</td><td>account_metrics → briefing 顯示</td><td><span class="chip c-code">code</span></td><td>—</td></tr>
+<tr><td class="id">R23</td><td>自峰回撤 arm / 線 / 警報</td><td>position_guard --sync-alerts + price_alerts</td><td><span class="chip c-code">code</span></td><td>執行本身仍靠 T6.5</td></tr>
+<tr><td class="id">R3 / R18 / cf-*</td><td>影子帳計分</td><td>shadow_signals（登錄靠模型）</td><td><span class="chip c-code">code</span> / <span class="chip c-prose">prose</span></td><td>登錄動作可由 T6.5 執行器自動做</td></tr>
+<tr><td class="id">R21 / R22 / R26 / H7 / H8 / H9</td><td>來源信用、EV 校準、放棄條件、情緒、輪動、priced-in</td><td>各自工具，display-only</td><td><span class="chip c-code">code</span></td><td>—</td></tr>
+<tr><td class="id">T5.5</td><td>跨日一致性</td><td>crossday_check（hook + runner）</td><td><span class="chip c-code">code</span> 9/14 新</td><td>—</td></tr>
+<tr><td class="id">—</td><td>檢討週期提醒 / journal 補檔 / 規則單歸因</td><td>review_due / journal_stub / register-order</td><td><span class="chip c-code">code</span> 9/14 新</td><td>register-order 的呼叫仍靠模型</td></tr>
+<tr><td class="id">T6.5</td><td>今日待辦自動執行（判定 + 下單）</td><td>briefing SKILL 散文，模型執行</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：auto_exec.py 讀 flags/alerts/guard，前一收盤判定，Firstrade lib 下單</td></tr>
+<tr><td class="id">R17</td><td>防守單收盤確認</td><td>警報 note 文字 + T6.5 條件</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：auto_exec 只吃前一收盤</td></tr>
+<tr><td class="id">R16</td><td>樂透倉建倉必掛停損</td><td>散文</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：guard 檢查樂透桶部位是否有 stop 單</td></tr>
+<tr><td class="id">R24</td><td>閒置現金 → SGOV</td><td>散文計算 + 模型掛單</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：guard 算閒置額並輸出建議單；auto_exec 掛</td></tr>
+<tr><td class="id">R27</td><td>認列桶只寫機械線距離</td><td>SKILL 格式規則</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：telegram.txt lint（認列桶 ticker 行須含「線/梯級/旗標」）</td></tr>
+<tr><td class="id">H10</td><td>新倉起手 ≤2%</td><td>CLAUDE.md 偏好</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：trade_ledger 對新倉首筆檢查 size，超過自動標 bypass</td></tr>
+<tr><td class="id">R20</td><td>撿回條款雙分支</td><td>散文</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：thesis_ledger add 對 reentry-* slug 要求兩個 trigger</td></tr>
+<tr><td class="id">R10</td><td>清倉必登錄撿回或永久淘汰</td><td>thesis orphans（部分）</td><td><span class="chip c-code">code</span>（部分）</td><td>guard 對已出場標的檢查 reentry thesis 存在</td></tr>
+<tr><td class="id">R1 / R2 / R5 / R6 / R12 / R13</td><td>根因分類、對稱性、VOI</td><td>判斷</td><td><span class="chip c-judge">judge</span></td><td>不該程式化；給強制模板 + cf-r1-hold 影子計分</td></tr>
+<tr><td class="id">R7</td><td>journal 標 ⚠️ 偏離 plan</td><td>散文</td><td><span class="chip c-judge">judge</span></td><td>backfill-origin 已客觀判 user，R7 可退役</td></tr>
+</tbody></table></div>
+
+<h2>五、程式化順序（避免「忘記沒做」）</h2>
+<ol class="plan">
+  <li><b>auto_exec.py — 把 T6.5 從模型手上拿走。</b> 讀 position-flags / price-alerts / position-state，只吃前一收盤判定機械觸發（R23 線、用戶裁決線、R8 級距、SGOV 停泊、選擇權管理線），過五條件後用 Firstrade lib 下單、register-order、resolve-flag、shadow record 一氣呵成；模型只負責寫「為什麼」。這一步同時解 C5、C6、R16、R24、R17。風險最高也最值得——真錢單走 code 前先跑兩週 dry-run（只印不送）。</li>
+  <li><b>position_guard 加四個檢查：</b>R8+R23 累計賣出 % 對 30% runner 保底（C2）、R14 鎖住 R23 arm（C3）、樂透桶無停損單（R16）、閒置現金額與 SGOV 建議單（R24）。都是讀現有 state 就能算。</li>
+  <li><b>兩個 lint：</b>telegram.txt 的 R27 檢查（認列桶行必含機械線）併進 crossday_check 的 hook；trade_ledger ingest 時對新倉首筆檢查 H10（>2% 自動標 bypass）。</li>
+  <li><b>SessionStart hook：</b>settings.json 目前只有 PostToolUse。加 <span class="chip c-code">journal_stub</span> + <span class="chip c-code">review_due</span> 到 SessionStart，互動 session 也不會漏 journal 和到期提醒（CLAUDE.md 寫的「SessionStart 自動 journal 偵測」實際上沒設）。</li>
+  <li><b>thesis_ledger add 對 reentry-* 強制雙分支</b>（R20），退役 R7。</li>
+</ol>
+<p class="note">判斷型的六條（R1/R2/R5/R6/R12/R13）刻意不程式化：它們的價值在「有沒有想清楚」，程式化只會變成打勾。對它們的紀律是影子帳——每次判斷都留一筆可計分的紀錄。</p>
+</main>

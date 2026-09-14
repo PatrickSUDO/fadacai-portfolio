@@ -38,6 +38,25 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/journal_stub.py\"",
+            "timeout": 30,
+            "statusMessage": "journal_stub"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/tools/review_due.py\" || true",
+            "timeout": 30,
+            "statusMessage": "review_due"
+          }
+        ]
+      }
     ]
   }
 }
