@@ -249,6 +249,18 @@ OUT_DIR="$LOG_DIR"
 log "Post-run: journal stub if missing..."
 python3 "$SCRIPT_DIR/journal_stub.py" "$TODAY" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "journal_stub failed (non-fatal)"
+# auto_exec 乾跑對照：plan vs 實際單，有差異直推 Telegram（missed = 模型漏做；unplanned = 模型自判機械觸發）
+log "Post-run: auto_exec audit (plan vs actual)..."
+python3 "$SCRIPT_DIR/trade_ledger.py" snapshot-orders >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" || true
+python3 "$SCRIPT_DIR/trade_ledger.py" ingest --range today >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" || true
+if ! AUDIT=$(python3 "$SCRIPT_DIR/auto_exec.py" --audit 2>&1); then
+  printf '%s\n' "$AUDIT" >> "$LOG_DIR/launchd.log"
+  printf '🧾 auto_exec 乾跑對照有差異（briefing_runner）\n%s\n→ 動作：missed = plan 該下的單今天沒下，請開 session 補；unplanned = 認列桶出現 plan 外賣單，查是不是模型自判觸發\n' "$AUDIT" \
+    | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "tg_send failed (non-fatal)"
+else
+  printf '%s\n' "$AUDIT" >> "$LOG_DIR/launchd.log"
+fi
 # T5.5 跨日一致性：今日 telegram vs 昨日；有反轉直推 Telegram（不經模型）
 if [[ -f "$OUT_DIR/$TODAY-telegram.txt" ]]; then
   log "Post-run: cross-day consistency check..."

@@ -210,5 +210,66 @@ def main(argv):
     return 0
 
 
+def audit(day: str | None = None) -> int:
+    """乾跑對照：當天 plan vs 實際（order-registry 當天出現的單 + trade-ledger 當天成交）。
+    三類差異：missed（plan 有、實際沒下）/ unplanned（實際下了機械型賣單、plan 沒有）/ mismatch（股數差）。
+    exit 2 = 有差異（runner 直推 Telegram）；0 = 一致或當天無 plan。結果 append 到 research/auto-exec-audit.jsonl。"""
+    day = day or date.today().isoformat()
+    plan_doc = _load(OUT, {})
+    plan = plan_doc.get("plan", []) if plan_doc.get("asof") == day else []
+    reg = _load(REGISTRY, {})
+    fills = []
+    led = ROOT / "research" / "trade-ledger.jsonl"
+    if led.exists():
+        for line in led.read_text().splitlines():
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("date") == day:
+                fills.append(r)
+    orders_today = [o for o in (reg.get("orders") or {}).values()
+                    if (o.get("placed") or o.get("first_seen")) == day]
+    side_map = {"SELL": "S", "BUY": "B"}
+    issues = []
+    for p in plan:
+        if p["action"] not in side_map:
+            continue  # spread/GTC-tier 類先不比對
+        want = side_map[p["action"]]
+        got_o = [o for o in orders_today if o.get("symbol") == p["symbol"] and o.get("transaction") == want]
+        got_f = [f for f in fills if f.get("symbol") == p["symbol"] and f.get("side", "").upper().startswith("SOLD" if want == "S" else "BOUGHT")]
+        if not got_o and not got_f:
+            issues.append({"type": "missed", "symbol": p["symbol"], "rule": p["rule"], "qty": p.get("qty"),
+                           "msg": f"plan 要 {p['action']} {p['symbol']} {p.get('qty')}，當天無掛單也無成交"})
+        else:
+            qty_got = sum((o.get("shares") or 0) for o in got_o) or sum((f.get("qty") or 0) for f in got_f)
+            if p.get("qty") and abs(qty_got - p["qty"]) > 0.5:
+                issues.append({"type": "mismatch", "symbol": p["symbol"], "rule": p["rule"],
+                               "msg": f"plan {p['qty']} 股 vs 實際 {qty_got:g} 股"})
+    planned_sells = {p["symbol"] for p in plan if p["action"] == "SELL"}
+    st = _load(STATE, {})
+    buckets = {p["symbol"]: p.get("bucket") for p in st.get("positions", [])}
+    for f in fills:
+        if f.get("side", "").upper().startswith("SOLD") and f.get("symbol") not in planned_sells \
+                and buckets.get(f.get("symbol")) == "認列" and not f.get("symbol", "").endswith(("C", "P")) \
+                and len(f.get("symbol", "")) <= 5:
+            issues.append({"type": "unplanned", "symbol": f["symbol"],
+                           "msg": f"認列桶 {f['symbol']} 賣 {f.get('qty')} 股不在 plan（模型自判機械觸發？或非機械賣出）"})
+    rec = {"date": day, "plan_n": len(plan), "issues": issues}
+    with open(ROOT / "research" / "auto-exec-audit.jsonl", "a") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    if not plan and not issues:
+        print(f"🧾 auto_exec audit {day}：當天無 plan、無認列桶非計畫賣出"); return 0
+    if not issues:
+        print(f"🧾 auto_exec audit {day}：plan {len(plan)} 項全部對上 ✅"); return 0
+    print(f"🧾 auto_exec audit {day}：{len(issues)} 項差異")
+    for i in issues:
+        print(f"  ✗ {i['type']:<9} {i['symbol']:<6} {i['msg']}")
+    return 2
+
+
 if __name__ == "__main__":
+    if "--audit" in sys.argv:
+        d = [a for a in sys.argv[1:] if re.match(r"\d{4}-\d{2}-\d{2}$", a)]
+        sys.exit(audit(d[0] if d else None))
     sys.exit(main(sys.argv[1:]))
