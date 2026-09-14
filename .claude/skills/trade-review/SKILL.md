@@ -206,6 +206,10 @@ python3 tools/thesis_ledger.py resolve --id <id> --verdict passed|failed|partial
 
 `partial` 強制 `--price-verdict`：營運達標但市場不認 → `missed`。
 
+**4c-2. 輪動相關旗標（H8，2026-09-14 起）**
+
+讀 `research/rotation-corr-log.jsonl`：本期每個 `regime_shift == true` 的 (date, pair) → 取旗標日後 10 個交易日兩籃相對報酬（工具已算 `rel_ret_10d_pct`，或用 archive 價格重算）。**命中 = |相對報酬| ≥ 5pp 且方向與 Δρ 一致**；記 `H8 n / 命中`。連兩期 n≥5 且命中率 <50% → 儀表降為只存 log 不上 Telegram；**沒有 regime_shift 的期就寫「H8 本期無旗標」，不得用 20d ρ 的漲跌硬湊敘事。**
+
 **4d. 來源信用帳（來源信用 tier 閘，R21 影子計分中）**
 
 ```bash

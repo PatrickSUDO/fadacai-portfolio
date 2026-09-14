@@ -82,6 +82,8 @@ Read briefing-out/cache/leading-indicators.json
 🚦 先行: HY {delta_5d_bps:+}bp/5d ({velocity_flag}) | VIX期限 {ratio} ({term_flag}) | 半導體寬度 {pct_above_50dma}%>50DMA ({breadth_flag}) | 記憶體報價 {memory.n_hits}則/功率 {power.n_hits}則 | 台股月營收 {data_month} {最強檔 YoY%或 —}
 ```
 
+**🔁 輪動相關儀表（2026-09-14 新增，display-only，H8 影子）：** 讀 `briefing-out/cache/rotation-corr.json`（`tools/rotation_corr.py`，runner 每日預跑、archive 凍結；手動 briefing 時 `uv run --directory tools python3 tools/rotation_corr.py`），在 🚦 儀表行下方**原樣**貼其 `banner`（例：`🔁 輪動相關: 軟體~半導體 20d ρ +0.17（不顯著，基準 +0.22） | regime-shift: 無顯著變化`）。**措辭鐵則**：ρ 的形容只准用工具給的三種（正相關 / 負相關 / 不顯著）——「負相關」只在 95% CI 上界 <0 時存在；`regime_shifts` 為空就寫「無顯著變化」，**不得**用「感覺軟體硬體在對做」之類敘事補位。有 regime-shift 時進 Key Alerts 一行、不觸發任何加減碼；由 /trade-review 驗 H8（旗標後 10 日兩籃相對報酬 ≥5pp 才算有資訊量）。
+
 `gauges` 另帶兩個 FMP 免費層儀表（不進一行 banner，供 full/deep 段落與 Key Alerts 引用）：
 - `treasury`（10Y/2Y/3M/30Y + 2s10s/3m10y spread）— plan「10Y <4.35 再加滿」類閘門的即時對照
 - `semis_industry_pe`（半導體行業 PE 日頻 + Δ5d/Δ20d + 100 日分位）— **估值溫度計**：與 revision 寬度並讀可分離「估值壓縮 vs 基本面惡化」（PE 大跌 + revision 寬度不動 = 純 de-rating）

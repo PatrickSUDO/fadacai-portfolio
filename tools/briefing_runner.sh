@@ -126,6 +126,11 @@ if [[ -x "$SCRIPT_DIR/briefing_local_hooks.sh" ]]; then
     || log "local hooks failed (non-fatal)"
 fi
 
+log "Refreshing rotation correlation dashboard (H8, display-only)..."
+uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/rotation_corr.py" \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "rotation_corr failed (non-fatal)"
+
 log "Refreshing account metrics (R15 drawdown circuit breaker input)..."
 python3 "$SCRIPT_DIR/account_metrics.py" scan \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
