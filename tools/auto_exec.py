@@ -182,7 +182,11 @@ def main(argv):
                          "after": ["register-order --rule R8"]})
 
     parked = float(st.get("parked_cash_equiv") or 0)
-    cash_available = cash - pending_buys
+    # 在掛的現金等價賣單（SGOV 解泊，T+1）視為即將到位的現金，避免重複出解泊單
+    pending_ce_sells = sum((o.get('shares', 0) or 0) * (o.get('limit_price', 0) or 0)
+                           for o in (reg.get('orders') or {}).values()
+                           if o.get('state') == 'ORDER-SUBMITTED' and o.get('transaction') == 'S' and o.get('symbol') in ('SGOV', 'BIL'))
+    cash_available = cash - pending_buys + pending_ce_sells
     # ── F. R30 加碼候選（買強，2026-09-14）：回檔 SMA20 限價 GTC 10 日；候選消失 → 撤掛 R30 單 ─────
     r30_syms = set()
     for c in st.get("add_candidates", []) or []:
