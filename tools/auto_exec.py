@@ -213,7 +213,9 @@ def main(argv):
 def audit(day: str | None = None) -> int:
     """乾跑對照：當天 plan vs 實際（order-registry 當天出現的單 + trade-ledger 當天成交）。
     三類差異：missed（plan 有、實際沒下）/ unplanned（實際下了機械型賣單、plan 沒有）/ mismatch（股數差）。
-    exit 2 = 有差異（runner 直推 Telegram）；0 = 一致或當天無 plan。結果 append 到 research/auto-exec-audit.jsonl。"""
+    exit 2 = 有差異（runner 直推 Telegram）；0 = 一致或當天無 plan。結果 append 到 research/auto-exec-audit.jsonl。
+    時序：runner 早上（ET 11:00）用「前一收盤」產 plan → 同日 briefing 執行 → 同日事後 audit，三者同一個 date。
+    手動在盤後跑 main() 會產生「今日 asof、明日才執行」的 plan，此時 --audit 會報預告性 missed，忽略即可（不要寫進帳）。"""
     day = day or date.today().isoformat()
     plan_doc = _load(OUT, {})
     plan = plan_doc.get("plan", []) if plan_doc.get("asof") == day else []
