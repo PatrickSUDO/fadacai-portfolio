@@ -14,7 +14,8 @@ v1 覆蓋（全部是「降風險或零風險」類，T6.5 條件 3 無金額上
 不覆蓋（仍由模型/用戶）：新倉、加碼、選擇權開倉、任何需要 thesis 判斷的動作。
 
 五條件在此實作：①類別（上列五類）②量化觸發＝**前一收盤**（R17，盤中價不算）③金額上限只管新增曝險（A–C、E 為減碼/平倉、D 為現金等價，皆免）
-④硬線：財報 ±48h（A/B/E 不執行；C 選擇權平倉仍執行）、R14 鎖住 R23（C3 裁決）、單一持倉 >10% 不由本工具處理（guard 已報）
+④硬線：財報 ±48h（A/B/E 不執行；C 選擇權平倉仍執行）、R14 鎖住 R23（C3 裁決）、R8+R23 合計不賣穿 30% runner（C2，guard `sellable_before_floor`）、單一持倉 >10% 不由本工具處理（guard 已報）
+⑥現金閘（C6）：輸出 `cash_gate`（可用現金 / SGOV 停泊）；可用 < $3k 且有停泊 → 加一張 SGOV 賣單（T+1），T6.5 新曝險買單延一日
 ⑤跨日反轉：讀 briefing-out/cache/crossday-flags.json（crossday_check 若有輸出）→ 命中 ticker 的 A/B 延一日
 
 --execute 目前**被鎖**（v1）：印出「dry-run only，解鎖日 2026-09-28（兩週乾跑後由用戶裁決）」。
@@ -110,6 +111,12 @@ def main(argv):
         if sym in reversed_tks:
             skip(sym, "R23", "T5.5 跨日反轉，延一日"); continue
         qty = math.floor(p["qty"] / 3)
+        # C2：R8+R23 合計不得賣穿 30% runner（guard 已算 sellable_before_floor）
+        left = p.get("sellable_before_floor")
+        if left is not None and qty > left:
+            if left < 1:
+                skip(sym, "R23", f"已賣 {p.get('cum_sold_pct', 0):.0f}%，觸 30% runner 保底（C2）"); continue
+            qty = int(left)
         if qty < 1:
             skip(sym, "R23", "1/3 不足 1 股"); continue
         plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
@@ -186,9 +193,20 @@ def main(argv):
         merged[i] = keep
     plan = merged
 
+    # C6：T6.5 新增曝險買單的現金可用性（現金停在 SGOV 時要先賣，T+1 才能用）
+    parked = float(st.get("parked_cash_equiv") or 0)
+    cash_available = cash - pending_buys
+    cash_gate = {"cash_available": round(cash_available, 2), "parked_sgov": round(parked, 2),
+                 "rule": "新倉/加碼買單金額 ≤ cash_available 才可當日執行；不足且 parked_sgov > 0 → 今日先掛 SGOV 賣（T+1），買單延一日；兩者皆無 → 列 🎯 待辦不下單"}
+    if cash_available < 3_000 and parked > 0:
+        plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL", "qty": math.ceil(min(parked, 3_000 - cash_available) / sgov_px),
+                     "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
+                     "basis": f"可用現金 {cash_available:,.0f} < $3k 新曝險上限，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）",
+                     "after": ["register-order --rule R24"]})
+
     out = {"asof": today.isoformat(), "close_asof": closes.get("asof"), "mode": "dry-run" if not execute else "execute",
            "execute_unlock": EXECUTE_UNLOCK.isoformat(), "px_note": px_note,
-           "plan": plan, "skipped": skipped,
+           "plan": plan, "skipped": skipped, "cash_gate": cash_gate,
            "discipline": "T6.5 只執行本清單；新倉/加碼/選擇權開倉不在此；所有觸發以前一收盤判定（R17）"}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2))

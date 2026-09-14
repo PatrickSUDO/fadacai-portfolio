@@ -5,6 +5,8 @@
   R14 新倉 30 天閘（持有天數）    R23 認列桶自峰回撤線（arm / 線 / 警報同步）
   R8  梯級停利 GTC 缺口          R19 換手 pair 到期
   >10% 單倉硬線 / 檔數上限         財報 ±48h 窗（R9/R18）
+  C2  R8+R23 合計 30% runner 保底  C3 R14 窗內 R23 不 arm（2026-09-14）
+  R16 樂透桶停損單缺口            R24 閒置現金 > $10k
   桶別缺口（roster.json 沒登記的持倉）  旗標一致性（旗標/警報/thesis 三方）
 
 資料源：Firstrade live 持倉（trade_ledger.fetch_positions，失敗退回交易帳 FIFO）、
@@ -48,6 +50,9 @@ R23_LINES = (20, 30)
 R8_TIERS = ((30, 15), (60, 15), (100, 20))  # (+% 未實現, 該級賣出 % of 原始股數)
 R14_DAYS = 30
 EARN_WINDOW_DAYS = 2
+RUNNER_FLOOR_PCT = 30       # C2（2026-09-14）：R8+R23 合計最多賣 70%，30% runner 對兩者合計生效
+IDLE_TRIGGER, IDLE_BUFFER_PCT = 10_000, 0.03   # R24 閒置現金
+STOP_PRICE_TYPES = {"3", "4"}  # Firstrade price_type：3=stop、4=stop-limit（R16 樂透停損單）
 
 
 def _load_json(p, default):
@@ -113,6 +118,31 @@ def open_since(fills, sym):
         else:
             sh = max(0.0, sh - float(f["qty"]))
     return since
+
+
+def qty_stats_since(fills, sym, since):
+    """建倉起算的最高持股數（R8+R23 合計已賣 % 的分母）。"""
+    sh, peak = 0.0, 0.0
+    for f in fills:
+        if f["symbol"] != sym or (since and f["date"] < since):
+            continue
+        sh = sh + float(f["qty"]) if f["side"] == "BOUGHT" else max(0.0, sh - float(f["qty"]))
+        peak = max(peak, sh)
+    return peak
+
+
+def open_stop_orders(registry, sym):
+    orders = registry.get("orders", registry)
+    return [oid for oid, o in orders.items()
+            if o.get("symbol") == sym and o.get("transaction") == "S" and str(o.get("price_type")) in STOP_PRICE_TYPES
+            and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED"))]
+
+
+def pending_buy_notional(registry):
+    orders = registry.get("orders", registry)
+    return sum((o.get("shares") or 0) * (o.get("limit_price") or 0) for o in orders.values()
+               if o.get("transaction") == "B" and o.get("sec_type") == 1
+               and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")))
 
 
 def price_stats(sym, since):
@@ -225,11 +255,21 @@ def build_state(*, sync_alerts=False):
             peak_t, _, _ = price_stats(sym, trim_dt)
             if peak_t:
                 peak, dd = peak_t, ((last / peak_t - 1) * 100 if last else None)
-        armed = bool(bucket == "認列" and peak and cost and peak >= cost * (1 + R23_ARM))
+        r14_locked = bool(days is not None and days < R14_DAYS)
+        # C3（2026-09-14 裁決）：R14 30 天窗內 R23 不 arm（新倉不掛回撤線；auto_exec 同步跳過）
+        armed = bool(bucket == "認列" and not r14_locked and peak and cost and peak >= cost * (1 + R23_ARM))
         r23_state = None
         if armed and dd is not None:
             r23_state = "TRIGGER −30% 兩段" if dd <= -30 else ("TRIGGER −20% 一段" if dd <= -20 else f"監控中（−20% 線 ${peak*0.8:.0f}）")
+        elif bucket == "認列" and r14_locked and peak and cost and peak >= cost * (1 + R23_ARM):
+            r23_state = "R14 鎖（未 arm）"
         sells = open_sell_orders(registry, sym)
+        # C2：R8 + R23 合計已賣 %（分母 = 建倉起最高持股），30% runner 保底對兩者合計生效
+        peak_qty = qty_stats_since(fills, sym, since) or v["qty"]
+        cum_sold = max(0.0, (peak_qty - v["qty"]) / peak_qty * 100) if peak_qty else 0.0
+        pending_sell = sum(float(o.get("shares") or 0) for o in sells)
+        sellable_left = max(0.0, peak_qty * (1 - RUNNER_FLOOR_PCT / 100) - (peak_qty - v["qty"]))
+        runner_floor_hit = bool(bucket == "認列" and cum_sold >= 100 - RUNNER_FLOOR_PCT - 1e-6)
         fl = open_flags(flags, sym)
         al = alerts_for(alerts, sym)
         th = pending_theses(theses, sym)
@@ -245,11 +285,18 @@ def build_state(*, sync_alerts=False):
             gaps.append(f"{sym}: 桶別待用戶確認（{bucket}）")
         if weight is not None and weight > cap_pct:
             gaps.append(f"{sym}: 單倉 {weight:.1f}% > {cap_pct:g}% 硬線 → 強制減至 ≤{cap_pct:g}%")
-        if bucket == "認列" and unreal is not None:
+        if bucket == "認列" and runner_floor_hit:
+            if sells:
+                gaps.append(f"{sym}: R8+R23 合計已賣 {cum_sold:.0f}% ≥ 70%，觸 30% runner 保底 → 撤在掛減碼單 {[o['id'] for o in sells]}（C2）")
+        elif bucket == "認列" and pending_sell > sellable_left + 1e-6:
+            gaps.append(f"{sym}: 在掛賣單 {pending_sell:g} 股 > 保底前可賣 {sellable_left:.0f} 股（已賣 {cum_sold:.0f}%）→ 縮單，勿賣穿 30% runner（C2）")
+        if bucket == "認列" and unreal is not None and not runner_floor_hit:
             for tier_pct, _sell in R8_TIERS:
                 if unreal >= tier_pct and not sells:
                     gaps.append(f"{sym}: R8 未實現 +{unreal:.0f}% ≥ +{tier_pct}% 級距但無在掛賣單 → 掛 GTC")
                     break
+        if bucket == "樂透" and not open_stop_orders(registry, sym):
+            gaps.append(f"{sym}: 樂透桶無在掛停損單 → 掛普通停損（R16；成本線，非移動）")
         if armed:
             # 已破的線交給旗標，不要求警報存在（sync 會主動移除）
             want = {f"{sym}-R23-peakdd{p}" for p in R23_LINES if dd is None or dd > -p}
@@ -269,7 +316,9 @@ def build_state(*, sync_alerts=False):
             "symbol": sym, "bucket": bucket, "qty": v["qty"], "unit_cost": round(cost, 2),
             "last": round(last, 2) if last else None, "weight_pct": round(weight, 2) if weight is not None else None,
             "unrealized_pct": round(unreal, 1) if unreal is not None else None,
-            "open_since": since, "days_held": days, "r14_locked": bool(days is not None and days < R14_DAYS),
+            "open_since": since, "days_held": days, "r14_locked": r14_locked,
+            "peak_qty": peak_qty, "cum_sold_pct": round(cum_sold, 1), "sellable_before_floor": int(sellable_left),
+            "runner_floor_hit": runner_floor_hit,
             "peak_close": round(peak, 2) if peak else None, "peak_date": peak_dt,
             "drawdown_from_peak_pct": round(dd, 1) if dd is not None else None,
             "r23_armed": armed, "r23_since": r23_since if armed else None, "r23_state": r23_state,
@@ -287,7 +336,14 @@ def build_state(*, sync_alerts=False):
     if stale:
         gaps.append(f"roster.json 含已出場標的 {stale} → 移除")
 
+    # R24：閒置現金 = 現金 − 在掛買單 − 3% 緩衝；> $10k → 缺口（auto_exec D 段出 SGOV 單）
+    pend_buy = pending_buy_notional(registry)
+    idle = (cash - pend_buy - IDLE_BUFFER_PCT * total) if (cash is not None and total) else None
+    if idle is not None and idle > IDLE_TRIGGER:
+        gaps.append(f"R24 閒置現金 ${idle:,.0f}（現金 {cash:,.0f} − 在掛買 {pend_buy:,.0f} − 3% 緩衝）> $10k → 掛 SGOV GTC 買至 ≤ $5k")
+
     state = {"asof": today.isoformat(), "source": source, "total_account_value": total, "cash": cash,
+             "pending_buy_notional": round(pend_buy, 2), "idle_cash": round(idle, 2) if idle is not None else None,
              "parked_cash_equiv": parked, "cash_equivalents": sorted(cash_eq),
              "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps}
 
@@ -353,8 +409,8 @@ def render_table(state):
         + (f"｜總值 ${state['total_account_value']:,.0f}｜現金 ${state['cash']:,.0f}" if state.get("total_account_value") else "")
         + (f"（+停泊 SGOV ${state['parked_cash_equiv']:,.0f}，R24 視同現金）" if state.get("parked_cash_equiv") else ""),
         "",
-        "| 標的 | 桶 | 股數 | 成本 | 現價 | 權重 | 未實現 | 持有天 | 自峰 | R23 | 在掛賣單 | 旗標 | 財報 |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|",
+        "| 標的 | 桶 | 股數 | 成本 | 現價 | 權重 | 未實現 | 持有天 | 自峰 | R23 | 已賣% | 在掛賣單 | 旗標 | 財報 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|---|",
     ]
     for r in state["positions"]:
         w = f"{r['weight_pct']:.1f}%" if r["weight_pct"] is not None else "—"
@@ -365,7 +421,8 @@ def render_table(state):
         sells = ", ".join(f"{o['shares']:g}@{o['limit']:g}" for o in r["open_sell_orders"]) or "—"
         fl = ", ".join(r["open_flags"]) or "—"
         earn = f"{r['next_earnings']}{' ⚠️' if r['in_earnings_window'] else ''}" if r["next_earnings"] else "—"
-        lines.append(f"| {r['symbol']} | {r['bucket'] or '❓'} | {r['qty']:g} | {r['unit_cost']:.2f} | {r['last'] or '—'} | {w} | {u} | {days} | {d} | {r23} | {sells} | {fl} | {earn} |")
+        sold = (f"{r['cum_sold_pct']:.0f}%" + ("🛑" if r.get("runner_floor_hit") else "")) if r["bucket"] == "認列" and r.get("cum_sold_pct") else "—"
+        lines.append(f"| {r['symbol']} | {r['bucket'] or '❓'} | {r['qty']:g} | {r['unit_cost']:.2f} | {r['last'] or '—'} | {w} | {u} | {days} | {d} | {r23} | {sold} | {sells} | {fl} | {earn} |")
     if state["gaps"]:
         lines += ["", "**⚠️ 缺口：**"] + [f"- {g}" for g in state["gaps"]]
     else:
