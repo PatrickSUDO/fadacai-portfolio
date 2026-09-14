@@ -151,9 +151,10 @@ python3 tools/ev_ledger.py add --ticker TICKER --slug <slug>-ev \
   --horizon-days 365 --spot <現價> \
   --p-bull XX --p-base XX --p-bear XX \
   --fv-bull XXX --fv-base XXX --fv-bear XXX --ev-price XXX \
-  --source stock-analysis --model <本次模型> --thesis-ref TICKER:<thesis-slug>
+  --source stock-analysis --model <本次模型> --thesis-ref TICKER:<thesis-slug> \
+  --fair-price-consensus <fundamentals-snapshot self_valuation.consensus_fair_price>
 ```
-到期由 briefing `resolve-due` 機械驗價（零判斷）；校準統計由 /trade-review 讀。**機率/公允價直接抄機率分布表，不重算**。
+到期由 briefing `resolve-due` 機械驗價（零判斷）；校準統計由 /trade-review 讀。**機率/公允價直接抄機率分布表，不重算**。`--fair-price-consensus`（2026-09-14）= 共識 fwdEPS × 三錨點基準 Fair PE，工具自動存 `priced_in_pct = spot ÷ 該值 − 1`（正 = 市場已付超過「共識成長 × 合理倍數」）；**只是登錄變數，不進 EV、不改 Verdict**，/trade-review 用三分位驗「高 priced-in 是否更常 thesis 對但 realized<EV」。cache 無此值（`consensus_fair_price: null`）就省略參數。
 
 4b. **訊號擷取 & Thesis 候選（Signal Extraction，stock-analysis 預設開）**
 

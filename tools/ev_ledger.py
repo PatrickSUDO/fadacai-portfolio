@@ -229,6 +229,13 @@ def cmd_add(a):
     if a.p_up_given_thesis is not None and not 0 <= a.p_up_given_thesis <= 100:
         sys.exit("--p-up-given-thesis must be 0–100")
 
+    # priced-in 標準化（2026-09-14）：spot ÷ (共識 fwdEPS × 三錨點基準 Fair PE) − 1。
+    # 分母來自 fundamentals-snapshot self_valuation.consensus_fair_price；正值 = 市場已付超過
+    # 「共識成長 × 合理倍數」。只當變數存，供 stats 分層驗「高 priced-in 是否更常 thesis 對但沒賺」。
+    priced_in_pct = None
+    if a.fair_price_consensus:
+        priced_in_pct = round((a.spot / a.fair_price_consensus - 1) * 100, 1)
+
     entry = {
         "id": eid, "ticker": a.ticker.upper(), "forecast_date": fdate,
         "horizon_days": a.horizon_days, "target_date": target,
@@ -238,6 +245,7 @@ def cmd_add(a):
         "ev_price": a.ev_price, "ev_pct": ev_pct,
         "source": a.source, "model": a.model, "thesis_ref": a.thesis_ref,
         "p_up_given_thesis": a.p_up_given_thesis, "priced_in_basis": a.priced_in_basis,
+        "fair_price_consensus": a.fair_price_consensus, "priced_in_pct": priced_in_pct,
         "note": a.note, "status": "pending", "created_at": today(),
         "resolution": None,
     }
@@ -424,6 +432,23 @@ def cmd_stats(a):
                 print(f"    {e['id']:42s} Δ {e['resolution']['vs_ev_pp']:+.1f}pp")
         if quad["運氣好"]:
             print("  運氣好（thesis 錯但賺 → 不計命中）: " + ", ".join(e["id"] for e in quad["運氣好"]))
+    # priced_in_pct 分層（2026-09-14）：高 priced-in 三分位是否更常「對但沒用」／realized<EV
+    pin = [e for e in resolved if e.get("priced_in_pct") is not None]
+    if len(pin) >= 6:
+        pin.sort(key=lambda e: e["priced_in_pct"])
+        k = len(pin) // 3
+        terc = {"低 priced-in": pin[:k], "中": pin[k:len(pin) - k], "高 priced-in": pin[len(pin) - k:]}
+        print("\npriced_in_pct 三分位（spot ÷ 共識fwdEPS×基準FairPE − 1）→ realized<EV 比例 / mean Δ：")
+        for name, xs in terc.items():
+            if not xs:
+                continue
+            below = 100.0 * sum(1 for e in xs if e["resolution"]["vs_ev_pp"] < 0) / len(xs)
+            md = sum(e["resolution"]["vs_ev_pp"] for e in xs) / len(xs)
+            rng = f"{xs[0]['priced_in_pct']:+.0f}%…{xs[-1]['priced_in_pct']:+.0f}%"
+            print(f"  {name:10s} n={len(xs):<3d} [{rng}]  realized<EV {below:.0f}%  mean Δ {md:+.1f}pp")
+        print("  ⚠️ n<30 只記方向；顯著才討論把 priced_in 納入形狀規則（display-only 直到那時）")
+    else:
+        print(f"\npriced_in_pct 分層：已解決且帶 priced_in_pct 的樣本 {len(pin)} 筆（<6，累積中）")
     # priced-in branch calibration: pre-registered P(up | thesis right) vs realized
     pu = [e for e in quad["命中"] + quad["對但沒用"] if e.get("p_up_given_thesis") is not None]
     if pu:
@@ -468,6 +493,9 @@ def main():
     a.add_argument("--p-up-given-thesis", type=float,
                    help="P(price up | thesis right) in %%; required with --thesis-ref")
     a.add_argument("--priced-in-basis", help="one line: thesis value vs consensus already priced")
+    a.add_argument("--fair-price-consensus", type=float,
+                   help="fundamentals-snapshot self_valuation.consensus_fair_price（共識 fwdEPS × 基準 Fair PE）；"
+                        "給了就自動存 priced_in_pct = spot/該值 − 1")
     a.add_argument("--note")
     a.set_defaults(func=cmd_add)
 

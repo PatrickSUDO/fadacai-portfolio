@@ -161,6 +161,7 @@ python3 tools/ev_ledger.py resolve-due && python3 tools/ev_ledger.py stats
 - 系統性偏差確立（如「30-60d 一致過度樂觀」連兩期同向）→ 修正對象是 **probability-honesty-checker 的形狀規則表 / 各 skill prompt**，寫入 `RULES-LEDGER` 帶命中率追蹤 — **不建 ML 模型**（n>150 獨立已解決樣本前不重評，見 AGENTS.md）
 - Goodhart 警戒：校準變好但分布變窄（永遠給 hedged 分布）= 假改善，對照分布寬度一起看
 - `stats` 的四項——獨立 n、Brier skill score（>0 才是技能）、`in_range`（分布外 = 漏分支非運氣）、thesis × 定價 2×2（「對但沒用」= priced-in 候選）——原樣抄進報告 §4，`review_lint.py` 會查
+- **priced_in_pct 三分位**（2026-09-14 起 `stats` 自帶）：高三分位 realized<EV 比例是否顯著高於低三分位；n<30 只記方向。連兩期同向且差距 ≥20pp → 才討論把 priced_in 納入 probability-honesty-checker 的形狀規則表（display-only 直到那時）
 
 **4a. A4 高估旗標（影子模式，Phase 1 只記錄不阻擋）**
 

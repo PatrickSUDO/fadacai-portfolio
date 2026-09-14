@@ -637,6 +637,11 @@ def compute_self_valuation(
         base_fair_pe = None
 
     own_target_price = (own_fwdEPS * base_fair_pe) if (own_fwdEPS and base_fair_pe) else None
+    # consensus_fair_price = 「共識 fwdEPS × 三錨點基準 Fair PE」= 市場若只付合理倍數給共識成長
+    # 該值多少。priced_in_pct = spot / consensus_fair_price − 1（正 = 已付超過共識×合理倍數）。
+    # 2026-09-14 用戶提議標準化「PE 是否 already pricing」；spot 由 ev_ledger add / skill 帶入，
+    # 這裡只存分母，避免 cache 內價格過期。display-only 變數，供 ev-ledger 2×2 分層驗證，不是 gate。
+    consensus_fair_price = (a3_fwdeps * base_fair_pe) if (a3_fwdeps and base_fair_pe) else None
 
     # ── Confidence ─────────────────────────────────────────────────────────
     confidence = "low" if stdev_growth > GROWTH_STDEV_THRESHOLD else "ok"
@@ -665,6 +670,7 @@ def compute_self_valuation(
         "base_fair_pe_approx": round(base_fair_pe, 2) if base_fair_pe else None,
         "a3_fwdeps_source": a3_fwdeps_source,
         "own_target_price": round(own_target_price, 2) if own_target_price else None,
+        "consensus_fair_price": round(consensus_fair_price, 2) if consensus_fair_price else None,
         "confidence": confidence,
         "notes": "; ".join(notes_parts),
     }
