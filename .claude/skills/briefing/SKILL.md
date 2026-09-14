@@ -990,7 +990,9 @@ Agent(subagent_type="data-collector"):
 - 過濾純 HOLD-only、無 actionable 的項目
 - 每條格式：`• {action}（{trigger / catalyst}）`
 
-**T6.5 自動執行（今日待辦 → 直接下單，2026-09-08 用戶指定）**
+**T6.5 自動執行（今日待辦 → 直接下單，2026-09-08 用戶指定；2026-09-14 起機械單判定移到 code）**
+
+**先讀 `briefing-out/cache/auto-exec-plan.json`**（`tools/auto_exec.py`，runner 預跑；手動 briefing 時 `uv run --directory tools python3 tools/auto_exec.py`）。**機械單（R23 線、用戶裁決收盤線、選擇權管理線、R24 SGOV、R8 缺口）只准執行該檔 `plan` 列出的項目**，觸發判定一律以前一收盤（工具已算），模型不得自行判定「有沒有到線」；`skipped` 列出被 R14/財報窗/跨日反轉擋下者，原樣進 Key Alerts。dry-run 期間（至 2026-09-28）工具不送單，仍由模型依 plan 用 MCP 下單並回報；每筆下單後 `register-order --rule <plan.rule>`。新倉/加碼類不在 plan 內，仍走下面五條件。
 
 T6 產生的**今日待辦**（明日待辦不適用，只是預告）逐條檢查，**五條全過**才直接下單、不再列為待用戶確認的項目：
 

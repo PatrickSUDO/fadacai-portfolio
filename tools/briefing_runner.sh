@@ -131,6 +131,18 @@ uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/rotation_corr.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "rotation_corr failed (non-fatal)"
 
+log "Position guard (fresh state for auto_exec)..."
+python3 "$SCRIPT_DIR/position_guard.py" --sync-alerts \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "position_guard exit≠0 (gaps or failure; briefing re-runs it)"
+
+# T6.5 機械單清單（v1 dry-run）：以前一收盤判定，寫 briefing-out/cache/auto-exec-plan.json；
+# briefing T6.5 只准執行此清單，不自行判定機械觸發。--execute 解鎖前不送單。
+log "auto_exec dry-run (T6.5 mechanical plan)..."
+uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "auto_exec failed (non-fatal; briefing falls back to prose T6.5)"
+
 log "Refreshing account metrics (R15 drawdown circuit breaker input)..."
 python3 "$SCRIPT_DIR/account_metrics.py" scan \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
