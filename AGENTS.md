@@ -79,7 +79,8 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 - `research/order-registry.json` — 在掛單快照累積（券商只回在掛單，斷天補不回來 → briefing 每次 `snapshot-orders`）
 - `research/shadow-signals.jsonl` — 影子訊號旗標（記錄不阻擋）；工具 `tools/shadow_signals.py`。兩類 signal：A4 高估旗標（`flag` 自動掃）+ **R18 財報窗被擋加碼**（`block --ticker X --price Y --size Z --note "..."` 手動登錄——凡財報窗禁令實際擋下一個想做的加碼，同一次必登錄；`score` 30 天熟成後驗「被擋的買進是否跑輸基準」，見 `feedback/earnings-reaction-window.md` C 段）
 - `research/ev-ledger.jsonl` — **EV 分布事前登錄帳（機率校準自驗）**；工具 `tools/ev_ledger.py add/resolve-due/stats`。stock-analysis / ev-check 收尾 `add`（機率+三情境公允價+EV 原樣入帳），briefing 到期 `resolve-due` 機械驗價（個股 yfinance / PORTFOLIO 對 equity-marks，零判斷），/trade-review 每期讀 `stats`（EV 誤差 by horizon/model、Brier、校準表）。**修正只進 prompt/規則層（RULES-LEDGER 帶命中率），不建 ML 模型 — n>150 筆獨立已解決樣本前不重評**（2026-08-03 設計裁決：小 n + 高相關標的 + Goodhart 風險）
-- `research/last-trade-review.txt` — 上次交易檻討日期（briefing 據此算 >14 天到期提醒）
+- `research/last-trade-review.txt` — 上次交易檻討日期
+- `tools/review_due.py` — **檢討週期機械提醒（2026-09-14）**：trade-review 14 天 / portfolio-review 30 天 / SA 掃描 35 天，日期取檔名非 mtime；exit 2 = 到期 → briefing Key Alerts + Telegram 今日待辦；`briefing_runner.sh` 預跑並**直推 Telegram 不經模型**（原散文提醒在 2026-09-14 被 telegram tier 跳過，第 16 天才被用戶發現）。新增任何「N 天做一次」的事加進 CHECKS，不寫散文
 - `research/position-flags.json` — **未結旗標登記（欠一個決定的部位）**。工具 `tools/trade_ledger.py flag/defer/resolve-flag/flags`
 - `briefing-out/cache/archive/YYYY-MM-DD/` — **每日決策輸入凍結快照**（fundamentals/macro/news/earnings/pmcc/leading）。工具 `tools/archive_cache.py`，briefing_runner 自動跑，保留 120 天日快照 + 之後每月首日
 - `research/leading-config.json` — **發現層先行指標配置**（cross-read 鏈、pricing 關鍵字/symbols、SMH 寬度成分、台股月營收清單、decel 閾值）；改持倉/鏈/閾值時手動編輯，`tools/fetch_leading.py` 讀取

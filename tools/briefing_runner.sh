@@ -151,6 +151,20 @@ else
   log "RULES-LEDGER consistent"
 fi
 
+# Review cadence (trade-review 14d / portfolio-review 30d / SA scan 35d): also runs
+# without the model and pushes straight to Telegram. 2026-09-14: the prose-only
+# reminder in SKILL.md was skipped by the telegram tier 16 days after the last review.
+log "Checking review cadence (review_due.py)..."
+if ! REVIEW_DUE=$(python3 "$SCRIPT_DIR/review_due.py" 2>&1); then
+  log "Review(s) due — pushing to Telegram"
+  printf '%s\n' "$REVIEW_DUE" >> "$LOG_DIR/launchd.log"
+  printf '⏰ 檢討週期到期（briefing_runner，機械提醒）\n%s\n→ 動作：開互動 session 跑對應指令；trade-review 需要你在場做歸因，briefing 不代跑\n' "$REVIEW_DUE" \
+    | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "tg_send failed (non-fatal)"
+else
+  log "Review cadence OK"
+fi
+
 log "Resolving due source-credit claims (views scored by price; facts listed only)..."
 python3 "$SCRIPT_DIR/source_credit.py" resolve-due \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \

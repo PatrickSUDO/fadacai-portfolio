@@ -341,15 +341,17 @@ Step 0.7 的 `due` 只在**觸發日**驗收；`recheck` 補的是中間那段�
 
 quick / telegram tier 只掃前 3 筆；full / deep 掃全部長飄移筆數。
 
-**5. 交易檢討到期提醒**
+**5. 檢討/review 週期到期（機械，2026-09-14 改為工具）**
 
-讀 `research/last-trade-review.txt`（單行日期）。距今 >14 天（或檔案不存在）→ Key Alerts 加一行：
-
-```
-📋 交易檢討已到期（上次 YYYY-MM-DD，D 天前）→ 執行 /trade-review
+```bash
+python3 tools/review_due.py     # exit 2 = 有到期；同時寫 briefing-out/cache/review-due.json
 ```
 
-未到期不輸出。**briefing 不代跑檢討**——歸因需要逐筆判斷決策來源，要用戶在場。
+涵蓋三項：`/trade-review`（14 天，>21 天 🔴）、`/portfolio-review`（30 天，>45 天 🔴）、SA 量化榜掃描（35 天，>50 天 🔴；日期取 `research/sa-quant-scans/*.md` 檔名，非 mtime）。**exit 2 → 工具輸出的每一行原樣進 Key Alerts，且進 Telegram「今日待辦」🎯（不得省略、不得只放 full.md）。** launchd 路徑下 `briefing_runner.sh` 已預跑並在到期時**直接推 Telegram**（不經模型），手動 briefing 才需自己跑。
+
+> 2026-09-14 教訓：本條原為純散文規則，telegram tier 在上次檢討後第 16 天直接略過——規則活在散文裡就會被跳過，和旗標紀律同一課。
+
+**briefing 不代跑 `/trade-review`**——歸因需要逐筆判斷決策來源，要用戶在場；但到期提醒本身不可依賴模型記得。
 
 ---
 
