@@ -260,7 +260,7 @@ def main(argv):
                      "basis": f"R30 買單合計 {r30_notional:,.0f} > 可用現金 {cash_available:,.0f}，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）", "after": ["register-order --rule R24"]})
     cash_gate = {"cash_available": round(cash_available, 2), "parked_sgov": round(parked, 2),
                  "rule": "新倉/加碼買單金額 ≤ cash_available 才可當日執行；不足且 parked_sgov > 0 → 今日先掛 SGOV 賣（T+1），買單延一日；兩者皆無 → 列 🎯 待辦不下單"}
-    if cash_available < 3_000 and parked > 0:
+    if cash_available < 3_000 and parked > 0 and not any(p.get("rule") == "R24-unpark" for p in plan):
         plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL", "qty": math.ceil(min(parked, 3_000 - cash_available) / sgov_px),
                      "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
                      "basis": f"可用現金 {cash_available:,.0f} < $3k 新曝險上限，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）",
