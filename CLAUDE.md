@@ -15,7 +15,7 @@ This is an investment research and portfolio management workspace. The user acti
    - 例：`/briefing telegram --send`、`/briefing full --send`
    - launchd 每個交易日 CEST 17:00 自動執行 `/briefing telegram --send`（週五加 `--codex`）；runner 固定 `--model sonnet`（`BRIEFING_MODEL` 覆寫）、重試 5 次（2026-08-05 五修：API mid-stream 斷流連殺對策）。三次以上全滅 → 互動 session 手動 `/briefing telegram --send` 補發（dedup 防重複）
    - Setup 文件：`docs/briefing-auto-send.md`
-   - **今日待辦自動執行（T6.5，2026-09-08 用戶指定）**：`/briefing telegram` 產出的「今日待辦」中，屬於機械式清理/停損、SGOV 現金停泊、或 thesis 已確認的新倉/加碼，且觸發條件量化已達成、單筆估計金額 ≤$3,000、未被任何硬線（>10%集中/財報窗/R14鎖/檔數上限/`position_guard`缺口）擋下、且無 T5.5 跨日反轉旗標者，**直接下單，不再等用戶確認**——因為用戶可能不在電腦前。Telegram 訊息內以 `✅ 已自動執行` 標註（含單號），不符合條件的仍列 `🎯` 待辦。選擇權單不適用，照舊走 `tools/tg_send.py` 手動處理。細則見 `.claude/skills/briefing/SKILL.md` Telegram Tier § T6.5；延伸自既有互動場景「警報先做再報」規則到無人值守場景
+   - **今日待辦自動執行（T6.5，2026-09-08 用戶指定）**：`/briefing telegram` 產出的「今日待辦」中，屬於機械式清理/停損、SGOV 現金停泊、或 thesis 已確認的新倉/加碼，且觸發條件量化已達成、未被任何硬線（>10%集中/財報窗/R14鎖/檔數上限/`position_guard`缺口）擋下、且無 T5.5 跨日反轉旗標者，**直接下單，不再等用戶確認**——因為用戶可能不在電腦前。**金額上限 $3,000 只管新增曝險（新倉/加碼）；機械減碼/停損/平倉與 SGOV 停泊不設上限**（2026-09-14）。選擇權平倉（觸及開倉時寫死的管理線）可自動；開倉不自動。Telegram 訊息內以 `✅ 已自動執行` 標註（含單號），不符合條件的仍列 `🎯` 待辦。細則見 `.claude/skills/briefing/SKILL.md` Telegram Tier § T6.5；延伸自既有互動場景「警報先做再報」規則到無人值守場景
    - **防自圓其說雙保險（2026-09-08，同上用戶指定，不用 Codex 版）**：① **T5.5 跨日一致性檢查**——每日先讀前一交易日 telegram.txt，同一 ticker 的方向性判斷若無新數據支持卻反轉/升降級，標旗且對 T6.5 自動下單構成硬性攔阻；② **T6.5 執行後強制留痕**——每筆自動下單同時登錄一筆到期會被機械驗收的 `thesis_ledger` 條目（含具體證偽點），到期由既有 Step 0.7 `due` 機制自動驗收，不靠事後記憶
 2. `/portfolio-review` — full deep report with live data via MCP
 3. `/stock-analysis TICKER` — individual stock deep dive
