@@ -8,6 +8,9 @@
   C2  R8+R23 合計 30% runner 保底  C3 R14 窗內 R23 不 arm（2026-09-14）
   R16 樂透桶停損單缺口            R24 閒置現金 > $10k
   R28 a) R23 觸線區/減碼後 30 天禁加碼  b) 減碼後跌破成本 → 旗標  c) 單名累計虧損 ≥1.5% 帳戶 → forced 旗標
+  R29 a) 認列桶殘倉 <1.5% 不配名額  b) gate ≤ min(財報, 15 交易日)  c) 最弱兩檔（換手對象）
+  R30 加碼候選（買強：未實現>0 + revision up>down + 價>SMA50 + 權重<6%）
+  R25 修訂 sleeve 帶 4–8% / ETF 自峰 −10% 減至 2% / 帳戶自 sleeve 建立後峰 −10% 賣半 / R8 梯級
   桶別缺口（roster.json 沒登記的持倉）  旗標一致性（旗標/警報/thesis 三方）
 
 資料源：Firstrade live 持倉（trade_ledger.fetch_positions，失敗退回交易帳 FIFO）、
@@ -60,6 +63,15 @@ STOP_PRICE_TYPES = {"3", "4"}  # Firstrade price_type：3=stop、4=stop-limit（
 R28_BUYLOCK_DD, R28_BUYLOCK_DAYS = -15.0, 30
 R28_FLAG_MAX_CAL_DAYS = 21          # ≈ 15 個交易日
 R28_LOSS_BUDGET_PCT = 1.5
+# R29（2026-09-14，用戶：波段桶機動性要高）：a) 認列桶殘倉 <1.5% 不配名額 → 10 交易日內補到 ≥2% 或清
+#   b) 認列桶 thesis gate 最長到 min(下次財報, 15 交易日)  c) 每日排最弱兩檔（90d RS vs SPY + 30d revision），換手只准換這兩檔
+R29_TAIL_PCT, R29_TAIL_CAL_DAYS, R29_REBUILD_PCT = 1.5, 14, 2.0
+# R30（2026-09-14，CRM 案：只有賣強沒有買強）：加碼候選 = 未實現 >0、30d revision up>down、價 > SMA50、權重 <6%、非 R28a 鎖、非財報窗
+R30_MAX_WEIGHT, R30_MAX_USD = 6.0, 3_000
+# R25 修訂（2026-09-14）：sleeve 目標 6%、帶 4–8%；ETF 自峰 −10% → 減至 4%；帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈；GLD/XLE 套 R8 梯級
+SLEEVE_TARGET, SLEEVE_LO, SLEEVE_HI, SLEEVE_ETF_DD, SLEEVE_ACCT_DD = 6.0, 4.0, 8.0, -10.0, -10.0
+FUND = ROOT / "briefing-out" / "cache" / "fundamentals-snapshot.json"
+MARKS = ROOT / "research" / "equity-marks.json"
 
 
 def _load_json(p, default):
@@ -181,6 +193,45 @@ def pending_buy_notional(registry):
                and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")))
 
 
+def rev_30d(fund, sym):
+    """(up, down) 30 日 revision 筆數；curr_q 優先，缺則 curr_fy。抓不到 → (None, None)。"""
+    fe = ((fund.get(sym) or {}).get("snapshot") or {}).get("forward_estimates") or {}
+    for k in ("curr_q", "curr_fy", "next_fy"):
+        b = fe.get(k) or {}
+        if b.get("revisions_up_30d") is not None or b.get("revisions_down_30d") is not None:
+            return float(b.get("revisions_up_30d") or 0), float(b.get("revisions_down_30d") or 0)
+    return None, None
+
+
+def market_frame(symbols):
+    """一次抓 7 個月日線 → {sym: {last, sma20, sma50, high20, ret90}}；SPY 一併抓作 RS 基準。失敗回 {}。"""
+    try:
+        import yfinance as yf
+        syms = sorted(set(symbols) | {"SPY"})
+        px = yf.download(syms, period="7mo", auto_adjust=True, progress=False)["Close"]
+        out = {}
+        for s in syms:
+            if s not in px:
+                continue
+            c = px[s].dropna()
+            if len(c) < 60:
+                continue
+            out[s] = {"last": float(c.iloc[-1]), "sma20": float(c.tail(20).mean()), "sma50": float(c.tail(50).mean()),
+                      "high20": float(c.tail(20).max()), "ret90": float(c.iloc[-1] / c.iloc[-min(63, len(c))] - 1)}
+        return out
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] market_frame failed: {e}", file=sys.stderr)
+        return {}
+
+
+def account_peak_since(since):
+    """淨值標記自 since 起的峰值（R25 修訂：sleeve 建立後的回撤才算它的職責）。"""
+    m = _load_json(MARKS, {})
+    marks = m.get("marks") if isinstance(m, dict) else m
+    vals = [x["value"] for x in (marks or []) if not x.get("excluded") and x.get("date", "") >= (since or "")]
+    return max(vals) if vals else None
+
+
 def price_stats(sym, since):
     """(peak_close_since, last_close, peak_date)"""
     import yfinance as yf
@@ -269,6 +320,11 @@ def build_state(*, sync_alerts=False):
     rows, gaps = [], []
     parked = sum(((v.get("last") or 0) * v["qty"]) for s, v in eq.items() if s in cash_eq and v["qty"] > 0)
     held = [s for s, v in eq.items() if v["qty"] > 0 and s not in dust and s not in cash_eq]
+    fund = _load_json(FUND, {})
+    fund = fund.get("tickers", fund)
+    mkt = market_frame(held)
+    spy_ret90 = (mkt.get("SPY") or {}).get("ret90")
+    add_candidates, sleeve_actions = [], []
     if total is None and live is None:
         total = None
 
@@ -385,8 +441,44 @@ def build_state(*, sync_alerts=False):
             if f.get("deadline") and f["deadline"] < today.isoformat():
                 gaps.append(f"{sym}: 旗標 {f['id']} 已逾期 {f['deadline']}")
 
+        # ── R29 / R30 / R25 修訂 ──
+        up, down = rev_30d(fund, sym)
+        mf = mkt.get(sym) or {}
+        rs90 = (mf["ret90"] - spy_ret90) * 100 if (mf.get("ret90") is not None and spy_ret90 is not None) else None
+        if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
+            ok_flag = [f for f in fl if f.get("deadline") and (dt.date.fromisoformat(f["deadline"]) - today).days <= R29_TAIL_CAL_DAYS]
+            if not ok_flag:
+                gaps.append(f"{sym}: R29a 認列桶殘倉 {weight:.1f}% < {R29_TAIL_PCT}% 不配名額 → 10 個交易日內補到 ≥{R29_REBUILD_PCT:g}%（thesis 確認且未 R28a 鎖）或清倉；開旗標 deadline ≤ {(today + dt.timedelta(days=R29_TAIL_CAL_DAYS)).isoformat()}")
+        if bucket == "認列":
+            cap_dl = today + dt.timedelta(days=R28_FLAG_MAX_CAL_DAYS)
+            if e.get("next_date"):
+                try:
+                    cap_dl = min(cap_dl, dt.date.fromisoformat(e["next_date"]))
+                except ValueError:
+                    pass
+            for f in fl:
+                dl = f.get("deadline")
+                if dl and dt.date.fromisoformat(dl) > cap_dl and not any(a.get("type") == "price_below" for a in al):
+                    gaps.append(f"{sym}: R29b 認列桶 gate deadline {dl} 超過 min(下次財報, 15 交易日)={cap_dl}，且無價格線 → 縮 deadline 或掛收盤線")
+        add_ok = (bucket in ("認列", "信念") and unreal is not None and unreal > 0 and up is not None and up > down
+                  and mf.get("sma50") and last and last > mf["sma50"] and weight is not None and weight < R30_MAX_WEIGHT
+                  and not buy_lock and not in_earn_window)
+        if add_ok:
+            room = min(R30_MAX_USD, (R30_MAX_WEIGHT - weight) / 100 * total) if total else R30_MAX_USD
+            add_candidates.append({"symbol": sym, "bucket": bucket, "weight_pct": round(weight, 2), "unrealized_pct": round(unreal, 1),
+                                   "rev_up_30d": up, "rev_down_30d": down, "last": round(last, 2), "sma20": round(mf["sma20"], 2),
+                                   "sma50": round(mf["sma50"], 2), "high20": round(mf["high20"], 2), "room_usd": round(room, 0),
+                                   "structure": "回檔 SMA20 限價 GTC（10 日）或收盤突破 20 日高隔日接；單次 ≤$3k"})
+        if bucket == "sleeve(ETF)":
+            if unreal is not None and unreal >= R8_TIERS[0][0] and not sells:
+                gaps.append(f"{sym}: R25 修訂 sleeve 未實現 +{unreal:.0f}% ≥ +30% 無在掛賣單 → 套 R8 梯級收割進 SGOV")
+            if dd is not None and dd <= SLEEVE_ETF_DD and weight is not None and weight > SLEEVE_LO / 2:
+                sleeve_actions.append({"symbol": sym, "action": "TRIM", "why": f"自峰 {dd:+.0f}% ≤ −10%", "target_weight_pct": SLEEVE_LO / 2})
+                gaps.append(f"{sym}: R25 修訂 sleeve ETF 自峰 {dd:+.0f}% → 減至 {SLEEVE_LO/2:g}%（賣出去 SGOV）")
+
         rows.append({
             "symbol": sym, "bucket": bucket, "qty": v["qty"], "unit_cost": round(cost, 2),
+            "rs90_vs_spy_pct": round(rs90, 1) if rs90 is not None else None, "rev_up_30d": up, "rev_down_30d": down,
             "last": round(last, 2) if last else None, "weight_pct": round(weight, 2) if weight is not None else None,
             "unrealized_pct": round(unreal, 1) if unreal is not None else None,
             "open_since": since, "days_held": days, "r14_locked": r14_locked,
@@ -405,8 +497,28 @@ def build_state(*, sync_alerts=False):
 
     passive = set(roster.get("passive_sleeve", []))
     n = len([r for r in rows if r["symbol"] not in passive])  # R25：被動 sleeve ETF 不計檔數
+    # R29c：認列桶最弱兩檔（90d RS vs SPY 由弱到強，同 RS 看 revision 淨值）——換手只准換這兩檔
+    harvest_rows = [r for r in rows if r["bucket"] == "認列" and r.get("rs90_vs_spy_pct") is not None]
+    ranked = sorted(harvest_rows, key=lambda r: (r["rs90_vs_spy_pct"], (r.get("rev_up_30d") or 0) - (r.get("rev_down_30d") or 0)))
+    weakest_two = [{"symbol": r["symbol"], "rs90_vs_spy_pct": r["rs90_vs_spy_pct"], "rev": f"{r.get('rev_up_30d') or 0:g}↑:{r.get('rev_down_30d') or 0:g}↓",
+                    "weight_pct": r["weight_pct"], "unrealized_pct": r["unrealized_pct"]} for r in ranked[:2]]
     if n > max_pos:
-        gaps.append(f"檔數 {n} > 上限 {max_pos} → 砍一進一（R14 鎖定中：{[r['symbol'] for r in rows if r['r14_locked']]}）")
+        gaps.append(f"檔數 {n} > 上限 {max_pos} → 砍一進一，換手對象限 R29c 最弱兩檔 {[w['symbol'] for w in weakest_two]}（R14 鎖定中：{[r['symbol'] for r in rows if r['r14_locked']]}）")
+    # R25 修訂：sleeve 帶寬 4–8% + 帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈
+    sleeve_rows = [r for r in rows if r["bucket"] == "sleeve(ETF)"]
+    sleeve_w = sum(r["weight_pct"] or 0 for r in sleeve_rows)
+    sleeve_since = min([r["open_since"] for r in sleeve_rows if r.get("open_since")], default=None)
+    acct_peak = account_peak_since(sleeve_since) if sleeve_since else None
+    acct_dd = ((total / acct_peak - 1) * 100) if (acct_peak and total) else None
+    if sleeve_rows:
+        if sleeve_w > SLEEVE_HI:
+            gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% > {SLEEVE_HI:g}% 上緣 → 減回 {SLEEVE_TARGET:g}%（賣出去 SGOV）")
+            sleeve_actions.append({"symbol": "SLEEVE", "action": "TRIM_TO", "target_weight_pct": SLEEVE_TARGET, "why": f"合計 {sleeve_w:.1f}% > 8%"})
+        elif sleeve_w < SLEEVE_LO:
+            gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% < {SLEEVE_LO:g}% 下緣 → 補回 {SLEEVE_TARGET:g}%（除非帳戶回撤觸發賣半中）")
+        if acct_dd is not None and acct_dd <= SLEEVE_ACCT_DD:
+            gaps.append(f"R25 修訂 帳戶自 sleeve 建立（{sleeve_since}）後峰值 ${acct_peak:,.0f} 回撤 {acct_dd:+.1f}% ≤ −10% → sleeve 賣一半換子彈（進 SGOV，redeploy 走飛輪）")
+            sleeve_actions.append({"symbol": "SLEEVE", "action": "SELL_HALF", "why": f"帳戶自 sleeve 建立後峰值回撤 {acct_dd:+.1f}%"})
     # R20 撿回條目雙分支驗證（2026-09-14 程式化）：pending reentry-* 必含回檔與走強兩分支
     for t in theses.get("theses", []):
         if t.get("status") != "pending" or "reentry" not in (t.get("slug") or "") or t.get("ticker") in held:
@@ -430,7 +542,10 @@ def build_state(*, sync_alerts=False):
     state = {"asof": today.isoformat(), "source": source, "total_account_value": total, "cash": cash,
              "pending_buy_notional": round(pend_buy, 2), "idle_cash": round(idle, 2) if idle is not None else None,
              "parked_cash_equiv": parked, "cash_equivalents": sorted(cash_eq),
-             "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps}
+             "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps,
+             "weakest_two": weakest_two, "add_candidates": add_candidates,
+             "sleeve": {"weight_pct": round(sleeve_w, 2), "since": sleeve_since, "acct_peak_since": acct_peak,
+                        "acct_dd_pct": round(acct_dd, 1) if acct_dd is not None else None, "actions": sleeve_actions}}
 
     if sync_alerts:
         changed = _sync_r23_alerts(alerts, rows, today)
@@ -510,6 +625,17 @@ def render_table(state):
         if r.get("buy_locked"):
             sold += "🚫買"
         lines.append(f"| {r['symbol']} | {r['bucket'] or '❓'} | {r['qty']:g} | {r['unit_cost']:.2f} | {r['last'] or '—'} | {w} | {u} | {days} | {d} | {r23} | {sold} | {sells} | {fl} | {earn} |")
+    if state.get("weakest_two"):
+        lines += ["", "**R29c 認列桶最弱兩檔（換手只准換這兩檔）：** " + "；".join(
+            f"{w['symbol']} RS90 {w['rs90_vs_spy_pct']:+.1f}pp vs SPY、rev {w['rev']}、{w['weight_pct']:.1f}%" for w in state["weakest_two"])]
+    if state.get("add_candidates"):
+        lines += ["", "**R30 加碼候選（買強）：** " + "；".join(
+            f"{c['symbol']} +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
+    else:
+        lines += ["", "R30 加碼候選：無（條件＝未實現>0、30d revision up>down、價>SMA50、權重<6%、非 R28a 鎖、非財報窗）"]
+    sl = state.get("sleeve") or {}
+    if sl.get("since"):
+        lines += [f"sleeve {sl['weight_pct']:.1f}%（帶 4–8%）｜帳戶自 {sl['since']} 峰 ${sl['acct_peak_since'] or 0:,.0f} 回撤 {sl['acct_dd_pct']:+.1f}%（−10% 賣半換子彈）"]
     if state["gaps"]:
         lines += ["", "**⚠️ 缺口：**"] + [f"- {g}" for g in state["gaps"]]
     else:

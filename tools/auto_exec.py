@@ -5,12 +5,14 @@
 下多少、依據哪條規則，由本工具從資料層算出，寫成 briefing-out/cache/auto-exec-plan.json。
 briefing T6.5 只准執行本檔列出的 plan，不再自行判定機械觸發（判定散文 → code）。
 
-v1 覆蓋（全部是「降風險或零風險」類，T6.5 條件 3 無金額上限者）：
+v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝險類，單次 ≤$3k）：
   A. R23 自峰回撤線：position-state r23_armed + 前一收盤 ≤ 峰 × (1−20%/30%) → 減 1/3
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
   C. 選擇權管理線：id 含 bcs-exit / option 的 price_below → 收盤 < level → 平倉指令（day，ET 7–16）
   D. R24 現金停泊：閒置 = 現金 − 在掛買單 − 3% 緩衝 > $10k → 買 SGOV 至閒置 ≤ $5k
   E. R8 梯級 GTC 缺口：position-state gaps 中 kind 含 R8 → 掛下一級賣單（限價=級距價）
+  F. R30 加碼候選（2026-09-14 買強）：guard add_candidates → 回檔 SMA20 限價 GTC 10 日，單次 ≤$3k；條件消失 → 撤單
+  G. R25 修訂 sleeve：guard sleeve.actions（ETF 自峰 −10% / 合計 >8% / 帳戶自 sleeve 建立後峰 −10% 賣半）→ 賣單，所得進 SGOV
 不覆蓋（仍由模型/用戶）：新倉、加碼、選擇權開倉、任何需要 thesis 判斷的動作。
 
 五條件在此實作：①類別（上列五類）②量化觸發＝**前一收盤**（R17，盤中價不算）③金額上限只管新增曝險（A–C、E 為減碼/平倉、D 為現金等價，皆免）
@@ -179,6 +181,58 @@ def main(argv):
                          "qty": None, "order": {"type": "limit", "duration": "gtc"}, "basis": txt[:200],
                          "after": ["register-order --rule R8"]})
 
+    parked = float(st.get("parked_cash_equiv") or 0)
+    cash_available = cash - pending_buys
+    # ── F. R30 加碼候選（買強，2026-09-14）：回檔 SMA20 限價 GTC 10 日；候選消失 → 撤掛 R30 單 ─────
+    r30_syms = set()
+    for c in st.get("add_candidates", []) or []:
+        sym = c["symbol"]
+        r30_syms.add(sym)
+        if sym in reversed_tks:
+            skip(sym, "R30", "T5.5 跨日反轉，延一日"); continue
+        if cash_available < c["room_usd"] and parked <= 0:
+            skip(sym, "R30", f"可用現金 {cash_available:,.0f} < 額度 {c['room_usd']:,.0f} 且無 SGOV 停泊"); continue
+        limit = min(c["sma20"], c["last"] * 0.995) if c["last"] > c["sma20"] else round(c["last"] * 0.995, 2)
+        qty = math.floor(min(c["room_usd"], 3_000) / limit)
+        if qty < 1:
+            skip(sym, "R30", "額度不足 1 股"); continue
+        existing = [oid for oid, o in (reg.get("orders") or {}).items()
+                    if o.get("symbol") == sym and o.get("rule_ref") == "R30" and o.get("transaction") == "B"
+                    and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED"))]
+        if existing:
+            skip(sym, "R30", f"已有 R30 在掛買單 {existing}"); continue
+        plan.append({"rule": "R30-add", "symbol": sym, "action": "BUY", "qty": qty,
+                     "order": {"type": "limit", "limit": round(limit, 2), "duration": "gtc", "expires_days": 10},
+                     "basis": f"買強：+{c['unrealized_pct']:.0f}%、rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓、價 {c['last']} > SMA50 {c['sma50']}、權重 {c['weight_pct']}% → 回檔 SMA20 {c['sma20']} 接，額度 ${c['room_usd']:,.0f}",
+                     "after": ["register-order --rule R30", "shadow record --kind cf-r30-add --correct-if over", "thesis 留痕（+30d 驗）"]})
+    for oid, o in (reg.get("orders") or {}).items():
+        if o.get("rule_ref") == "R30" and o.get("transaction") == "B" and o.get("symbol") not in r30_syms \
+                and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+            plan.append({"rule": "R30-cancel", "symbol": o["symbol"], "action": "CANCEL", "qty": o.get("shares"),
+                         "order": {"id": oid}, "basis": "R30 條件已不成立（revision 轉弱 / 跌破 SMA50 / 進 R28a 鎖 / 財報窗）→ 撤回檔買單", "after": []})
+
+    # ── G. R25 修訂 sleeve 動作（guard 已算）───────────────────────────────
+    for a in (st.get("sleeve") or {}).get("actions", []) or []:
+        sleeve_pos = [p for p in positions.values() if p.get("bucket") == "sleeve(ETF)"]
+        for p in sleeve_pos:
+            if a["symbol"] not in ("SLEEVE", p["symbol"]):
+                continue
+            c = close_of(p["symbol"]) or p.get("last") or 0
+            if a["action"] == "SELL_HALF":
+                qty = math.floor(p["qty"] / 2)
+            elif a["action"] in ("TRIM", "TRIM_TO"):
+                tgt = a.get("target_weight_pct", 6.0)
+                if a["symbol"] == "SLEEVE":
+                    share = (p.get("weight_pct") or 0) / max((st.get("sleeve") or {}).get("weight_pct") or 1, 0.01)
+                    tgt = tgt * share
+                qty = math.floor(max(0.0, (p.get("weight_pct") or 0) - tgt) / 100 * total / c) if c else 0
+            else:
+                continue
+            if qty >= 1:
+                plan.append({"rule": "R25-sleeve", "symbol": p["symbol"], "action": "SELL", "qty": qty,
+                             "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": "day"},
+                             "basis": f"{a['why']} → {a['action']}；賣出所得停泊 SGOV（R24），redeploy 走飛輪", "after": ["register-order --rule R25", "R24 SGOV 買單同日"]})
+
     # ── 去重 / 優先序（衝突 C2 型）：同一標的同向只出一張單。用戶裁決收盤線 > R23（9/2 裁決：MYRG 以 $274 線取代 R23），
     #    R23-30 > R23-20；合併時在 basis 註明被吸收的規則，避免兩條規則各賣一次把認列桶賣穿 30% runner。
     merged, seen = [], {}
@@ -198,8 +252,12 @@ def main(argv):
     buy_locked = {s: p["buy_locked"] for s, p in positions.items() if p.get("buy_locked")}
 
     # C6：T6.5 新增曝險買單的現金可用性（現金停在 SGOV 時要先賣，T+1 才能用）
-    parked = float(st.get("parked_cash_equiv") or 0)
-    cash_available = cash - pending_buys
+    r30_notional = sum(p["qty"] * p["order"]["limit"] for p in plan if p.get("rule") == "R30-add")
+    if r30_notional and cash_available < r30_notional and parked > 0:
+        plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL",
+                     "qty": math.ceil(min(parked, r30_notional - cash_available) / sgov_px),
+                     "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
+                     "basis": f"R30 買單合計 {r30_notional:,.0f} > 可用現金 {cash_available:,.0f}，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）", "after": ["register-order --rule R24"]})
     cash_gate = {"cash_available": round(cash_available, 2), "parked_sgov": round(parked, 2),
                  "rule": "新倉/加碼買單金額 ≤ cash_available 才可當日執行；不足且 parked_sgov > 0 → 今日先掛 SGOV 賣（T+1），買單延一日；兩者皆無 → 列 🎯 待辦不下單"}
     if cash_available < 3_000 and parked > 0:

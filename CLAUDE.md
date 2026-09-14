@@ -70,7 +70,7 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 ## Key Files
 - `plan.md` — **狀態版（2026-09-02 重建）**：三條硬線 + 持倉表生成區（`tools/position_guard.py --render-plan` 自動寫入，禁手改）+ 唯一一張候補表 + R19 pair 追蹤。手改只限候補表與硬線，且只在用戶要求時。歷史決策全文 `research/plan-history.md`（凍結）
 - `research/roster.json` — **桶別唯一資料源**（信念/認列/sleeve/樂透）；每檔持倉必須登記，否則 guard 報缺口；改桶別改這裡不改散文
-- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期、**C2 R8+R23 合計 30% runner 保底、R16 樂透停損缺口、R24 閒置現金、R28（R23 觸線區/減碼後 30 天禁加碼 `buy_locked`／減碼後跌破成本殘倉須旗標／單名累計虧損 ≥1.5% 帳戶 forced 旗標，2026-09-14 CRDO 案）** → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
+- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期、**C2 R8+R23 合計 30% runner 保底、R16 樂透停損缺口、R24 閒置現金、R28（R23 觸線區/減碼後 30 天禁加碼 `buy_locked`／減碼後跌破成本殘倉須旗標／單名累計虧損 ≥1.5% 帳戶 forced 旗標，2026-09-14 CRDO 案）**、**R29 認列桶機動性（殘倉 <1.5% 不配名額／gate ≤ min(財報,15 交易日)／`weakest_two` 換手只換最弱兩檔）、R30 買強 `add_candidates`（未實現>0 + revision up>down + 價>SMA50 + 權重<6% → 回檔 SMA20 GTC ≤$3k）、R25 修訂 sleeve 帶 4–8% + 帳戶自 sleeve 建立後峰 −10% 賣半換子彈（`feedback/harvest-bucket-mobility.md`、`hedge-sleeve.md` §7）** → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
 - `journal/` — 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
 - `feedback/RULES-LEDGER.md` — **規則自己的命中率帳本**（失效 ≥2 次 → 強制覆審）；由 `/trade-review` 每兩週更新；巧合欄與一致性檢查 `tools/rule_stats.py ledger-audit [--write|--check]`，產出檢查 `tools/review_lint.py`，判準 `feedback/skill-vs-luck.md`（R26 放棄條件 2028-09-06 裁決）
@@ -270,7 +270,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - 避險：基建、航太、貴金屬、核能（小比例平衡）
 - Strategies: LEAPS (stock replacement, deep ITM delta 0.80-0.88), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated
-- **避險 sleeve 結構性持有（R25，2026-09-04，`feedback/hedge-sleeve.md`）**：GLD 3% + XLE 3%（≤10%）被動 ETF，`roster.json passive_sleeve`，**不計 18 檔**、不套動能/R8/R23、不因落後汰；金融 ETF 不算避險；「VIX ≥25 才建 sleeve」已廢止
+- **避險 sleeve 帶寬持有（R25，2026-09-04 建、09-14 修訂，`feedback/hedge-sleeve.md`）**：GLD + XLE 被動 ETF 目標 6%、帶 4–8%，`roster.json passive_sleeve`，**不計 18 檔**、不套 R23、不因相對落後汰；**但** 合計 >8% 減回 6%、單 ETF 自峰 −10% 減至 2%、帳戶自 sleeve 建立後峰 −10% 賣半換子彈、套 R8 梯級——所得進 SGOV 再 redeploy；金融 ETF 不算避險；「VIX ≥25 才建 sleeve」已廢止
 - **閒置現金停泊（R24，2026-09-04，`feedback/cash-parking.md`）**：Firstrade 現金不計息 → `閒置 = 現金 − 在掛買單 − 30 日部署需求 − 3% 緩衝` > $10k 或 >4% 時當次掛 **SGOV** GTC 買至 ≤ $5k；動用前一交易日賣（T+1）。SGOV/BIL 視同現金（`roster.json cash_equivalents`，guard 略過、不佔 18 檔、不進 α 計分；飛輪滯留檢查仍算現金）。不得用 XLF/XLE 等板塊 ETF 停泊
 
 ### 執行底層邏輯：Portfolio as a Business（強制濾鏡）
