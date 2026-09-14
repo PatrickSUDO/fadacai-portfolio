@@ -152,9 +152,9 @@ python3 tools/ev_ledger.py add --ticker TICKER --slug <slug>-ev \
   --p-bull XX --p-base XX --p-bear XX \
   --fv-bull XXX --fv-base XXX --fv-bear XXX --ev-price XXX \
   --source stock-analysis --model <本次模型> --thesis-ref TICKER:<thesis-slug> \
-  --fair-price-consensus <fundamentals-snapshot self_valuation.consensus_fair_price>
+  --priced-in-pct <fundamentals-snapshot self_valuation.priced_in_pct>
 ```
-到期由 briefing `resolve-due` 機械驗價（零判斷）；校準統計由 /trade-review 讀。**機率/公允價直接抄機率分布表，不重算**。`--fair-price-consensus`（2026-09-14）= 共識 fwdEPS × 三錨點基準 Fair PE，工具自動存 `priced_in_pct = spot ÷ 該值 − 1`（正 = 市場已付超過「共識成長 × 合理倍數」）；**只是登錄變數，不進 EV、不改 Verdict**，/trade-review 用三分位驗「高 priced-in 是否更常 thesis 對但 realized<EV」。cache 無此值（`consensus_fair_price: null`）就省略參數。
+到期由 briefing `resolve-due` 機械驗價（零判斷）；校準統計由 /trade-review 讀。**機率/公允價直接抄機率分布表，不重算**。`--priced-in-pct`（2026-09-14）從 cache 直接抄：= 市場前瞻 PE ÷（目標 PEG × 共識 EPS 成長，成長截斷 5–60%）− 1，正 = 成長已 priced in（`priced_in_note` 有完整算式）；**只是登錄變數，不進 EV、不改 Verdict**，/trade-review 用三分位驗「高 priced-in 是否更常 thesis 對但 realized<EV」。已知盲點：週期頂峰 EPS 讓 fwdPE 極低 → 深負 ≠ 便宜（MU 型），報告可引用但要標。cache 為 null 就省略參數。
 
 4b. **訊號擷取 & Thesis 候選（Signal Extraction，stock-analysis 預設開）**
 

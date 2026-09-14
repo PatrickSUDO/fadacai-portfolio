@@ -637,11 +637,6 @@ def compute_self_valuation(
         base_fair_pe = None
 
     own_target_price = (own_fwdEPS * base_fair_pe) if (own_fwdEPS and base_fair_pe) else None
-    # consensus_fair_price = 「共識 fwdEPS × 三錨點基準 Fair PE」= 市場若只付合理倍數給共識成長
-    # 該值多少。priced_in_pct = spot / consensus_fair_price − 1（正 = 已付超過共識×合理倍數）。
-    # 2026-09-14 用戶提議標準化「PE 是否 already pricing」；spot 由 ev_ledger add / skill 帶入，
-    # 這裡只存分母，避免 cache 內價格過期。display-only 變數，供 ev-ledger 2×2 分層驗證，不是 gate。
-    consensus_fair_price = (a3_fwdeps * base_fair_pe) if (a3_fwdeps and base_fair_pe) else None
 
     # ── Confidence ─────────────────────────────────────────────────────────
     confidence = "low" if stdev_growth > GROWTH_STDEV_THRESHOLD else "ok"
@@ -670,10 +665,55 @@ def compute_self_valuation(
         "base_fair_pe_approx": round(base_fair_pe, 2) if base_fair_pe else None,
         "a3_fwdeps_source": a3_fwdeps_source,
         "own_target_price": round(own_target_price, 2) if own_target_price else None,
-        "consensus_fair_price": round(consensus_fair_price, 2) if consensus_fair_price else None,
         "confidence": confidence,
         "notes": "; ".join(notes_parts),
     }
+
+
+PRICED_IN_GROWTH_CAP = 0.60     # 成長率上限：避免週期頂峰/由虧轉盈的 300% 成長把「合理倍數」推到無意義
+PRICED_IN_GROWTH_FLOOR = 0.05   # 成長率下限：負/零成長不給負倍數
+
+
+def compute_priced_in(sym: str, snapshot: dict) -> dict:
+    """PE 是否 already pricing 的標準化（2026-09-14 用戶提議）。
+
+    priced_in_pct = 市場前瞻 PE ÷ 合理前瞻 PE − 1
+      市場前瞻 PE  = EODHD valuation.ForwardPE（NTM）
+      合理前瞻 PE  = target_PEG × 共識 EPS 成長%（next_fy 優先——curr_fy 常是拐點年；capped 5%–60%）
+      target_PEG   = 1.5（AI_LEADERS）/ 1.0
+    正值 = 市場付的倍數超過「共識成長 × 目標 PEG」→ 成長已 priced in（+50% = 多付一半）。
+    v1 曾用「追蹤 PE 中位數 × 前瞻 EPS」當公允價，會把成長算兩次、全書顯示低估 25–63%，已棄。
+    已知盲點：週期頂峰 EPS 會讓 fwdPE 極低（MU 6x）→ priced_in 深負 ≠ 便宜；記錄不判斷。
+    display-only：只進 ev-ledger 當變數，由 /trade-review 三分位驗有無資訊量。
+    """
+    val = snapshot.get("valuation") or {}
+    fe = snapshot.get("forward_estimates") or {}
+    fwd_pe = val.get("ForwardPE")
+    try:
+        fwd_pe = float(fwd_pe) if fwd_pe not in (None, 0, "0", "") else None
+    except (TypeError, ValueError):
+        fwd_pe = None
+    g_src, g = None, None
+    for key in ("next_fy", "curr_fy"):
+        cand = (fe.get(key) or {}).get("eps_growth")
+        if cand is not None:
+            try:
+                g = float(cand); g_src = key; break
+            except (TypeError, ValueError):
+                continue
+    if fwd_pe is None or g is None:
+        return {"priced_in_pct": None, "priced_in_note": "fwdPE 或共識成長缺"}
+    g_used = min(max(g, PRICED_IN_GROWTH_FLOOR), PRICED_IN_GROWTH_CAP)
+    target_peg = 1.5 if sym.upper() in AI_LEADERS else 1.0
+    justified = target_peg * g_used * 100.0
+    pct = (fwd_pe / justified - 1.0) * 100.0
+    note = f"fwdPE {fwd_pe:.1f} vs 合理 {justified:.1f}（PEG {target_peg} × g {g_used:.0%}，源 {g_src}"
+    if g != g_used:
+        note += f"，原 g {g:.0%} 已截斷"
+    note += "）"
+    return {"priced_in_pct": round(pct, 1), "priced_in_fwd_pe": round(fwd_pe, 2),
+            "priced_in_justified_pe": round(justified, 2), "priced_in_growth_used": round(g_used, 4),
+            "priced_in_growth_source": g_src, "priced_in_note": note}
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -747,6 +787,7 @@ def main() -> int:
                 sym, snapshot["highlights"], snapshot["financials"],
                 snapshot.get("forward_estimates"),
             )
+            sv.update(compute_priced_in(sym, snapshot))   # priced_in_pct（display-only 變數）
             result[sym] = {"snapshot": snapshot, "base_rate": base_rate, "self_valuation": sv}
             sv_note = (
                 f"A4_own_pt=${sv.get('own_target_price')} ({sv['confidence']})"
