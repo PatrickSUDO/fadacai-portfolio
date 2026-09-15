@@ -284,15 +284,23 @@ def open_flags(flags, sym):
     return [f for f in flags.get("flags", []) if f.get("ticker") == sym and f.get("status") == "open"]
 
 
-def last_r23_trim_date(flags, sym):
+def last_r23_trim_date(flags, sym, fills=None, since=None):
+    """峰值起算日 = max(旗標 trimmed 日, 建倉後最近一筆賣出成交日)。
+    用成交而不只用旗標（2026-09-15）：pre-close pass 的 day 單成交後 evening pass 要看到峰值已重置，否則同一天賣兩段。"""
     d = None
+    for f in (fills or []):
+        if f["symbol"] == sym and f["side"] != "BOUGHT" and (not since or f["date"] >= since):
+            d = max(d or "", f["date"][:10])
     for f in flags.get("flags", []):
-        if f.get("ticker") != sym or "r23" not in (f.get("slug") or f.get("id", "")).lower():
+        # 任何旗標下的 trimmed（R23 線、用戶收盤線、R28）都重置峰值起算日——MYRG 9/15 走 price-trigger-derating 旗標減 1/3，
+        # 若只認 slug 含 r23 的旗標，峰值不重置、隔晚會再賣一段（2026-09-15 修）
+        if f.get("ticker") != sym:
             continue
         # trade_ledger.resolve-flag 把結果寫在 history[]（event=resolved, action=trimmed, date），
         # 不是頂層 resolution/resolved_at（2026-09-03 修：AMD 減碼後峰值未重置）
         for h in f.get("history", []):
-            if h.get("event") == "resolved" and h.get("action") == "trimmed":
+            # resolved/trimmed（結案）或 trimmed_stage（多段線的中途段，MYRG 9/15）都算一次減碼 → 峰值重算
+            if h.get("action") == "trimmed":
                 d = max(d or "", (h.get("date") or "")[:10])
         if f.get("resolution") == "trimmed":
             d = max(d or "", (f.get("resolved_at") or "")[:10])
@@ -357,7 +365,10 @@ def build_state(*, sync_alerts=False):
         unreal = ((last / cost - 1) * 100) if (last and cost) else None
         dd = ((last / peak - 1) * 100) if (last and peak) else None
         r23_since = since
-        trim_dt = last_r23_trim_date(flags, sym)
+        # 兩個日期：peak 起算用「任何賣出」（R8 級距賣在高點，之後峰值重算合理）；
+        # R28a 買方鎖 / R28b 輸家判定只用「防守型減碼」（旗標 trimmed = R23 / 用戶收盤線），R8 harvest 不鎖買（CRM 9/2 案）
+        trim_dt = last_r23_trim_date(flags, sym, fills, since)
+        def_trim_dt = last_r23_trim_date(flags, sym)
         if trim_dt:
             r23_since = trim_dt
             peak_t, _, _ = price_stats(sym, trim_dt)
@@ -409,22 +420,22 @@ def build_state(*, sync_alerts=False):
         # ── R28（CRDO 案）──
         up, down = rev_30d(fund, sym)
         buy_lock = None
-        trim_recent = bool(trim_dt and (today - dt.date.fromisoformat(trim_dt)).days <= R28_BUYLOCK_DAYS)
+        trim_recent = bool(def_trim_dt and (today - dt.date.fromisoformat(def_trim_dt)).days <= R28_BUYLOCK_DAYS)
         if bucket == "認列" and armed and dd is not None and dd <= R28_BUYLOCK_DD:
             buy_lock = f"R23 armed 且自峰 {dd:+.0f}% ≤ −15%"
         elif bucket == "認列" and trim_recent:
             # R28a 提前解鎖（2026-09-15，AMD 案）：價已收回 R23 減碼價之上且 30d revision up>down = whipsaw 已確認，
             # 繼續鎖只會重演「只低接不追強」；解鎖後交 R30 判定（仍需價 > SMA50）
-            trim_px = last_r23_trim_price(fills, sym, trim_dt)
+            trim_px = last_r23_trim_price(fills, sym, def_trim_dt)
             if trim_px and last and last > trim_px and up is not None and up > down:
                 buy_lock = None
             else:
-                buy_lock = f"R23 減碼 {trim_dt} 後 30 天內" + (f"（收回 {trim_px:.0f} 且 rev up>down 即解鎖）" if trim_px else "")
+                buy_lock = f"R23 減碼 {def_trim_dt} 後 30 天內" + (f"（收回 {trim_px:.0f} 且 rev up>down 即解鎖）" if trim_px else "")
         if buy_lock:
             bo = open_buy_orders(registry, sym)
             if bo:
                 gaps.append(f"{sym}: R28a 禁向下加碼（{buy_lock}）但有在掛買單 {bo} → 撤單")
-            recent = buys_after(fills, sym, trim_dt) if trim_recent else []
+            recent = buys_after(fills, sym, def_trim_dt) if trim_recent else []
             if recent:
                 gaps.append(f"{sym}: R28a 違規——R23 減碼後又買 {sum(float(b['qty']) for b in recent):g} 股（{[b['date'] for b in recent]}）→ journal 標 ⚠️ R28 bypass")
         realized, ledger_qty, ledger_avg = realized_since(fills, sym, since)
@@ -435,7 +446,7 @@ def build_state(*, sync_alerts=False):
             unreal_usd, basis = (((last - cost) * v["qty"]) if (last and cost) else 0.0), "firstrade(帳本股數不符)"
         cum_pnl = realized + unreal_usd
         loss_budget_hit = bool(bucket == "認列" and total and cum_pnl <= -R28_LOSS_BUDGET_PCT / 100 * total)
-        loser_after_trim = bool(bucket == "認列" and trim_dt and unreal is not None and unreal < 0)
+        loser_after_trim = bool(bucket == "認列" and def_trim_dt and unreal is not None and unreal <= -5.0)  # −5% 容差，避免 DDOG −0% 型噪音
         if loser_after_trim or loss_budget_hit:
             why = []
             if loser_after_trim:
@@ -607,16 +618,18 @@ def _sync_r23_alerts(alerts, rows, today):
                     alerts["alerts"] = [a for a in alerts["alerts"] if a["id"] != aid]
                     changed.append(f"removed {aid}（已破線，走旗標）")
                 continue
-            note = (f"→ 動作：盤中觸價先不動（R17）。收盤確認 ≤ 自峰 −{p}% → 隔日開盤掛賣 1/3 限價貼盤；"
+            note = (f"→ 動作：本線只認收盤（close_confirm，盤中不發）。收盤 ≤ 自峰 −{p}% → auto_exec 晚間 pass 自動掛賣 1/3（gt90，次日生效）；"
                     f"財報 ±48h 不執行（R9）；觸發即 trade_ledger flag。R23 認列桶自峰回撤線（position_guard 自動維護）")
             if aid in have:
+                if have[aid].get("mode") != "close_confirm":
+                    have[aid]["mode"] = "close_confirm"; changed.append(f"{aid} mode→close_confirm")
                 if have[aid].get("since") != r["r23_since"]:
                     have[aid]["since"] = r["r23_since"]
                     changed.append(f"updated {aid} since→{r['r23_since']}")
                 continue
             alerts["alerts"].append({
                 "id": aid, "symbol": sym, "type": "peak_dd", "level": float(p), "since": r["r23_since"],
-                "note": note, "mode": "once_per_day", "created": today.isoformat(),
+                "note": note, "mode": "close_confirm", "created": today.isoformat(),
                 "status": None, "last_fired": None, "fired_count": 0,
             })
             changed.append(f"added {aid}")

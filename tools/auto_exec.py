@@ -21,12 +21,13 @@ v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝�
 ⑥現金閘（C6）：輸出 `cash_gate`（可用現金 / SGOV 停泊）；可用 < $3k 且有停泊 → 加一張 SGOV 賣單（T+1），T6.5 新曝險買單延一日
 ⑤跨日反轉：讀 briefing-out/cache/crossday-flags.json（crossday_check 若有輸出）→ 命中 ticker 的 A/B 延一日
 
---execute 目前**被鎖**（v1）：印出「dry-run only，解鎖日 2026-09-28（兩週乾跑後由用戶裁決）」。
+--execute（v2，2026-09-15 起）：需 AUTO_EXEC_LIVE=1；evening_pass.sh 收盤後跑，現股 BUY/SELL 限價以 gt90 掛（次一交易日生效）、CANCEL 直撤；
+複式單仍 Telegram 手掛。結果寫回 plan JSON `executed` + research/auto-exec-log.jsonl；briefing T6.5 讀到 executed 就只回報不重下。
 Usage:
   uv run --directory tools python3 tools/auto_exec.py            # dry-run，寫 plan JSON + 印表
   uv run --directory tools python3 tools/auto_exec.py --execute  # v1 拒絕
 """
-import json, math, re, sys
+import json, math, os, re, sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -38,7 +39,7 @@ REGISTRY = ROOT / "research" / "order-registry.json"
 EARN = ROOT / "briefing-out" / "cache" / "earnings-dates.json"
 XDAY = ROOT / "briefing-out" / "cache" / "crossday-flags.json"
 OUT = ROOT / "briefing-out" / "cache" / "auto-exec-plan.json"
-EXECUTE_UNLOCK = date(2026, 9, 28)
+EXECUTE_UNLOCK = date(2026, 9, 15)   # 2026-09-15 用戶提前解鎖（MYRG 手動案：收盤破線到隔日 11:00 ET 才執行太慢）
 IDLE_TRIGGER, IDLE_TARGET, BUFFER_PCT = 10_000, 5_000, 0.03
 
 
@@ -63,6 +64,23 @@ def prev_close(symbols: list[str]) -> dict:
         return {"error": str(e)}
 
 
+def intraday_last(symbols: list[str]) -> dict:
+    """盤中最新價（--preclose 用；1 分 K 最後一根）。失敗 → 退回 prev_close。"""
+    try:
+        import yfinance as yf
+        px = yf.download(symbols, period="1d", interval="1m", auto_adjust=True, progress=False)["Close"]
+        if hasattr(px, "columns"):
+            px = px.dropna(how="all")
+            last = px.iloc[-1]
+            asof = px.index[-1].to_pydatetime().isoformat(timespec="minutes")
+            out = {"asof": f"intraday {asof}", **{s: float(last[s]) for s in symbols if s in last and not math.isnan(float(last[s]))}}
+            if len(out) > 1:
+                return out
+        return prev_close(symbols)
+    except Exception:  # noqa: BLE001
+        return prev_close(symbols)
+
+
 def in_earnings_window(sym: str, earn: dict, today: date, hours=48) -> bool:
     d = (earn.get("tickers") or {}).get(sym, {}).get("next_date")
     if not d:
@@ -75,6 +93,13 @@ def main(argv):
     execute = "--execute" in argv
     today = date.today()
     st = _load(STATE, {})
+    # 安全閘：live 券商持倉抓不到時 guard 退回 FIFO 重建（可能缺舊清倉紀錄、股數失真、冒出殭屍部位如 TMF）。
+    # 絕不在 FIFO fallback 狀態上執行真單，dry-run 也標不可靠。
+    stale_state = st.get("source") != "firstrade-live"
+    if stale_state and execute:
+        print(f"⛔ position-state source={st.get('source')}（非 firstrade-live）→ 拒絕執行；先修復 Firstrade session 再跑")
+        OUT.write_text(json.dumps({"asof": today.isoformat(), "mode": "aborted", "reason": f"state source={st.get('source')}", "plan": [], "skipped": []}, ensure_ascii=False))
+        return 5
     alerts = (_load(ALERTS, {}) or {}).get("alerts", [])
     earn = _load(EARN, {})
     reg = _load(REGISTRY, {})
@@ -83,7 +108,12 @@ def main(argv):
     positions = {p["symbol"]: p for p in st.get("positions", [])}
     syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV"})
     syms = [s for s in syms if s and not s.startswith("^")]
-    closes = prev_close(syms)
+    # --preclose（2026-09-15 用戶採用）：15:45 ET 用即時價當「準收盤」，線要多破 BUF=0.5% 才算，賣單 day 貼盤當天成交；
+    # 沒有 --preclose（22:20 evening 補網）：用真正收盤，gt90 隔日生效。
+    preclose = "--preclose" in argv
+    BUF = 0.005 if preclose else 0.0
+    DUR_SELL = "day" if preclose else "gt90"
+    closes = intraday_last(syms) if preclose else prev_close(syms)
     px_note = "" if closes and "error" not in closes else f"⚠️ yfinance 失敗（{closes.get('error','空')}），退回 position-state last（非收盤，僅 dry-run 參考）"
 
     def close_of(s):
@@ -104,7 +134,7 @@ def main(argv):
         if not (peak and c):
             continue
         dd = c / peak - 1
-        stage = 30 if dd <= -0.30 else (20 if dd <= -0.20 else None)
+        stage = 30 if dd <= -(0.30 + BUF) else (20 if dd <= -(0.20 + BUF) else None)
         if stage is None:
             continue
         if p.get("r14_locked"):
@@ -123,7 +153,7 @@ def main(argv):
         if qty < 1:
             skip(sym, "R23", "1/3 不足 1 股"); continue
         plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
-                     "order": {"type": "limit", "limit": round(c * 0.995, 2), "duration": "day"},
+                     "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
                      "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3",
                      "after": ["snapshot-orders", "register-order --rule R23", "trade_ledger flag/resolve-flag trimmed", "thesis 留痕（+30d 驗）"]})
 
@@ -133,7 +163,7 @@ def main(argv):
             continue
         sym, lvl, note, aid = a.get("symbol"), a.get("level"), a.get("note") or "", a.get("id") or ""
         c = close_of(sym)
-        if not (sym and lvl and c) or c >= lvl:
+        if not (sym and lvl and c) or c >= lvl * (1 - BUF):
             continue
         if "bcs-exit" in aid or "option" in aid.lower():
             plan.append({"rule": "options-mgmt", "symbol": sym, "action": "CLOSE_SPREAD", "qty": None,
@@ -151,8 +181,8 @@ def main(argv):
             qty = int(m.group(1)) if m else (math.floor(p.get("qty", 0) / 3) if "1/3" in note else None)
             if not qty:
                 skip(sym, "close-line", "note 內無股數，需人工"); continue
-            plan.append({"rule": "user-close-line", "symbol": sym, "action": "SELL", "qty": qty,
-                         "order": {"type": "limit", "limit": round(c * 0.995, 2), "duration": "day"},
+            plan.append({"rule": "user-close-line", "symbol": sym, "action": "SELL", "qty": qty, "alert_id": aid,
+                         "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
                          "basis": f"前收 {c:.2f} < 裁決線 {lvl}（{aid}）", "note": note[:160],
                          "after": ["snapshot-orders", "register-order --rule user-close-line", "resolve-flag trimmed", "remove/keep alert per note"]})
 
@@ -174,12 +204,15 @@ def main(argv):
         skipped.append({"symbol": "SGOV", "rule": "R24", "why": f"閒置 {idle:,.0f} ≤ 10k（現金 {cash:,.0f}、在掛買 {pending_buys:,.0f}）"})
 
     # ── E. R8 缺口 ──────────────────────────────────────────────────────────
+    #   gaps 是字串（guard 的 f-string）。只認「SYM: R8 未實現 …級距但無在掛賣單」這一種，
+    #   不要誤抓「TMF: … R8/R23 無法判定」這類含 R8 字樣但非缺單的行。
     for g in st.get("gaps", []) or []:
-        txt = json.dumps(g, ensure_ascii=False)
-        if "R8" in txt:
-            plan.append({"rule": "R8-gap", "symbol": g.get("symbol") or g.get("ticker"), "action": "SELL_GTC_TIER",
-                         "qty": None, "order": {"type": "limit", "duration": "gtc"}, "basis": txt[:200],
-                         "after": ["register-order --rule R8"]})
+        if not isinstance(g, str) or "R8 未實現" not in g:
+            continue
+        sym = g.split(":", 1)[0].strip()
+        plan.append({"rule": "R8-gap", "symbol": sym, "action": "SELL_GTC_TIER",
+                     "qty": None, "order": {"type": "limit", "duration": "gtc"}, "basis": g[:200],
+                     "after": ["register-order --rule R8（限價=級距價，需人工確認股數）"]})
 
     parked = float(st.get("parked_cash_equiv") or 0)
     # 在掛的現金等價賣單（SGOV 解泊，T+1）視為即將到位的現金，避免重複出解泊單
@@ -212,6 +245,12 @@ def main(argv):
                     and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED"))]
         if existing:
             skip(sym, "R30", f"已有 R30 在掛買單 {existing}"); continue
+        # 冷卻：同標的 14 日曆日內有任何買進成交（R30 或用戶手動皆算）→ 不再加（TWLO 9/15 R30 成交、AMD 9/15 用戶手買 6 股，當晚都不能再疊）
+        recent_fill = [oid for oid, o in (reg.get("orders") or {}).items()
+                       if o.get("symbol") == sym and o.get("transaction") == "B" and "FILLED" in str(o.get("state", ""))
+                       and (o.get("updated") or o.get("rule_registered_at") or o.get("first_seen") or "")[:10] >= (today - timedelta(days=14)).isoformat()]
+        if recent_fill:
+            skip(sym, "R30", f"14 日內已有買進成交 {recent_fill}，冷卻中（一次一梯，不疊）"); continue
         plan.append({"rule": "R30-add", "symbol": sym, "action": "BUY", "qty": qty,
                      "order": ({"type": "limit", "limit": limit, "duration": "day", "branch": "breakout"} if breakout
                                else {"type": "limit", "limit": round(limit, 2), "duration": "gtc", "expires_days": 10, "branch": "pullback"}),
@@ -244,8 +283,17 @@ def main(argv):
                 continue
             if qty >= 1:
                 plan.append({"rule": "R25-sleeve", "symbol": p["symbol"], "action": "SELL", "qty": qty,
-                             "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": "day"},
+                             "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
                              "basis": f"{a['why']} → {a['action']}；賣出所得停泊 SGOV（R24），redeploy 走飛輪", "after": ["register-order --rule R25", "R24 SGOV 買單同日"]})
+
+    # ── H. 陳舊自動賣單：R23 / user-close-line / R25 的在掛賣單若非今日掛且仍未成交 → 撤（隔晚依新收盤重算重掛）──
+    for oid, o in (reg.get("orders") or {}).items():
+        rr = o.get("rule_ref") or ""
+        if o.get("transaction") == "S" and rr.split("-")[0] in ("R23", "user", "R25") \
+                and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")) \
+                and (o.get("rule_registered_at") or o.get("first_seen") or "") < (today - timedelta(days=1)).isoformat():
+            plan.append({"rule": f"{rr}-cancel", "symbol": o["symbol"], "action": "CANCEL", "qty": o.get("shares"),
+                         "order": {"id": oid}, "basis": f"自動賣單 {oid}（{rr}）掛超過一個交易日未成交 → 撤，今晚依新收盤重算", "after": []})
 
     # ── 去重 / 優先序（衝突 C2 型）：同一標的同向只出一張單。用戶裁決收盤線 > R23（9/2 裁決：MYRG 以 $274 線取代 R23），
     #    R23-30 > R23-20；合併時在 basis 註明被吸收的規則，避免兩條規則各賣一次把認列桶賣穿 30% runner。
@@ -261,6 +309,22 @@ def main(argv):
         keep["merged_rules"] = sorted({cur.get("rule"), p.get("rule")} | set(cur.get("merged_rules", [])))
         merged[i] = keep
     plan = merged
+
+    # ── 已在券商的同規則同向單 → 移到 skipped（晚間 pass 掛過的單，早上 briefing 讀 plan 不得重下）──
+    open_by_key = {}
+    for oid, o in (reg.get("orders") or {}).items():
+        if str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+            open_by_key.setdefault((o.get("symbol"), o.get("transaction"), (o.get("rule_ref") or "").split("-")[0]), []).append(oid)
+    kept = []
+    for p in plan:
+        side = {"SELL": "S", "BUY": "B"}.get(p.get("action"))
+        base = (p.get("rule") or "").split("-")[0] if p.get("rule") not in ("user-close-line",) else "user"
+        dup = open_by_key.get((p.get("symbol"), side, base)) if side else None
+        if dup:
+            skip(p["symbol"], p["rule"], f"已在券商在掛 {dup}（昨晚 evening pass 掛的）— 不重下")
+        else:
+            kept.append(p)
+    plan = kept
 
     # R28a：買方硬線清單（T6.5 條件 4 讀此；guard 已算）
     buy_locked = {s: p["buy_locked"] for s, p in positions.items() if p.get("buy_locked")}
@@ -280,13 +344,16 @@ def main(argv):
                      "basis": f"可用現金 {cash_available:,.0f} < $3k 新曝險上限，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）",
                      "after": ["register-order --rule R24"]})
 
-    out = {"asof": today.isoformat(), "close_asof": closes.get("asof"), "mode": "dry-run" if not execute else "execute",
+    out = {"asof": today.isoformat(), "close_asof": closes.get("asof"), "pass": "preclose" if preclose else "close",
+           "buffer": BUF, "mode": "dry-run" if not execute else "execute",
            "execute_unlock": EXECUTE_UNLOCK.isoformat(), "px_note": px_note,
            "plan": plan, "skipped": skipped, "cash_gate": cash_gate, "buy_locked": buy_locked,
            "discipline": "T6.5 只執行本清單；新倉/加碼/選擇權開倉不在此；所有觸發以前一收盤判定（R17）"}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2))
 
+    if stale_state:
+        print(f"⚠️ position-state source={st.get('source')}（非 firstrade-live）→ 以下 plan 不可靠，僅供參考，execute 已被拒")
     print(f"🤖 auto_exec {out['mode']}（收盤 {out['close_asof']}）{px_note}")
     if plan:
         for p in plan:
@@ -297,11 +364,106 @@ def main(argv):
         print(f"  · skip {s['rule']:<12} {s['symbol']:<6} {s['why']}")
     if execute:
         if today < EXECUTE_UNLOCK:
-            print(f"⛔ --execute 鎖定中：v1 dry-run 至 {EXECUTE_UNLOCK}，屆時由用戶裁決解鎖（兩週乾跑對照實際 T6.5 結果）")
+            print(f"⛔ --execute 鎖定中至 {EXECUTE_UNLOCK}")
             return 3
-        print("⛔ execute 路徑尚未實作（v2）")
-        return 3
+        if os.environ.get("AUTO_EXEC_LIVE") != "1":
+            print("⛔ --execute 需要環境變數 AUTO_EXEC_LIVE=1（evening_pass.sh 會設；手動跑要明示）")
+            return 3
+        executed = execute_plan(plan, reg, today)
+        out["executed"] = executed
+        OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2))
+        with open(ROOT / "research" / "auto-exec-log.jsonl", "a") as fh:
+            for e in executed:
+                fh.write(json.dumps({"date": today.isoformat(), **e}, ensure_ascii=False) + "\n")
+        return 0 if all(e.get("status") in ("placed", "cancelled", "skipped") for e in executed) else 4
     return 0
+
+
+# ── v2 執行層（2026-09-15 用戶解鎖：MYRG 手動案——收盤破線到隔日 11:00 ET 才執行太慢）──────
+# 走 trade_ledger._ft_call（firstrade-server venv 內全新 session），下 gt90 限價單：收盤後掛、次一交易日生效。
+# 只做現股 BUY/SELL 限價與 CANCEL；CLOSE_SPREAD 仍推 Telegram 手掛（複式單只收 ET 7–16）。
+def _ft_stock_order(sym, side, qty, price, duration="gt90"):
+    import trade_ledger as tl
+    snippet = (f"print(m._stock_order({sym!r}, {side!r}, {int(qty)}, 'limit', {duration!r}, {float(price)}, None, False))")
+    return tl._ft_call(snippet)
+
+
+def _ft_cancel(order_id):
+    import trade_ledger as tl
+    return tl._ft_call(f"print(m.cancel_order({order_id!r}))")
+
+
+def _note_defensive_trim(sym, order_id, rule, today):
+    """在該標的的 open 旗標 history 追加 action=trimmed（無旗標則建一個 r23-auto，deadline +21d）。"""
+    import subprocess
+    try:
+        d = _load(FLAGS, {"flags": []})
+        f = next((x for x in d["flags"] if x.get("ticker") == sym and x.get("status") in ("open", "forced")), None)
+        if f is None:
+            subprocess.run([sys.executable, str(ROOT / "tools" / "trade_ledger.py"), "flag", "--ticker", sym, "--slug", "r23-auto",
+                            "--reason", f"auto_exec {rule} 減碼 {today}（{order_id}）；殘倉交 R28b/R29 判定", "--deadline", (today + timedelta(days=21)).isoformat()],
+                           capture_output=True, text=True, timeout=60)
+            d = _load(FLAGS, {"flags": []})
+            f = next((x for x in d["flags"] if x.get("ticker") == sym and x.get("status") in ("open", "forced")), None)
+        if f is not None:
+            f.setdefault("history", []).append({"date": today.isoformat(), "event": "auto_exec_trim", "action": "trimmed",
+                                                "note": f"{rule} {order_id}（day/gt90 限價，成交以 trade-ledger 為準）"})
+            FLAGS.write_text(json.dumps(d, ensure_ascii=False, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def execute_plan(plan, reg, today):
+    import subprocess
+    results = []
+    open_same = {}
+    for oid, o in (reg.get("orders") or {}).items():
+        if str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+            open_same.setdefault((o.get("symbol"), o.get("transaction")), []).append((oid, o.get("rule_ref")))
+    for p in plan:
+        rule, sym, act = p.get("rule"), p.get("symbol"), p.get("action")
+        rec = {"rule": rule, "symbol": sym, "action": act, "qty": p.get("qty"), "limit": (p.get("order") or {}).get("limit")}
+        try:
+            if act == "CANCEL":
+                r = _ft_cancel(p["order"]["id"])
+                rec.update(status="cancelled", broker=r)
+            elif act in ("BUY", "SELL") and (p.get("order") or {}).get("type") == "limit" and p.get("qty"):
+                side = "S" if act == "SELL" else "B"
+                dup = [oid for oid, rr in open_same.get((sym, side), []) if (rr or "").split("-")[0] == (rule or "").split("-")[0]]
+                if dup:
+                    rec.update(status="skipped", why=f"同規則同向已有在掛單 {dup}"); results.append(rec); continue
+                dur = "day" if (p.get("order") or {}).get("duration") == "day" else "gt90"
+                r = _ft_stock_order(sym, act.lower(), p["qty"], p["order"]["limit"], dur)
+                res = r.get("result") or r
+                oid = res.get("order_id") if isinstance(res, dict) else None
+                if not oid:
+                    rec.update(status="error", broker=r); results.append(rec); continue
+                rec.update(status="placed", order_id=oid, state=res.get("state"), duration=dur)
+                if base_rule in ("R23", "user-close-line"):  # 防守型減碼留痕到旗標 → guard 的 R28a 鎖 / R28b 判定吃得到
+                    _note_defensive_trim(sym, oid, rule, today)
+                if p.get("alert_id"):  # 用戶收盤線已執行 → 撤警報，不再每晚重發
+                    subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "remove", "--id", p["alert_id"]],
+                                   capture_output=True, text=True, timeout=30)
+                base_rule = (rule or "").split("-")[0] if rule not in ("user-close-line", "options-mgmt") else rule
+                subprocess.run([sys.executable, str(ROOT / "tools" / "trade_ledger.py"), "register-order", "--id", oid,
+                                "--rule", base_rule, "--note", f"auto_exec evening {today}: {p.get('basis','')[:120]}"],
+                               capture_output=True, text=True, timeout=60)
+                kind = {"R30": "cf-r30-add", "R23": "cf-r23-exec", "user": "cf-r23-exec", "R25": "cf-r25-sleeve"}.get(base_rule.split("-")[0])
+                if kind:
+                    subprocess.run([sys.executable, str(ROOT / "tools" / "shadow_signals.py"), "record", "--kind", kind, "--ticker", sym,
+                                    "--price", str(p["order"]["limit"]), "--size", str(round(p["qty"] * p["order"]["limit"], 2)),
+                                    "--correct-if", "over" if act == "BUY" else "under", "--note", f"auto_exec {rule} {oid}"],
+                                   capture_output=True, text=True, timeout=60)
+            else:
+                rec.update(status="skipped", why="非現股限價單（CLOSE_SPREAD/GTC-tier 類）→ Telegram 手掛")
+        except Exception as e:  # noqa: BLE001
+            rec.update(status="error", error=str(e)[-200:])
+        results.append(rec)
+    try:
+        subprocess.run([sys.executable, str(ROOT / "tools" / "trade_ledger.py"), "snapshot-orders"], capture_output=True, text=True, timeout=120)
+    except Exception:  # noqa: BLE001
+        pass
+    return results
 
 
 def audit(day: str | None = None) -> int:

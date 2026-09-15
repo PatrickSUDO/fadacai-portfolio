@@ -21,7 +21,7 @@ Alert types:
   price_below / price_above — 現價 vs level
   rolling_high — 現價 > 前 N 個交易日收盤最高（不含今日）
 
-mode: once_per_day（預設，每日至多一發）| once（觸發後自動停用）
+mode: once_per_day（預設，每日至多一發）| once（觸發後自動停用）| close_confirm（盤中不發；防守線，auto_exec 晚間判定執行）
 狀態與定義同存 research/price-alerts.json。
 """
 
@@ -67,6 +67,10 @@ def in_market_window(ts: datetime) -> bool:
 
 def is_active(a: dict, today_iso: str) -> bool:
     if a.get("status") in ("triggered", "disabled"):
+        return False
+    # close_confirm（2026-09-15）：防守線只認收盤（R17），盤中輪詢不發、不吵；由 auto_exec 晚間 pass 判定並直接掛單。
+    # MYRG $274 線 8/27–9/15 盤中來回觸價每日一發、briefing 再講一次、結果還是人工賣——這個 mode 就是修這個。
+    if a.get("mode") == "close_confirm":
         return False
     exp = a.get("expires")
     if exp and today_iso > exp:
@@ -315,7 +319,8 @@ def main() -> int:
                        help="R23：現價 ≤ 自 --since 起收盤峰值 × (1−PCT/100) 時觸發")
     p_add.add_argument("--since", metavar="YYYY-MM-DD", help="--peak-dd 峰值起算日（建倉日）")
     p_add.add_argument("--note", required=True)
-    p_add.add_argument("--mode", choices=["once", "once_per_day"], default="once_per_day")
+    p_add.add_argument("--mode", choices=["once", "once_per_day", "close_confirm"], default="once_per_day",
+                       help="close_confirm=只認收盤，盤中不發，由 auto_exec 晚間 pass 判定並掛單（防守線用）")
     p_add.add_argument("--expires", metavar="YYYY-MM-DD")
     p_add.add_argument("--id")
     p_rm = sub.add_parser("remove")
