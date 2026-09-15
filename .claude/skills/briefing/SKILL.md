@@ -992,6 +992,8 @@ Agent(subagent_type="data-collector"):
 
 **T6.5 自動執行（今日待辦 → 直接下單，2026-09-08 用戶指定；2026-09-14 起機械單判定移到 code）**
 
+**觀察型警報（`briefing-out/cache/alerts-fired.jsonl` 當日條目，mode=briefing_only）**：每條在此段給結論，不轉述 note——讀 `fundamentals-snapshot.json forward_estimates` 的 30 日 revisions up/down（缺則先 `fetch_fundamentals.py --ticker`）與財報窗，寫成「{SYM} 觸 {線}：revision {u}↑:{d}↓、N={n} → 深洗盤候選 ✓ / de-rating ✗；名額 {有/無}」一行；候選 ✓ 且有名額才進 🎯 待辦。
+
 **先讀 `briefing-out/cache/auto-exec-plan.json`**（`tools/auto_exec.py`，runner 預跑；手動 briefing 時 `uv run --directory tools python3 tools/auto_exec.py`）。**機械單（R23 線、用戶裁決收盤線、選擇權管理線、R24 SGOV、R8 缺口）只准執行該檔 `plan` 列出的項目**，觸發判定一律以前一收盤（工具已算），模型不得自行判定「有沒有到線」；`skipped` 列出被 R14/財報窗/跨日反轉擋下者，原樣進 Key Alerts。執行時點已改為盤中收盤前 15:45 ET 與收盤後 16:20 ET 兩次 pass（`tools/evening_pass.sh`），結果寫在 plan JSON 的 `executed`。早上讀到 `executed` 內 `status=placed` 的項目只寫 `✅ 已自動執行（單號）`，不再處理；`status=error` 與 `CLOSE_SPREAD` 才由 briefing 補處理，補完 `register-order --rule <plan.rule>`。新倉/加碼類不在 plan 內，仍走下面五條件。
 
 T6 產生的**今日待辦**（明日待辦不適用，只是預告）逐條檢查，**五條全過**才直接下單、不再列為待用戶確認的項目：

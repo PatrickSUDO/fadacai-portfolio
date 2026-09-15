@@ -22,6 +22,7 @@ Alert types:
   rolling_high — 現價 > 前 N 個交易日收盤最高（不含今日）
 
 mode: once_per_day（預設，每日至多一發）| once（觸發後自動停用）| close_confirm（盤中不發；防守線，auto_exec 晚間判定執行）
+      | briefing_only（觀察型「不下單、要查 revision/跌因」：只記 briefing-out/cache/alerts-fired.jsonl 給 briefing 讀，不推 Telegram）
 狀態與定義同存 research/price-alerts.json。
 """
 
@@ -75,7 +76,7 @@ def is_active(a: dict, today_iso: str) -> bool:
     exp = a.get("expires")
     if exp and today_iso > exp:
         return False
-    if a.get("mode", "once_per_day") == "once_per_day" and a.get("last_fired") == today_iso:
+    if a.get("mode", "once_per_day") in ("once_per_day", "briefing_only") and a.get("last_fired") == today_iso:
         return False
     return True
 
@@ -154,6 +155,7 @@ def evaluate(dry_run: bool = False, force: bool = False) -> int:
     prices = fetch_last_prices(plain_syms)
 
     fired: list[str] = []
+    quiet: list[dict] = []   # briefing_only：觀察型（不下單、要查 revision/跌因）→ 只記檔給 briefing，不推 Telegram（HWM 9/15 案）
     for a in active:
         sym, typ = a["symbol"], a["type"]
         line = None
@@ -188,14 +190,25 @@ def evaluate(dry_run: bool = False, force: bool = False) -> int:
             continue
 
         if line:
-            fired.append(line)
             a["last_fired"] = today_iso
             a["fired_count"] = a.get("fired_count", 0) + 1
             if a.get("mode", "once_per_day") == "once":
                 a["status"] = "triggered"
+            if a.get("mode") == "briefing_only":
+                quiet.append({"ts": ts.isoformat(timespec="minutes"), "id": a["id"], "symbol": sym, "line": line})
+            else:
+                fired.append(line)
 
+    if quiet and not dry_run:
+        qpath = ROOT / "briefing-out" / "cache" / "alerts-fired.jsonl"
+        qpath.parent.mkdir(parents=True, exist_ok=True)
+        with open(qpath, "a") as fh:
+            for q in quiet:
+                fh.write(json.dumps(q, ensure_ascii=False) + "\n")
     if not fired:
-        print(f"[{ts:%H:%M} ET] {len(active)} active, none fired")
+        if quiet and not dry_run:
+            save_alerts(data)
+        print(f"[{ts:%H:%M} ET] {len(active)} active, none fired" + (f"（{len(quiet)} 觀察型記檔不推）" if quiet else ""))
         return 0
 
     msg = f"🔔 價格警報 {ts:%m-%d %H:%M} ET\n" + "\n".join(fired)
@@ -204,7 +217,7 @@ def evaluate(dry_run: bool = False, force: bool = False) -> int:
         return 0
     send_telegram(msg)
     save_alerts(data)
-    print(f"[{ts:%H:%M} ET] sent {len(fired)} alert(s)")
+    print(f"[{ts:%H:%M} ET] sent {len(fired)} alert(s)" + (f"，{len(quiet)} 觀察型記檔" if quiet else ""))
     return 0
 
 
@@ -327,7 +340,7 @@ def main() -> int:
                        help="R23：現價 ≤ 自 --since 起收盤峰值 × (1−PCT/100) 時觸發")
     p_add.add_argument("--since", metavar="YYYY-MM-DD", help="--peak-dd 峰值起算日（建倉日）")
     p_add.add_argument("--note", required=True)
-    p_add.add_argument("--mode", choices=["once", "once_per_day", "close_confirm"], default="once_per_day",
+    p_add.add_argument("--mode", choices=["once", "once_per_day", "close_confirm", "briefing_only"], default="once_per_day",
                        help="close_confirm=只認收盤，盤中不發，由 auto_exec 晚間 pass 判定並掛單（防守線用）")
     p_add.add_argument("--expires", metavar="YYYY-MM-DD")
     p_add.add_argument("--id")
