@@ -196,8 +196,15 @@ def main(argv):
             skip(sym, "R30", "T5.5 跨日反轉，延一日"); continue
         if cash_available < c["room_usd"] and parked <= 0:
             skip(sym, "R30", f"可用現金 {cash_available:,.0f} < 額度 {c['room_usd']:,.0f} 且無 SGOV 停泊"); continue
-        limit = min(c["sma20"], c["last"] * 0.995) if c["last"] > c["sma20"] else round(c["last"] * 0.995, 2)
-        qty = math.floor(min(c["room_usd"], 3_000) / limit)
+        # 兩分支（R20 對稱）：走強分支 = 前收 ≥ 20 日高（突破確認）→ 當日 day 單貼盤接一半額度；否則回檔分支 = SMA20 限價 GTC
+        prev = close_of(sym) or c["last"]
+        breakout = prev >= c["high20"] * 0.999
+        if breakout:
+            limit = round(prev * 1.002, 2)
+            qty = math.floor(min(c["room_usd"], 3_000) * 0.5 / limit)
+        else:
+            limit = min(c["sma20"], c["last"] * 0.995) if c["last"] > c["sma20"] else round(c["last"] * 0.995, 2)
+            qty = math.floor(min(c["room_usd"], 3_000) / limit)
         if qty < 1:
             skip(sym, "R30", "額度不足 1 股"); continue
         existing = [oid for oid, o in (reg.get("orders") or {}).items()
@@ -206,8 +213,11 @@ def main(argv):
         if existing:
             skip(sym, "R30", f"已有 R30 在掛買單 {existing}"); continue
         plan.append({"rule": "R30-add", "symbol": sym, "action": "BUY", "qty": qty,
-                     "order": {"type": "limit", "limit": round(limit, 2), "duration": "gtc", "expires_days": 10},
-                     "basis": f"買強：+{c['unrealized_pct']:.0f}%、rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓、價 {c['last']} > SMA50 {c['sma50']}、權重 {c['weight_pct']}% → 回檔 SMA20 {c['sma20']} 接，額度 ${c['room_usd']:,.0f}",
+                     "order": ({"type": "limit", "limit": limit, "duration": "day", "branch": "breakout"} if breakout
+                               else {"type": "limit", "limit": round(limit, 2), "duration": "gtc", "expires_days": 10, "branch": "pullback"}),
+                     "basis": (f"買強：+{c['unrealized_pct']:.0f}%、rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓、價 {c['last']} > SMA50 {c['sma50']}、權重 {c['weight_pct']}% → "
+                               + (f"走強分支：前收 {prev:.2f} ≥ 20 日高 {c['high20']}，當日接半額度" if breakout else f"回檔分支：SMA20 {c['sma20']} 限價 GTC 10 日")
+                               + f"，額度 ${c['room_usd']:,.0f}"),
                      "after": ["register-order --rule R30", "shadow record --kind cf-r30-add --correct-if over", "thesis 留痕（+30d 驗）"]})
     for oid, o in (reg.get("orders") or {}).items():
         if o.get("rule_ref") == "R30" and o.get("transaction") == "B" and o.get("symbol") not in r30_syms \

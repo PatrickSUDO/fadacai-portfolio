@@ -168,6 +168,22 @@ def realized_since(fills, sym, since):
     return real, sh, (cost / sh if sh > 1e-6 else None)
 
 
+def last_r23_trim_price(fills, sym, trim_dt):
+    """R23 減碼日（±1 日）該標的最後一筆賣出價；找不到 → None。"""
+    if not trim_dt:
+        return None
+    d0 = dt.date.fromisoformat(trim_dt)
+    px = None
+    for f in fills:
+        if f["symbol"] == sym and f["side"] != "BOUGHT":
+            try:
+                if abs((dt.date.fromisoformat(f["date"]) - d0).days) <= 1:
+                    px = float(f["price"])
+            except ValueError:
+                continue
+    return px
+
+
 def buys_after(fills, sym, since_date):
     return [f for f in fills if f["symbol"] == sym and f["side"] == "BOUGHT" and since_date and f["date"] > since_date]
 
@@ -391,12 +407,19 @@ def build_state(*, sync_alerts=False):
             gaps.append(f"{sym}: 樂透桶無在掛停損單 → 掛普通停損（R16；成本線，非移動）")
 
         # ── R28（CRDO 案）──
+        up, down = rev_30d(fund, sym)
         buy_lock = None
         trim_recent = bool(trim_dt and (today - dt.date.fromisoformat(trim_dt)).days <= R28_BUYLOCK_DAYS)
         if bucket == "認列" and armed and dd is not None and dd <= R28_BUYLOCK_DD:
             buy_lock = f"R23 armed 且自峰 {dd:+.0f}% ≤ −15%"
         elif bucket == "認列" and trim_recent:
-            buy_lock = f"R23 減碼 {trim_dt} 後 30 天內"
+            # R28a 提前解鎖（2026-09-15，AMD 案）：價已收回 R23 減碼價之上且 30d revision up>down = whipsaw 已確認，
+            # 繼續鎖只會重演「只低接不追強」；解鎖後交 R30 判定（仍需價 > SMA50）
+            trim_px = last_r23_trim_price(fills, sym, trim_dt)
+            if trim_px and last and last > trim_px and up is not None and up > down:
+                buy_lock = None
+            else:
+                buy_lock = f"R23 減碼 {trim_dt} 後 30 天內" + (f"（收回 {trim_px:.0f} 且 rev up>down 即解鎖）" if trim_px else "")
         if buy_lock:
             bo = open_buy_orders(registry, sym)
             if bo:
@@ -442,7 +465,6 @@ def build_state(*, sync_alerts=False):
                 gaps.append(f"{sym}: 旗標 {f['id']} 已逾期 {f['deadline']}")
 
         # ── R29 / R30 / R25 修訂 ──
-        up, down = rev_30d(fund, sym)
         mf = mkt.get(sym) or {}
         rs90 = (mf["ret90"] - spy_ret90) * 100 if (mf.get("ret90") is not None and spy_ret90 is not None) else None
         if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
