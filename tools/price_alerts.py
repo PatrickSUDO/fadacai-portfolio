@@ -303,6 +303,14 @@ def cmd_test() -> int:
 
 def main() -> int:
     load_env()
+    # 單一執行者鎖：launchd StartInterval 在 Mac 睡醒補跑時可能與正常排程重疊，兩個行程各發一次同一警報
+    import fcntl
+    lock_fh = open(ROOT / "briefing-out" / ".price-alerts.lock", "w")
+    try:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("another price_alerts run in progress, skip")
+        return 0
     parser = argparse.ArgumentParser(description="自動價格警報 → Telegram")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="跳過盤中時窗 gate")

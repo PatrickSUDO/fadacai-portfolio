@@ -505,6 +505,12 @@ def audit(day: str | None = None) -> int:
                 issues.append({"type": "mismatch", "symbol": p["symbol"], "rule": p["rule"],
                                "msg": f"plan {p['qty']} 股 vs 實際 {qty_got:g} 股"})
     planned_sells = {p["symbol"] for p in plan if p["action"] == "SELL"}
+    # 規則單成交也算 planned：有 rule_ref 的單（register-order 登記過）= 系統決策，不論是機器掛的還是用戶照 plan 手動下的
+    # （9/15 MYRG：9/14 plan 的 14 股由用戶 09:35 手動執行，plan 當天早上重算後已無此項 → 舊邏輯誤報 unplanned）
+    for oid, o in (reg.get("orders") or {}).items():
+        if o.get("rule_ref") and o.get("transaction") == "S" and "FILLED" in str(o.get("state", "")) \
+                and (o.get("rule_registered_at") or o.get("first_seen") or "")[:10] == day:
+            planned_sells.add(o.get("symbol"))
     st = _load(STATE, {})
     buckets = {p["symbol"]: p.get("bucket") for p in st.get("positions", [])}
     for f in fills:
