@@ -187,6 +187,7 @@ Read briefing-out/cache/twitter-signals.json
 **紀律（display-only，同 A4 影子 / R18 / 先行指標）：**
 - Tier（`probation`/`trusted`/`core`）完全由 `tools/source_credit.py tiers` 機械算出，**Claude 不得手動升降**
 - **Probation** 來源只能出現在 §9.6（Deep tier 陳列），不得作 Key Alerts / Telegram 引用來源，不得作任何 prior
+- **`bias == "talks-book"` 來源（source-config，目前 @BillAckman / Pershing Square，2026-09-16 用戶觀察「他說很可怕時通常持有部位」）**：陳列其任何主張時，**必附一行 13F 對照**——讀 `briefing-out/cache/agenda-13f.json`（`tools/agenda_check.py`，runner 預載，TTL 7 天）：「13F {期別} 前 10：{前 3 名+%}；本則{點名持倉 / 看空且有 put / 無關}」。同向 = agenda 揭露，不是預測，不得作 prior；`source_credit.py add-claim` 時 `--note` 帶 `agenda=same|none`，命中率分組看
 - **Trusted** 可作 medium confidence prior、可進 Key Alerts 🐦 行、可進 Telegram T3.5/T8a/T8b
 - **Core** 額外可提作試單候選背景（仍須過 R14 持有期閘 / R15 回檔熔斷 / R18 財報窗禁令等既有硬閘門，不繞過）
 - 驗滿 **≥2 期 `/trade-review`** 前，來源訊號**不得單獨改變任何 Verdict / 加減碼建議**，只作背景與記錄

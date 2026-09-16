@@ -306,3 +306,12 @@ x.com/search?q=("kw1" OR "kw2") <公司> since:<確認日−45天> until:<確認
 - **小樣本統計謹慎**：`n_scored < 3` 的來源一律只記錄不下結論；`backtest_share > 0.8` 的來源標「僅回測」，不當已在實盤驗證的命中率
 - **`tiers` 寫入私有 config 的欄位受限**：只改 `tier` / `tier_since` / `tier_history` / `x_user_id` 四欄，且用原子寫（`tempfile.mkstemp` + `os.replace`），不動其餘手編欄位
 - **個人選號不入庫**：真實信任的帳號清單只存在私有 `research/source-config.json`，本文件與 `docs/source-config.example.json` 一律只用佔位範例
+
+## talks-book 來源與 13F 對照（2026-09-16）
+
+用戶觀察：Bill Ackman（Pershing Square）公開講「很可怕」的總經／政策觀點時，通常已持有相關部位——觀點方向 ≈ 部位方向，不是預測。
+
+- 來源設定加 `bias: "talks-book"` 與 `agenda_check: {sec_cik, form: "13F-HR"}`（billackman：CIK 1336528）。
+- `tools/agenda_check.py` 抓 EDGAR 最新 13F-HR infotable → 前 12 大持倉（含 put/call 標記）→ `briefing-out/cache/agenda-13f.json`，TTL 7 天，runner 預載。`--claim "<文字>" --source billackman` 粗配主張與持倉（點名持倉 / 看空且有 put / 無關）。
+- 引用規則：briefing §9.6 陳列其主張必附一行 13F 對照；`add-claim --note agenda=same|none`；`/trade-review` 4d 看命中率時分「同向」「無關」兩組——**同向組命中率高不算預測力，算 agenda 揭露**，不得升 tier 依據。
+- 限制：13F 有 45 天延遲、不含空單與多數衍生品，只看得到多頭現貨與 put/call 選擇權；「看空言論 + 13F 無 put」不能證明沒部位。

@@ -103,6 +103,10 @@ uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "twitter refresh failed (non-fatal, briefing continues without source signals)"
 
+log "Refreshing talks-book 13F agenda cache (EDGAR, TTL 7d)..."
+python3 "$SCRIPT_DIR/agenda_check.py" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "agenda_check failed (non-fatal)"
+
 log "Refreshing leading indicators cache (FRED/yfinance/EODHD/TWSE-TPEx)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_leading.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
