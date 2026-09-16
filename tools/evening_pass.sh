@@ -41,7 +41,7 @@ FLAG=""; [[ "$PASS" == "preclose" ]] && FLAG="--preclose"
 log "auto_exec --execute $FLAG"
 AUTO_EXEC_LIVE=1 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" --execute $FLAG >> "$LOG" 2>&1
 RC=$?
-log "auto_exec rc=$RC（5 = state 非 live 拒絕執行）"
+log "auto_exec rc=${RC}（5 = state 非 live 拒絕執行）"
 
 # Telegram 一則摘要（只在有動作 / 有錯 / 被拒時發）
 python3 - "$RC" "$PASS" <<'PY' | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 || log "tg_send failed"

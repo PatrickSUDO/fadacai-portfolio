@@ -452,9 +452,15 @@ def execute_plan(plan, reg, today):
                 rec.update(status="cancelled", broker=r)
             elif act in ("BUY", "SELL") and (p.get("order") or {}).get("type") == "limit" and p.get("qty"):
                 side = "S" if act == "SELL" else "B"
+                # 去重兩層：①同規則同向在掛；②今天已掛過任何同標的同向單（不看 rule_ref——9/16 三個 pass 疊了三套 GLD/XLE，
+                #   因為第一套下單後的後處理炸掉、沒登記 rule_ref，第二、三次都當沒掛過）
                 dup = [oid for oid, rr in open_same.get((sym, side), []) if (rr or "").split("-")[0] == (rule or "").split("-")[0]]
-                if dup:
-                    rec.update(status="skipped", why=f"同規則同向已有在掛單 {dup}"); results.append(rec); continue
+                dup_today = [oid for oid, o in (reg.get("orders") or {}).items()
+                             if o.get("symbol") == sym and o.get("transaction") == side
+                             and (o.get("first_seen") or o.get("updated") or "")[:10] == today.isoformat()
+                             and ("FILLED" in str(o.get("state", "")) or str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")))]
+                if dup or dup_today:
+                    rec.update(status="skipped", why=f"今天已有同向單 {dup or dup_today}，不重掛"); results.append(rec); continue
                 dur = "day" if (p.get("order") or {}).get("duration") == "day" else "gt90"
                 r = _ft_stock_order(sym, act.lower(), p["qty"], p["order"]["limit"], dur)
                 res = r.get("result") or r
@@ -462,21 +468,33 @@ def execute_plan(plan, reg, today):
                 if not oid:
                     rec.update(status="error", broker=r); results.append(rec); continue
                 rec.update(status="placed", order_id=oid, state=res.get("state"), duration=dur)
+                results.append(rec)  # 單已在券商——先記 placed，後處理任何錯誤都不能把它變成 error
                 base_rule = (rule or "").split("-")[0] if rule not in ("user-close-line", "options-mgmt") else rule
-                if base_rule in ("R23", "user-close-line"):  # 防守型減碼留痕到旗標 → guard 的 R28a 鎖 / R28b 判定吃得到
-                    _note_defensive_trim(sym, oid, rule, today)
-                if p.get("alert_id"):  # 用戶收盤線已執行 → 撤警報，不再每晚重發
-                    subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "remove", "--id", p["alert_id"]],
-                                   capture_output=True, text=True, timeout=30)
-                subprocess.run([sys.executable, str(ROOT / "tools" / "trade_ledger.py"), "register-order", "--id", oid,
-                                "--rule", base_rule, "--note", f"auto_exec evening {today}: {p.get('basis','')[:120]}"],
-                               capture_output=True, text=True, timeout=60)
-                kind = {"R30": "cf-r30-add", "R23": "cf-r23-exec", "user": "cf-r23-exec", "R25": "cf-r25-sleeve"}.get(base_rule.split("-")[0])
-                if kind:
-                    subprocess.run([sys.executable, str(ROOT / "tools" / "shadow_signals.py"), "record", "--kind", kind, "--ticker", sym,
-                                    "--price", str(p["order"]["limit"]), "--size", str(round(p["qty"] * p["order"]["limit"], 2)),
-                                    "--correct-if", "over" if act == "BUY" else "under", "--note", f"auto_exec {rule} {oid}"],
-                                   capture_output=True, text=True, timeout=60)
+                # 立刻登記到 registry（含 first_seen=今天），讓下一個 pass 的去重看得到；其餘後處理各自 try
+                reg.setdefault("orders", {})[oid] = {"symbol": sym, "transaction": side, "shares": p["qty"], "limit_price": p["order"]["limit"],
+                                                     "state": "ORDER-REQUESTED", "first_seen": today.isoformat(), "rule_ref": base_rule,
+                                                     "sec_type": 1, "rule_registered_at": today.isoformat()}
+                try:
+                    REGISTRY.write_text(json.dumps(reg, ensure_ascii=False, indent=1))
+                except Exception as e:  # noqa: BLE001
+                    rec["post_error"] = f"registry write: {e}"
+                for step in ("trim_note", "alert", "shadow"):
+                    try:
+                        if step == "trim_note" and base_rule in ("R23", "user-close-line"):
+                            _note_defensive_trim(sym, oid, rule, today)
+                        elif step == "alert" and p.get("alert_id"):
+                            subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "remove", "--id", p["alert_id"]],
+                                           capture_output=True, text=True, timeout=30)
+                        elif step == "shadow":
+                            kind = {"R30": "cf-r30-add", "R23": "cf-r23-exec", "user": "cf-r23-exec", "R25": "cf-r25-sleeve"}.get(base_rule.split("-")[0])
+                            if kind:
+                                subprocess.run([sys.executable, str(ROOT / "tools" / "shadow_signals.py"), "record", "--kind", kind, "--ticker", sym,
+                                                "--price", str(p["order"]["limit"]), "--size", str(round(p["qty"] * p["order"]["limit"], 2)),
+                                                "--correct-if", "over" if act == "BUY" else "under", "--note", f"auto_exec {rule} {oid}"],
+                                               capture_output=True, text=True, timeout=60)
+                    except Exception as e:  # noqa: BLE001
+                        rec[f"post_error_{step}"] = str(e)[-120:]
+                continue
             else:
                 rec.update(status="skipped", why="非現股限價單（CLOSE_SPREAD/GTC-tier 類）→ Telegram 手掛")
         except Exception as e:  # noqa: BLE001
