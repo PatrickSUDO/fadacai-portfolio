@@ -494,7 +494,8 @@ def build_state(*, sync_alerts=False):
                 dl = f.get("deadline")
                 if dl and dt.date.fromisoformat(dl) > cap_dl and not any(a.get("type") == "price_below" for a in al):
                     gaps.append(f"{sym}: R29b 認列桶 gate deadline {dl} 超過 min(下次財報, 15 交易日)={cap_dl}，且無價格線 → 縮 deadline 或掛收盤線")
-        add_ok = (bucket in ("認列", "信念") and unreal is not None and unreal > 0 and up is not None and up > down
+        # 未實現 ≥ +3%（不是 >0）：LITE 9/16 +0.2% 也算「贏家」是噪音；買強要買的是已經證明自己的部位
+        add_ok = (bucket in ("認列", "信念") and unreal is not None and unreal >= 3.0 and up is not None and up > down
                   and mf.get("sma50") and last and last > mf["sma50"] and weight is not None and weight < R30_MAX_WEIGHT
                   and not buy_lock and not in_earn_window)
         if add_ok:

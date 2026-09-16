@@ -322,7 +322,8 @@ def main(argv):
     merged, seen = [], {}
     prio = {"user-close-line": 3, "R23-30": 2, "R23-20": 1}
     for p in plan:
-        key = (p["symbol"], p["action"])
+        # 分批梯（*-ladder）是刻意的第二張單，不與第一批合併
+        key = (p["symbol"], p["action"], "ladder" if str(p.get("rule", "")).endswith("-ladder") else "")
         if key not in seen:
             seen[key] = len(merged); merged.append(dict(p)); continue
         i = seen[key]; cur = merged[i]
