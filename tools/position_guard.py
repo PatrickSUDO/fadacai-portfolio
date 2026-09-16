@@ -543,11 +543,18 @@ def build_state(*, sync_alerts=False):
     sleeve_since = min([r["open_since"] for r in sleeve_rows if r.get("open_since")], default=None)
     acct_peak = account_peak_since(sleeve_since) if sleeve_since else None
     acct_dd = ((total / acct_peak - 1) * 100) if (acct_peak and total) else None
+    # regime 覆寫（tools/fomc_watch.py 寫：Fed 實際升息 → 目標 8%；R25 規則 1）
+    ovr = _load_json(ROOT / "research" / "regime-overrides.json", {})
+    sleeve_target = float(ovr.get("sleeve_target_pct") or SLEEVE_TARGET)
+    sleeve_hi = max(SLEEVE_HI, sleeve_target + 2.0)
+    if sleeve_rows and sleeve_target > SLEEVE_TARGET and sleeve_w < sleeve_target - 0.5:
+        gaps.append(f"R25 規則 1 sleeve 目標 {sleeve_target:g}%（{ovr.get('reason','regime 覆寫')}）> 現 {sleeve_w:.1f}% → 分兩批補到 {sleeve_target:g}%（auto_exec G）")
+        sleeve_actions.append({"symbol": "SLEEVE", "action": "BUY_TO", "target_weight_pct": sleeve_target, "why": ovr.get("reason", "regime 覆寫")})
     if sleeve_rows:
-        if sleeve_w > SLEEVE_HI:
-            gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% > {SLEEVE_HI:g}% 上緣 → 減回 {SLEEVE_TARGET:g}%（賣出去 SGOV）")
-            sleeve_actions.append({"symbol": "SLEEVE", "action": "TRIM_TO", "target_weight_pct": SLEEVE_TARGET, "why": f"合計 {sleeve_w:.1f}% > 8%"})
-        elif sleeve_w < SLEEVE_LO:
+        if sleeve_w > sleeve_hi:
+            gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% > {sleeve_hi:g}% 上緣 → 減回 {sleeve_target:g}%（賣出去 SGOV）")
+            sleeve_actions.append({"symbol": "SLEEVE", "action": "TRIM_TO", "target_weight_pct": sleeve_target, "why": f"合計 {sleeve_w:.1f}% > {sleeve_hi:g}%"})
+        elif sleeve_w < SLEEVE_LO and sleeve_target <= SLEEVE_TARGET:
             gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% < {SLEEVE_LO:g}% 下緣 → 補回 {SLEEVE_TARGET:g}%（除非帳戶回撤觸發賣半中）")
         if acct_dd is not None and acct_dd <= SLEEVE_ACCT_DD:
             gaps.append(f"R25 修訂 帳戶自 sleeve 建立（{sleeve_since}）後峰值 ${acct_peak:,.0f} 回撤 {acct_dd:+.1f}% ≤ −10% → sleeve 賣一半換子彈（進 SGOV，redeploy 走飛輪）")

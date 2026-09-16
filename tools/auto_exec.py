@@ -271,6 +271,26 @@ def main(argv):
             if a["symbol"] not in ("SLEEVE", p["symbol"]):
                 continue
             c = close_of(p["symbol"]) or p.get("last") or 0
+            if a["action"] == "BUY_TO":
+                # R25 規則 1 + 規則 4：目標權重平均分給 sleeve ETF，每檔分兩批——一半貼盤 day、一半 −4.5% GTC
+                n_etf = max(len(sleeve_pos), 1)
+                per = a.get("target_weight_pct", 8.0) / n_etf
+                need_usd = max(0.0, (per - (p.get("weight_pct") or 0)) / 100 * total)
+                if need_usd < 300 or not c:
+                    continue
+                if any(o.get("symbol") == p["symbol"] and o.get("rule_ref") == "R25" and o.get("transaction") == "B"
+                       and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")) for o in (reg.get("orders") or {}).values()):
+                    skip(p["symbol"], "R25", "已有 R25 在掛買單"); continue
+                q1 = math.floor(need_usd * 0.5 / c); q2 = math.floor(need_usd * 0.5 / (c * 0.955))
+                if q1 >= 1:
+                    plan.append({"rule": "R25-sleeve", "symbol": p["symbol"], "action": "BUY", "qty": q1,
+                                 "order": {"type": "limit", "limit": round(c * 1.002, 2), "duration": "day"},
+                                 "basis": f"{a['why']} → sleeve 補到 {a.get('target_weight_pct')}%（第一批貼盤）", "after": ["register-order --rule R25"]})
+                if q2 >= 1:
+                    plan.append({"rule": "R25-sleeve-ladder", "symbol": p["symbol"], "action": "BUY", "qty": q2,
+                                 "order": {"type": "limit", "limit": round(c * 0.955, 2), "duration": "gt90"},
+                                 "basis": f"{a['why']} → 第二批 −4.5% GTC（R25 規則 4）", "after": ["register-order --rule R25"]})
+                continue
             if a["action"] == "SELL_HALF":
                 qty = math.floor(p["qty"] / 2)
             elif a["action"] in ("TRIM", "TRIM_TO"):
