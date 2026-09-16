@@ -46,9 +46,16 @@ def main(argv):
     day = next((a.split("=", 1)[1] for a in argv if a.startswith("--date=")), date.today().isoformat())
     if not token:
         print("⚠️ EODHD_API_TOKEN 未設，跳過"); return 0
-    ev = fed_decision_today(token, day)
-    if not ev:
-        print(f"{day}: 無 Fed 決議事件"); return 0
+    # 手動路徑：EODHD actual 常落後數小時（2026-09-16 決議後 1h+ 仍 None），可用已證實的新聞直接餵：
+    #   --hike 3.75 4.00 --source "<url>"
+    if "--hike" in argv:
+        i = argv.index("--hike"); prev, actual = float(argv[i + 1]), float(argv[i + 2])
+        src = argv[argv.index("--source") + 1] if "--source" in argv else "manual"
+        ev = {"previous": prev, "actual": actual, "manual_source": src}
+    else:
+        ev = fed_decision_today(token, day)
+        if not ev:
+            print(f"{day}: 無 Fed 決議事件"); return 0
     actual, prev = ev.get("actual"), ev.get("previous")
     if actual is None:
         print(f"{day}: Fed 決議尚未公布（forecast {ev.get('forecast')}，previous {prev}）"); return 0
@@ -58,6 +65,7 @@ def main(argv):
         if ovr.get("sleeve_target_pct") != HIKE_TARGET or ovr.get("reason_date") != day:
             ovr.update({"sleeve_target_pct": HIKE_TARGET, "reason": f"Fed 升息 {prev}→{actual}（R25 規則 1：實際升息 → sleeve 8–10%）",
                         "reason_date": day, "set_by": "tools/fomc_watch.py", "set_at": datetime.now().isoformat(timespec="minutes"),
+                        "evidence": ev.get("manual_source") or "EODHD economic-events actual",
                         "clear_how": "/trade-review 或用戶明文；油 <$70 且 CPI 趨勢向下 ≥3 個月才縮回 6%"})
             OVR.write_text(json.dumps(ovr, ensure_ascii=False, indent=2))
             msg = (f"🏛 FOMC {day}：升息 {prev}→{actual}。R25 規則 1 觸發 → 避險 sleeve 目標 6%→8%，"
