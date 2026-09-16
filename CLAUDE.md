@@ -271,7 +271,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - Strategies: LEAPS (stock replacement, deep ITM delta 0.80-0.88), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated
 - **避險 sleeve 帶寬持有（R25，2026-09-04 建、09-14 修訂，`feedback/hedge-sleeve.md`）**：GLD + XLE 被動 ETF 目標 6%、帶 4–8%，`roster.json passive_sleeve`，**不計 18 檔**、不套 R23、不因相對落後汰；**但** 合計 >8% 減回 6%、單 ETF 自峰 −10% 減至 2%、帳戶自 sleeve 建立後峰 −10% 賣半換子彈、套 R8 梯級——所得進 SGOV 再 redeploy；金融 ETF 不算避險；「VIX ≥25 才建 sleeve」已廢止
-- **閒置現金停泊（R24，2026-09-04，`feedback/cash-parking.md`）**：Firstrade 現金不計息 → `閒置 = 現金 − 在掛買單 − 30 日部署需求 − 3% 緩衝` > $10k 或 >4% 時當次掛 **SGOV** GTC 買至 ≤ $5k；動用前一交易日賣（T+1）。SGOV/BIL 視同現金（`roster.json cash_equivalents`，guard 略過、不佔 18 檔、不進 α 計分；飛輪滯留檢查仍算現金）。不得用 XLF/XLE 等板塊 ETF 停泊
+- **閒置現金停泊（R24，2026-09-04，`feedback/cash-parking.md`）**：Firstrade 現金不計息 → `閒置 = 現金 − 在掛買單 − 30 日部署需求 − max(3% 總值, $8k) 緩衝`（$8k 固定保留給手動掛單，2026-09-16 用戶「SGOV 會排擠掛單的錢」）> $10k 或 >4% 時當次掛 **SGOV** GTC 買至 ≤ $5k；動用前一交易日賣（T+1）。SGOV/BIL 視同現金（`roster.json cash_equivalents`，guard 略過、不佔 18 檔、不進 α 計分；飛輪滯留檢查仍算現金）。不得用 XLF/XLE 等板塊 ETF 停泊
 
 ### 執行底層邏輯：Portfolio as a Business（強制濾鏡）
 任何 Verdict / Action / 倉位建議都先過這套濾鏡（源 `research/新手開局.md`，操作規範 `feedback/realized-pnl-business-model.md`，Step 0a 已含必讀）：

@@ -9,7 +9,7 @@ v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝�
   A. R23 自峰回撤線：position-state r23_armed + 前一收盤 ≤ 峰 × (1−20%/30%) → 減 1/3
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
   C. 選擇權管理線：id 含 bcs-exit / option 的 price_below → 收盤 < level → 平倉指令（day，ET 7–16）
-  D. R24 現金停泊：閒置 = 現金 − 在掛買單 − 3% 緩衝 > $10k → 買 SGOV 至閒置 ≤ $5k
+  D. R24 現金停泊：閒置 = 現金 − 在掛買單 − max(3% 總值, $8k) 緩衝 > $10k → 買 SGOV 至閒置 ≤ $5k（$8k 是留給手動掛單的錢，2026-09-16）
   E. R8 梯級 GTC 缺口：position-state gaps 中 kind 含 R8 → 掛下一級賣單（限價=級距價）
   F. R30 加碼候選（2026-09-14 買強）：guard add_candidates → 回檔 SMA20 限價 GTC 10 日，單次 ≤$3k；條件消失 → 撤單
   G. R25 修訂 sleeve：guard sleeve.actions（ETF 自峰 −10% / 合計 >8% / 帳戶自 sleeve 建立後峰 −10% 賣半）→ 賣單，所得進 SGOV
@@ -41,6 +41,7 @@ XDAY = ROOT / "briefing-out" / "cache" / "crossday-flags.json"
 OUT = ROOT / "briefing-out" / "cache" / "auto-exec-plan.json"
 EXECUTE_UNLOCK = date(2026, 9, 15)   # 2026-09-15 用戶提前解鎖（MYRG 手動案：收盤破線到隔日 11:00 ET 才執行太慢）
 IDLE_TRIGGER, IDLE_TARGET, BUFFER_PCT = 10_000, 5_000, 0.03
+RESERVE_USD = 8_000   # 2026-09-16 用戶：SGOV 會排擠手動掛單的錢 → 緩衝 = max(3% 總值, $8k)，帳上永遠留這筆不停泊
 
 
 def _load(p, default):
@@ -192,13 +193,14 @@ def main(argv):
                        for o in (reg.get("orders") or {}).values()
                        if o.get("state") == "ORDER-SUBMITTED" and o.get("transaction") == "B" and o.get("sec_type") == 1)
     total = float(st.get("total_account_value") or 0)
-    idle = cash - pending_buys - BUFFER_PCT * total
+    buffer = max(BUFFER_PCT * total, RESERVE_USD)
+    idle = cash - pending_buys - buffer
     sgov_px = close_of("SGOV") or 100.5
     if idle > IDLE_TRIGGER:
         qty = math.floor((idle - IDLE_TARGET) / sgov_px)
         plan.append({"rule": "R24", "symbol": "SGOV", "action": "BUY", "qty": qty,
                      "order": {"type": "limit", "limit": round(sgov_px + 0.01, 2), "duration": "gtc"},
-                     "basis": f"閒置 = 現金 {cash:,.0f} − 在掛買單 {pending_buys:,.0f} − 3% 緩衝 {BUFFER_PCT*total:,.0f} = {idle:,.0f} > 10k",
+                     "basis": f"閒置 = 現金 {cash:,.0f} − 在掛買單 {pending_buys:,.0f} − 緩衝 {buffer:,.0f}（max 3%, $8k）= {idle:,.0f} > 10k",
                      "after": ["register-order --rule R24"]})
     else:
         skipped.append({"symbol": "SGOV", "rule": "R24", "why": f"閒置 {idle:,.0f} ≤ 10k（現金 {cash:,.0f}、在掛買 {pending_buys:,.0f}）"})

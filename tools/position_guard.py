@@ -55,7 +55,7 @@ R8_TIERS = ((30, 15), (60, 15), (100, 20))  # (+% 未實現, 該級賣出 % of �
 R14_DAYS = 30
 EARN_WINDOW_DAYS = 2
 RUNNER_FLOOR_PCT = 30       # C2（2026-09-14）：R8+R23 合計最多賣 70%，30% runner 對兩者合計生效
-IDLE_TRIGGER, IDLE_BUFFER_PCT = 10_000, 0.03   # R24 閒置現金
+IDLE_TRIGGER, IDLE_BUFFER_PCT, IDLE_RESERVE_USD = 10_000, 0.03, 8_000   # R24 閒置現金；緩衝 = max(3%, $8k)（2026-09-16 留手動掛單額）
 STOP_PRICE_TYPES = {"3", "4"}  # Firstrade price_type：3=stop、4=stop-limit（R16 樂透停損單）
 # R28（2026-09-14，CRDO 案）：a) R23 armed 且自峰 ≤ −15% 或 R23 減碼後 30 天內 → 禁向下加碼
 #                             b) R23 減碼過且已跌破成本 → 不享 runner 保底，須開旗標（deadline ≤ 15 交易日）
@@ -575,7 +575,7 @@ def build_state(*, sync_alerts=False):
 
     # R24：閒置現金 = 現金 − 在掛買單 − 3% 緩衝；> $10k → 缺口（auto_exec D 段出 SGOV 單）
     pend_buy = pending_buy_notional(registry)
-    idle = (cash - pend_buy - IDLE_BUFFER_PCT * total) if (cash is not None and total) else None
+    idle = (cash - pend_buy - max(IDLE_BUFFER_PCT * total, IDLE_RESERVE_USD)) if (cash is not None and total) else None
     if idle is not None and idle > IDLE_TRIGGER:
         gaps.append(f"R24 閒置現金 ${idle:,.0f}（現金 {cash:,.0f} − 在掛買 {pend_buy:,.0f} − 3% 緩衝）> $10k → 掛 SGOV GTC 買至 ≤ $5k")
 
