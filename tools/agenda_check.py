@@ -41,8 +41,14 @@ def latest_13f(cik: str):
     cik10 = cik.zfill(10)
     subs = json.loads(_get(f"https://data.sec.gov/submissions/CIK{cik10}.json"))
     rec = subs["filings"]["recent"]
+    # 13F-NT = 該季申請保密處理（confidential treatment），持倉表會落後一季、且幾乎一定有新建部位不想被看到——本身就是訊號
+    nt = next(({"filed": fd, "period": rd} for f, fd, rd in zip(rec["form"], rec["filingDate"], rec["reportDate"]) if f == "13F-NT"), None)
     for form, acc, filed, rdate, doc in zip(rec["form"], rec["accessionNumber"], rec["filingDate"], rec["reportDate"], rec["primaryDocument"]):
         if form in ("13F-HR", "13F-HR/A"):
+            if nt and nt["period"] > rdate:
+                confidential = nt
+            else:
+                confidential = None
             acc_nodash = acc.replace("-", "")
             base = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc_nodash}/"
             idx = _get(base).decode("utf-8", "ignore")
@@ -53,7 +59,7 @@ def latest_13f(cik: str):
             if not info:
                 continue
             url = info if info.startswith("http") else ("https://www.sec.gov" + info if info.startswith("/") else base + info)
-            return {"accession": acc, "filed": filed, "period": rdate, "infotable_url": url, "xml": _get(url)}
+            return {"accession": acc, "filed": filed, "period": rdate, "infotable_url": url, "xml": _get(url), "confidential_nt": confidential}
     return None
 
 
@@ -107,7 +113,7 @@ def refresh(force=False):
                 cache[sid] = {"cik": cik, "asof": today, "error": "no 13F-HR found"}; continue
             parsed = parse_infotable(f13["xml"])
             cache[sid] = {"cik": cik, "handle": s.get("handle"), "asof": today, "filed": f13["filed"], "period": f13["period"],
-                          "accession": f13["accession"], **parsed}
+                          "accession": f13["accession"], "confidential_nt": f13.get("confidential_nt"), **parsed}
         except Exception as e:  # noqa: BLE001
             cache[sid] = {"cik": cik, "asof": today, "error": str(e)[:200]}
     OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -144,6 +150,9 @@ def main(argv):
         if c.get("error"):
             print(f"⚠️ {sid}: {c['error']}"); continue
         print(f"📄 {sid} (@{c.get('handle')}) 13F {c['period']} filed {c['filed']}｜{c['n_positions']} 檔 ${c['total_usd']/1e9:.1f}B")
+        if c.get("confidential_nt"):
+            nt = c["confidential_nt"]
+            print(f"   🔒 最新一季 {nt['period']} 只交 13F-NT（{nt['filed']} 申請保密）→ 上表落後一季，且幾乎確定有新建部位不想被看到；他這段期間的公開言論更該對照")
         for r in c["top"][:10]:
             print(f"   {r['pct']:5.1f}%  {r['issuer']}{'  [' + r['put_call'] + ']' if r.get('put_call') else ''}")
     return 0
