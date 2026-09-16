@@ -233,7 +233,8 @@ def market_frame(symbols):
             if len(c) < 60:
                 continue
             out[s] = {"last": float(c.iloc[-1]), "sma20": float(c.tail(20).mean()), "sma50": float(c.tail(50).mean()),
-                      "high20": float(c.tail(20).max()), "ret90": float(c.iloc[-1] / c.iloc[-min(63, len(c))] - 1)}
+                      "high20": float(c.tail(20).max()), "high60": float(c.tail(60).max()), "high10": float(c.tail(10).max()),
+                      "ret90": float(c.iloc[-1] / c.iloc[-min(63, len(c))] - 1)}
         return out
     except Exception as e:  # noqa: BLE001
         print(f"[warn] market_frame failed: {e}", file=sys.stderr)
@@ -348,7 +349,7 @@ def build_state(*, sync_alerts=False):
     fund = fund.get("tickers", fund)
     mkt = market_frame(held)
     spy_ret90 = (mkt.get("SPY") or {}).get("ret90")
-    add_candidates, sleeve_actions = [], []
+    add_candidates, sleeve_actions, washout_candidates = [], [], []
     if total is None and live is None:
         total = None
 
@@ -502,6 +503,13 @@ def build_state(*, sync_alerts=False):
                                    "rev_up_30d": up, "rev_down_30d": down, "last": round(last, 2), "sma20": round(mf["sma20"], 2),
                                    "sma50": round(mf["sma50"], 2), "high20": round(mf["high20"], 2), "room_usd": round(room, 0),
                                    "structure": "回檔 SMA20 限價 GTC（10 日）或收盤突破 20 日高隔日接；單次 ≤$3k"})
+        # 影子：深洗盤買點（2026-09-16 用戶「買在高點殺在低點卻沒逢低抄底」）——自 60 日高 ≤ −30% 且 30d revision up>down
+        # 且收盤站回 10 日高（止穩），記 cf-washout-buy（correct_if over）；20 天內同標的不重複。只記錄不下單：
+        # 7/25 檢討「下跌中深檔買梯」−$5.7k vs ICHR 型錯砍 −32%，兩個方向都有代價，先累樣本再談規則。
+        if bucket in ("認列", "信念") and mf.get("high60") and last and up is not None:
+            dd60 = last / mf["high60"] - 1
+            if dd60 <= -0.30 and up > down and last >= mf.get("high10", 0) and not in_earn_window:
+                washout_candidates.append({"symbol": sym, "dd60_pct": round(dd60 * 100, 1), "rev": f"{up:g}↑:{down:g}↓", "last": round(last, 2)})
         if bucket == "sleeve(ETF)":
             if unreal is not None and unreal >= R8_TIERS[0][0] and not sells:
                 gaps.append(f"{sym}: R25 修訂 sleeve 未實現 +{unreal:.0f}% ≥ +30% 無在掛賣單 → 套 R8 梯級收割進 SGOV")
@@ -579,11 +587,32 @@ def build_state(*, sync_alerts=False):
     if idle is not None and idle > IDLE_TRIGGER:
         gaps.append(f"R24 閒置現金 ${idle:,.0f}（現金 {cash:,.0f} − 在掛買 {pend_buy:,.0f} − 3% 緩衝）> $10k → 掛 SGOV GTC 買至 ≤ $5k")
 
+    # 影子帳登錄（去重 20 天）
+    if washout_candidates:
+        import subprocess
+        shadow = ROOT / "research" / "shadow-signals.jsonl"
+        recent = set()
+        if shadow.exists():
+            for line in shadow.read_text().splitlines()[-400:]:
+                try:
+                    r = json.loads(line)
+                except Exception:  # noqa: BLE001
+                    continue
+                if r.get("kind") == "cf-washout-buy" and (today - dt.date.fromisoformat(r.get("date", "2000-01-01")[:10])).days <= 20:
+                    recent.add(r.get("ticker"))
+        for w in washout_candidates:
+            if w["symbol"] in recent:
+                continue
+            subprocess.run([sys.executable, str(ROOT / "tools" / "shadow_signals.py"), "record", "--kind", "cf-washout-buy",
+                            "--ticker", w["symbol"], "--price", str(w["last"]), "--size", "3000", "--correct-if", "over",
+                            "--note", f"深洗盤買點影子：自 60 日高 {w['dd60_pct']}%、rev {w['rev']}、站回 10 日高；假設買 $3k starter"],
+                           capture_output=True, text=True, timeout=60)
+
     state = {"asof": today.isoformat(), "source": source, "total_account_value": total, "cash": cash,
              "pending_buy_notional": round(pend_buy, 2), "idle_cash": round(idle, 2) if idle is not None else None,
              "parked_cash_equiv": parked, "cash_equivalents": sorted(cash_eq),
              "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps,
-             "weakest_two": weakest_two, "add_candidates": add_candidates,
+             "weakest_two": weakest_two, "add_candidates": add_candidates, "washout_candidates": washout_candidates,
              "sleeve": {"weight_pct": round(sleeve_w, 2), "since": sleeve_since, "acct_peak_since": acct_peak,
                         "acct_dd_pct": round(acct_dd, 1) if acct_dd is not None else None, "actions": sleeve_actions}}
 
