@@ -462,12 +462,12 @@ def execute_plan(plan, reg, today):
                 if not oid:
                     rec.update(status="error", broker=r); results.append(rec); continue
                 rec.update(status="placed", order_id=oid, state=res.get("state"), duration=dur)
+                base_rule = (rule or "").split("-")[0] if rule not in ("user-close-line", "options-mgmt") else rule
                 if base_rule in ("R23", "user-close-line"):  # 防守型減碼留痕到旗標 → guard 的 R28a 鎖 / R28b 判定吃得到
                     _note_defensive_trim(sym, oid, rule, today)
                 if p.get("alert_id"):  # 用戶收盤線已執行 → 撤警報，不再每晚重發
                     subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "remove", "--id", p["alert_id"]],
                                    capture_output=True, text=True, timeout=30)
-                base_rule = (rule or "").split("-")[0] if rule not in ("user-close-line", "options-mgmt") else rule
                 subprocess.run([sys.executable, str(ROOT / "tools" / "trade_ledger.py"), "register-order", "--id", oid,
                                 "--rule", base_rule, "--note", f"auto_exec evening {today}: {p.get('basis','')[:120]}"],
                                capture_output=True, text=True, timeout=60)

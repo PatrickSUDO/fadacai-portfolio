@@ -58,20 +58,26 @@ errors = [e for e in ex if e.get("status") == "error"]
 manual = [p for p in d.get("plan", []) if p.get("action") == "CLOSE_SPREAD"]
 if not (placed or cancelled or errors or manual):
     sys.exit(0)  # 無事不發
-head = "⏱ 收盤前 15 分鐘機械執行" if pas == "preclose" else "🌙 收盤後補網機械執行"
-lines = [f"{head}（{d.get('asof')}，價 {d.get('close_asof')}，緩衝 {d.get('buffer', 0):.1%}）"]
+# 口吻：講人話。一行一件事，寫「做了什麼、為什麼、你要不要動」，不寫規則代號和內部欄位（用戶 9/16：「很難懂，簡潔直白一點」）
+WHY = {"R23": "跌破自峰回撤線，減碼", "user": "跌破你定的收盤線，減碼", "R25": "Fed 升息，避險部位補到 8%",
+       "R30": "強勢股回檔，加碼", "R24": "現金停泊", "R8": "梯級停利", "options": "選擇權管理線"}
+def why(rule):
+    return WHY.get((rule or "").split("-")[0], rule)
+act_zh = {"BUY": "買", "SELL": "賣"}
+when = "收盤前" if pas == "preclose" else "收盤後"
+lines = [f"{when}自動下單（{d.get('asof')}）"]
 for e in placed:
-    lines.append(f"✅ {e['action']} {e['symbol']} {e.get('qty')}@{e.get('limit')} {e.get('duration','')} — {e['rule']}（{e.get('order_id')}）")
+    kind = "今天收盤前成交" if e.get("duration") == "day" else "明天開盤生效"
+    lines.append(f"已{act_zh.get(e['action'], e['action'])} {e['symbol']} {e.get('qty')} 股 @{e.get('limit')}，{why(e['rule'])}，{kind}。單號 {e.get('order_id')}")
 for e in cancelled:
-    lines.append(f"↩️ 撤 {e['symbol']} {e.get('qty')} — {e['rule']}")
+    lines.append(f"已撤 {e['symbol']} 的舊單，{why(e['rule'])}條件已變。")
 for e in errors:
-    lines.append(f"❌ {e['action']} {e['symbol']} — {e['rule']}：{(e.get('error') or e.get('broker') or '')[:120]}")
+    lines.append(f"失敗：{e['symbol']} {act_zh.get(e['action'], e['action'])} {e.get('qty')} 股（{why(e['rule'])}）沒送出。原因：{(e.get('error') or str(e.get('broker') or ''))[:80]}。我會修，修好補下。")
 for p in manual:
-    lines.append(f"🖐 需手掛（複式單）：{p['symbol']} {p.get('basis','')[:100]}")
-if d.get("skipped"):
-    lines.append("· 跳過：" + "；".join(f"{s['symbol']} {s['rule']}（{s['why'][:40]}）" for s in d["skipped"][:6]))
-tail = "day 單收盤前沒成交會自動失效，22:20 補網會用真收盤重算" if pas == "preclose" else "gt90 單明早生效；briefing 只回報不重下"
-lines.append(f"→ 動作：不用回 session。{tail}；要撤在 App 撤。")
+    lines.append(f"要你手動掛：{p['symbol']} 複式單，{p.get('basis','')[:60]}")
+if not (placed or cancelled or errors or manual):
+    sys.exit(0)
+lines.append("你不用做任何事。" if not (errors or manual) else "只有上面標「要你手動掛」的需要你。")
 print("\n".join(lines))
 PY
 exit 0
