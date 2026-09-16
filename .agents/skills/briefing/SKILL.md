@@ -169,6 +169,10 @@ Read briefing-out/cache/news-articles.json
 
 ---
 
+## Step 0.66: 現任事實 Load（所有 Tier 共用）
+
+Read `research/facts-current.json`。寫到 Fed 主席、財長、CEO 等現任職位時以此為準（2026-09 起 Fed 主席 = Kevin Warsh／華許）；不在檔內的人名不確定就寫職稱。`stale_terms` 內的字樣寫出來 hook 會擋。
+
 ## Step 0.68: 來源訊號 Load（所有 Tier 共用，cache-only）
 
 讀 cache（由 `tools/fetch_twitter.py` 預載，TTL 20h；配置私有 `research/source-config.json`，schema 範例見 `docs/source-config.example.json`）：

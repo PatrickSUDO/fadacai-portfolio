@@ -103,6 +103,7 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 凡在 briefing / journal 寫下 **⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判** 的部位，**同一次必須 `trade_ledger.py flag`**（附 `--deadline`）。**deadline ≤ 15 個交易日，或必須同時掛價格觸發線（2026-09-02 R11 修訂：MYRG 8/27 旗標排兩個月 deadline 期間續跌是本修訂案例）。**延後必須走 `defer`（**會計次**），**第 3 次自動 forced → 減碼 1/3 或明文 `resolve-flag --action withdrawn` 附理由**。
 
 **出場 → 撿回自動化（2026-09-14，R20 程式化）：** `trade_ledger.py resolve-flag --action exited [--exit-price X --size-usd Y]` 同一次自動建 `TICKER:reentry-dual-branch` thesis（due +45d）、掛 `TICKER-reentry-low/high` 兩支警報（出場 ∓10%，各需 30 日 revision 條件：回檔 down≤up、走強 up>down——只漲不算）、登 `cf-reentry` 影子（30d 跑輸 = 砍對）。非經旗標的清倉用 `trade_ledger.py reentry --ticker --exit-price --reason` 補建。質地理由永久淘汰才可 `--permanent-reason` 跳過；組合理由不得。撿回單一律 starter ≤2%（H10）。guard 每日驗 pending reentry 條目雙分支齊全。
+**現任人物/職位事實（2026-09-16）：** 模型先驗會過期（Sonnet 在 9/16 briefing 寫「鮑爾記者會」，Fed 主席自 2026-05 起是 **Kevin Warsh／華許**）。凡寫到央行主席、財長、公司 CEO 等現任職位，先讀 `research/facts-current.json`；不確定就寫職稱不寫人名。`briefing_lint` 對 `stale_terms` 直接報錯。
 **R27/H10 表述 lint（2026-09-14）：** `tools/briefing_lint.py`（PostToolUse hook，寫 briefing-out/*.md|txt 與 journal 時觸發）——認列桶 ticker 同行「thesis 完好」無機械線距離 → 報；journal 當日新倉權重 >2%（priced_in >+150% 者 >1.5%）且無「⚠️ H10 bypass」→ 報。
 
 **R27 認列桶狀態表述（2026-09-11，MYRG 案）：** 認列桶部位在任何輸出裡**不得單獨以「thesis 完好 / intact / 未破」作為狀態**——認列桶的決策依據是機械線（R8 梯級、R23 自峰回撤、收盤線），thesis 只能附註。必須寫「距線 ±X%、累計減碼 vs 級距、旗標 deadline」。MYRG 自峰 −43% 全程無減碼、journal 反覆「thesis 完好」（判斷對、卻成了不動的理由）即此漏口。

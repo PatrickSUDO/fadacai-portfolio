@@ -68,13 +68,28 @@ def lint_h10(text, journal_date):
     return out
 
 
+FACTS = ROOT / "research" / "facts-current.json"
+
+
+def lint_stale_facts(text):
+    """模型先驗過期的現任人物/職位（2026-09-16：Sonnet 寫「鮑爾記者會」，Fed 主席已是 Warsh）。"""
+    facts = _load(FACTS, {})
+    out = []
+    for t in facts.get("stale_terms") or []:
+        for i, line in enumerate(text.splitlines(), 1):
+            if re.search(t["pattern"], line):
+                out.append(f"L{i} 過期事實：出現「{t['pattern']}」，應為 {t['should_be']}（{t.get('why','')[:60]}）")
+                break
+    return out
+
+
 def lint(path: Path):
     if not path.exists():
         return [f"not found: {path}"]
     text = path.read_text()
     roster = _load(ROSTER, {})
     harvest = list((roster.get("buckets") or {}).get("認列", []))
-    problems = lint_r27(text, harvest)
+    problems = lint_r27(text, harvest) + lint_stale_facts(text)
     m = re.search(r"journal/(\d{4}-\d{2}-\d{2})\.md$", str(path))
     if m:
         problems += lint_h10(text, m.group(1))
