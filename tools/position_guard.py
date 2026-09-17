@@ -239,6 +239,8 @@ def market_frame(symbols):
                       "ema200": float(c.ewm(span=200, adjust=False).mean().iloc[-1]) if len(c) >= 120 else None,
                       # EMA50 5 日斜率（%）：兩線上子集內 ≥2% → 20 日 4.78%/61.5% vs 3.73%/59.7%；進排序不進閘門（ma-filter-evidence D）
                       "ema50_slope5_pct": float((lambda e: (e.iloc[-1] / e.iloc[-6] - 1) * 100)(c.ewm(span=50, adjust=False).mean())) if len(c) >= 60 else None,
+                      # 布林帶寬擠壓：20 日帶寬在近 120 日最低 20%（ma-filter-evidence E：擠壓且兩線上 20 日 4.73%/63.3% vs 3.58%/57.6%）
+                      "bb_squeeze": bool((lambda bw: bw.iloc[-1] <= bw.tail(120).quantile(0.2))((c.rolling(20).std() * 4 / c.rolling(20).mean()).dropna())) if len(c) >= 140 else False,
                       "high20": float(c.tail(20).max()), "high60": float(c.tail(60).max()), "high10": float(c.tail(10).max()),
                       "ret90": float(c.iloc[-1] / c.iloc[-min(63, len(c))] - 1)}
         return out
@@ -518,6 +520,7 @@ def build_state(*, sync_alerts=False):
             add_candidates.append({"symbol": sym, "bucket": bucket, "weight_pct": round(weight, 2), "unrealized_pct": round(unreal, 1),
                                    "ema50_slope5_pct": round(mf["ema50_slope5_pct"], 2) if mf.get("ema50_slope5_pct") is not None else None,
                                    "strength": ("強" if (mf.get("ema50_slope5_pct") or 0) >= 2.0 else "普"),
+                                   "bb_squeeze": bool(mf.get("bb_squeeze")),
                                    "rev_up_30d": up, "rev_down_30d": down, "last": round(last, 2), "sma20": round(mf["sma20"], 2),
                                    "sma50": round(mf["sma50"], 2), "high20": round(mf["high20"], 2), "room_usd": round(room, 0),
                                    "structure": "回檔 SMA20 限價 GTC（10 日）或收盤突破 20 日高隔日接；單次 ≤$3k"})
@@ -557,8 +560,8 @@ def build_state(*, sync_alerts=False):
             "next_earnings": e.get("next_date"), "earnings_days": earn_days, "in_earnings_window": in_earn_window,
         })
 
-    # R30 候選依 EMA50 斜率排序：機器一次只掛一梯時先掛最強的（斜率 ≥2% 標「強」）
-    add_candidates.sort(key=lambda c: -(c.get("ema50_slope5_pct") or -99))
+    # R30 候選排序：擠壓中的優先（63% 勝率），其次 EMA50 斜率；機器一次只掛一梯時先掛排前面的
+    add_candidates.sort(key=lambda c: (not c.get("bb_squeeze"), -(c.get("ema50_slope5_pct") or -99)))
 
     passive = set(roster.get("passive_sleeve", []))
     n = len([r for r in rows if r["symbol"] not in passive])  # R25：被動 sleeve ETF 不計檔數
@@ -809,7 +812,7 @@ def render_table(state):
                   + "；候補排名 " + "、".join(f"{x['symbol']} {x['score']}" for x in rt.get("bench_ranked", []))]
     if state.get("add_candidates"):
         lines += ["", "**R30 加碼候選（買強）：** " + "；".join(
-            f"{c['symbol']}[{c.get('strength','')}斜率{c.get('ema50_slope5_pct') if c.get('ema50_slope5_pct') is not None else '—'}%] +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
+            f"{c['symbol']}[{c.get('strength','')}斜率{c.get('ema50_slope5_pct') if c.get('ema50_slope5_pct') is not None else '—'}%{'·擠壓' if c.get('bb_squeeze') else ''}] +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
     else:
         lines += ["", "R30 加碼候選：無（條件＝未實現>0、30d revision up>down、價>SMA50、權重<6%、非 R28a 鎖、非財報窗）"]
     sl = state.get("sleeve") or {}
