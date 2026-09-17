@@ -227,7 +227,7 @@ def market_frame(symbols):
     try:
         import yfinance as yf
         syms = sorted(set(symbols) | {"SPY", "IGV", "SMH"})
-        px = yf.download(syms, period="7mo", auto_adjust=True, progress=False)["Close"]
+        px = yf.download(syms, period="14mo", auto_adjust=True, progress=False)["Close"]  # 14 個月供 EMA200 收斂
         out = {}
         for s in syms:
             if s not in px:
@@ -236,6 +236,7 @@ def market_frame(symbols):
             if len(c) < 60:
                 continue
             out[s] = {"last": float(c.iloc[-1]), "sma20": float(c.tail(20).mean()), "sma50": float(c.tail(50).mean()),
+                      "ema200": float(c.ewm(span=200, adjust=False).mean().iloc[-1]) if len(c) >= 120 else None,
                       "high20": float(c.tail(20).max()), "high60": float(c.tail(60).max()), "high10": float(c.tail(10).max()),
                       "ret90": float(c.iloc[-1] / c.iloc[-min(63, len(c))] - 1)}
         return out
@@ -503,8 +504,12 @@ def build_state(*, sync_alerts=False):
                 if dl and dt.date.fromisoformat(dl) > cap_dl and not any(a.get("type") == "price_below" for a in al):
                     gaps.append(f"{sym}: R29b 認列桶 gate deadline {dl} 超過 min(下次財報, 15 交易日)={cap_dl}，且無價格線 → 縮 deadline 或掛收盤線")
         # 未實現 ≥ +3%（不是 >0）：LITE 9/16 +0.2% 也算「贏家」是噪音；買強要買的是已經證明自己的部位
+        # EMA200 第二濾網（2026-09-17，30 檔×5 年回測）：>SMA50 且 >EMA200 20 日均 +3.73%/勝率 59.7%；
+        # >SMA50 但 <EMA200 的那 8.4% 時間只有 +1.59%/50.4% —— 這層濾掉的就是那塊。EMA50 不如 SMA50，不採。
+        above_e200 = bool(mf.get("ema200") and last and last > mf["ema200"]) if mf.get("ema200") else True  # 資料不足不擋
         add_ok = (bucket in ("認列", "信念") and unreal is not None and unreal >= 3.0 and up is not None and up > down
-                  and mf.get("sma50") and last and last > mf["sma50"] and weight is not None and weight < R30_MAX_WEIGHT
+                  and mf.get("sma50") and last and last > mf["sma50"] and above_e200
+                  and weight is not None and weight < R30_MAX_WEIGHT
                   and not buy_lock and not in_earn_window)
         if add_ok:
             room = min(R30_MAX_USD, (R30_MAX_WEIGHT - weight) / 100 * total) if total else R30_MAX_USD
@@ -530,6 +535,8 @@ def build_state(*, sync_alerts=False):
             "symbol": sym, "bucket": bucket, "qty": v["qty"], "unit_cost": round(cost, 2),
             "rs90_vs_spy_pct": round(rs90, 1) if rs90 is not None else None, "rev_up_30d": up, "rev_down_30d": down,
             "sector_etf": sec_etf, "rs90_vs_sector_pct": round(rs90_sec, 1) if rs90_sec is not None else None,
+            "ema200": round(mf["ema200"], 2) if mf.get("ema200") else None, "above_ema200": above_e200,
+            "above_sma50": bool(mf.get("sma50") and last and last > mf["sma50"]),
             "last": round(last, 2) if last else None, "weight_pct": round(weight, 2) if weight is not None else None,
             "unrealized_pct": round(unreal, 1) if unreal is not None else None,
             "open_since": since, "days_held": days, "r14_locked": r14_locked,
@@ -600,6 +607,10 @@ def build_state(*, sync_alerts=False):
         up_, down_, n_ = _rev_n(b)
         s = _score(b, mkt.get(b), up_, down_, n_, _pin(b))
         if s is None:
+            continue
+        mb = mkt.get(b) or {}
+        # R29d 換入門檻：候補須在 SMA50 與 EMA200 之上（與 R30 同濾網），在線下的名字不進換手比較
+        if not (mb.get("sma50") and mb.get("last") and mb["last"] > mb["sma50"] and (not mb.get("ema200") or mb["last"] > mb["ema200"])):
             continue
         hurdle = R29D_GAP * (2 if b in exits_60d else 1)
         bench_scores.append((s, b, hurdle, up_, down_))
