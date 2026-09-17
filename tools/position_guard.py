@@ -71,6 +71,9 @@ R30_MAX_WEIGHT, R30_MAX_USD = 6.0, 3_000
 # R25 修訂（2026-09-14）：sleeve 目標 6%、帶 4–8%；ETF 自峰 −10% → 減至 4%；帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈；GLD/XLE 套 R8 梯級
 SLEEVE_TARGET, SLEEVE_LO, SLEEVE_HI, SLEEVE_ETF_DD, SLEEVE_ACCT_DD = 6.0, 4.0, 8.0, -10.0, -10.0
 FUND = ROOT / "briefing-out" / "cache" / "fundamentals-snapshot.json"
+# H11（2026-09-17）：板塊相對 RS——軟體對 IGV、半導體/硬體對 SMH、其餘對 SPY；R29c 排序仍用 SPY，這欄只顯示與影子計分
+SECTOR_ETF = {"IGV": {"CRM", "CRWD", "PLTR", "TWLO", "DDOG", "SNPS", "NOW", "TEAM", "WDAY", "ZS", "NET", "SNOW", "MDB", "INTU", "ADBE", "PANW", "HUBS", "SHOP", "MSFT", "ORCL"},
+              "SMH": {"MU", "NVDA", "AVGO", "AMD", "LRCX", "CRDO", "LITE", "ANET", "CLS", "DIOD", "ONTO", "COHR", "MRVL", "TSM", "KLAC", "AMAT", "ASML", "ARM", "SNDK"}}
 MARKS = ROOT / "research" / "equity-marks.json"
 
 
@@ -223,7 +226,7 @@ def market_frame(symbols):
     """一次抓 7 個月日線 → {sym: {last, sma20, sma50, high20, ret90}}；SPY 一併抓作 RS 基準。失敗回 {}。"""
     try:
         import yfinance as yf
-        syms = sorted(set(symbols) | {"SPY"})
+        syms = sorted(set(symbols) | {"SPY", "IGV", "SMH"})
         px = yf.download(syms, period="7mo", auto_adjust=True, progress=False)["Close"]
         out = {}
         for s in syms:
@@ -479,6 +482,9 @@ def build_state(*, sync_alerts=False):
         # ── R29 / R30 / R25 修訂 ──
         mf = mkt.get(sym) or {}
         rs90 = (mf["ret90"] - spy_ret90) * 100 if (mf.get("ret90") is not None and spy_ret90 is not None) else None
+        sec_etf = next((etf for etf, members in SECTOR_ETF.items() if sym in members), "SPY")
+        sec_ret = (mkt.get(sec_etf) or {}).get("ret90")
+        rs90_sec = (mf["ret90"] - sec_ret) * 100 if (mf.get("ret90") is not None and sec_ret is not None) else None
         if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
             ok_flag = [f for f in fl if f.get("deadline") and (dt.date.fromisoformat(f["deadline"]) - today).days <= R29_TAIL_CAL_DAYS]
             if not ok_flag:
@@ -521,6 +527,7 @@ def build_state(*, sync_alerts=False):
         rows.append({
             "symbol": sym, "bucket": bucket, "qty": v["qty"], "unit_cost": round(cost, 2),
             "rs90_vs_spy_pct": round(rs90, 1) if rs90 is not None else None, "rev_up_30d": up, "rev_down_30d": down,
+            "sector_etf": sec_etf, "rs90_vs_sector_pct": round(rs90_sec, 1) if rs90_sec is not None else None,
             "last": round(last, 2) if last else None, "weight_pct": round(weight, 2) if weight is not None else None,
             "unrealized_pct": round(unreal, 1) if unreal is not None else None,
             "open_since": since, "days_held": days, "r14_locked": r14_locked,
@@ -543,7 +550,8 @@ def build_state(*, sync_alerts=False):
     harvest_rows = [r for r in rows if r["bucket"] == "認列" and r.get("rs90_vs_spy_pct") is not None]
     ranked = sorted(harvest_rows, key=lambda r: (r["rs90_vs_spy_pct"], (r.get("rev_up_30d") or 0) - (r.get("rev_down_30d") or 0)))
     weakest_two = [{"symbol": r["symbol"], "rs90_vs_spy_pct": r["rs90_vs_spy_pct"], "rev": f"{r.get('rev_up_30d') or 0:g}↑:{r.get('rev_down_30d') or 0:g}↓",
-                    "weight_pct": r["weight_pct"], "unrealized_pct": r["unrealized_pct"]} for r in ranked[:2]]
+                    "weight_pct": r["weight_pct"], "unrealized_pct": r["unrealized_pct"],
+                    "rs90_vs_sector": f"{r.get('rs90_vs_sector_pct'):+.1f}pp vs {r.get('sector_etf')}" if r.get("rs90_vs_sector_pct") is not None else None} for r in ranked[:2]]
     if n > max_pos:
         gaps.append(f"檔數 {n} > 上限 {max_pos} → 砍一進一，換手對象限 R29c 最弱兩檔 {[w['symbol'] for w in weakest_two]}（R14 鎖定中：{[r['symbol'] for r in rows if r['r14_locked']]}）")
     # R25 修訂：sleeve 帶寬 4–8% + 帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈
@@ -699,7 +707,7 @@ def render_table(state):
         lines.append(f"| {r['symbol']} | {r['bucket'] or '❓'} | {r['qty']:g} | {r['unit_cost']:.2f} | {r['last'] or '—'} | {w} | {u} | {days} | {d} | {r23} | {sold} | {sells} | {fl} | {earn} |")
     if state.get("weakest_two"):
         lines += ["", "**R29c 認列桶最弱兩檔（換手只准換這兩檔）：** " + "；".join(
-            f"{w['symbol']} RS90 {w['rs90_vs_spy_pct']:+.1f}pp vs SPY、rev {w['rev']}、{w['weight_pct']:.1f}%" for w in state["weakest_two"])]
+            f"{w['symbol']} RS90 {w['rs90_vs_spy_pct']:+.1f}pp vs SPY（{w.get('rs90_vs_sector') or '—'}）、rev {w['rev']}、{w['weight_pct']:.1f}%" for w in state["weakest_two"])]
     if state.get("add_candidates"):
         lines += ["", "**R30 加碼候選（買強）：** " + "；".join(
             f"{c['symbol']} +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
