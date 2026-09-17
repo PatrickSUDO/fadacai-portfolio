@@ -350,7 +350,9 @@ def build_state(*, sync_alerts=False):
     held = [s for s, v in eq.items() if v["qty"] > 0 and s not in dust and s not in cash_eq]
     fund = _load_json(FUND, {})
     fund = fund.get("tickers", fund)
-    mkt = market_frame(held)
+    bench_cfg = _load_json(ROOT / "research" / "bench.json", {})
+    bench = [s for s in (bench_cfg.get("L1", []) + bench_cfg.get("L2", [])) if s not in held]
+    mkt = market_frame(held + bench)
     spy_ret90 = (mkt.get("SPY") or {}).get("ret90")
     add_candidates, sleeve_actions, washout_candidates = [], [], []
     if total is None and live is None:
@@ -554,6 +556,77 @@ def build_state(*, sync_alerts=False):
                     "rs90_vs_sector": f"{r.get('rs90_vs_sector_pct'):+.1f}pp vs {r.get('sector_etf')}" if r.get("rs90_vs_sector_pct") is not None else None} for r in ranked[:2]]
     if n > max_pos:
         gaps.append(f"檔數 {n} > 上限 {max_pos} → 砍一進一，換手對象限 R29c 最弱兩檔 {[w['symbol'] for w in weakest_two]}（R14 鎖定中：{[r['symbol'] for r in rows if r['r14_locked']]}）")
+    # ── R29d 節奏輪動（2026-09-17）：候補綜合分連續 ≥10 個交易日高於最弱在倉 ≥ 門檻，且距上次換手 ≥14 天 → 換一檔 ──
+    #   綜合分 = 板塊相對 RS90(pp) + 30 × 30 日淨修正比 − max(priced_in,0)/10。出場 60 天內的名字門檻加倍（治 STRL/LITE 來回）。
+    def _score(sym, mf_, up_, down_, n_, pin_):
+        if not mf_ or mf_.get("ret90") is None:
+            return None
+        etf = next((e for e, m in SECTOR_ETF.items() if sym in m), "SPY")
+        base = (mkt.get(etf) or {}).get("ret90")
+        if base is None:
+            return None
+        rs = (mf_["ret90"] - base) * 100
+        net = ((up_ or 0) - (down_ or 0)) / max(n_ or 1, 1) if up_ is not None else 0.0
+        pin = max(pin_ or 0, 0)
+        return round(rs + 30 * net - pin / 10, 1)
+
+    def _rev_n(sym):
+        fe = ((fund.get(sym) or {}).get("snapshot") or {}).get("forward_estimates") or {}
+        for k in ("curr_fy", "curr_q", "next_fy"):
+            b = fe.get(k) or {}
+            if b.get("revisions_up_30d") is not None or b.get("revisions_down_30d") is not None:
+                return float(b.get("revisions_up_30d") or 0), float(b.get("revisions_down_30d") or 0), b.get("eps_num_analysts")
+        return None, None, None
+
+    def _pin(sym):
+        return ((fund.get(sym) or {}).get("self_valuation") or {}).get("priced_in_pct")
+
+    R29D_GAP, R29D_STREAK, R29D_MIN_DAYS = 15.0, 10, 14
+    rot_path = ROOT / "research" / "rotation-state.json"
+    rot = _load_json(rot_path, {"streak": 0, "last_swap": None, "history": []})
+    exits_60d = {}
+    for f in fills:
+        if f["side"] != "BOUGHT" and (today - dt.date.fromisoformat(f["date"])).days <= 60:
+            exits_60d[f["symbol"]] = f["date"]
+    held_scores = []
+    for r in rows:
+        if r["bucket"] != "認列" or r["r14_locked"] or r.get("in_earnings_window"):
+            continue
+        s = _score(r["symbol"], mkt.get(r["symbol"]), r.get("rev_up_30d"), r.get("rev_down_30d"), None, _pin(r["symbol"]))
+        if s is not None:
+            held_scores.append((s, r["symbol"]))
+    bench_scores = []
+    for b in bench:
+        up_, down_, n_ = _rev_n(b)
+        s = _score(b, mkt.get(b), up_, down_, n_, _pin(b))
+        if s is None:
+            continue
+        hurdle = R29D_GAP * (2 if b in exits_60d else 1)
+        bench_scores.append((s, b, hurdle, up_, down_))
+    rotation = {"asof": today.isoformat(), "weakest": None, "top_bench": None, "gap": None, "streak": rot.get("streak", 0), "last_swap": rot.get("last_swap"), "due": False}
+    if held_scores and bench_scores:
+        w_s, w_sym = min(held_scores)
+        b_s, b_sym, hurdle, b_up, b_dn = max(bench_scores)
+        gap = round(b_s - w_s, 1)
+        # 只在新交易日推進 streak
+        if rot.get("last_check") != today.isoformat():
+            rot["streak"] = rot.get("streak", 0) + 1 if gap >= hurdle else 0
+            rot["last_check"] = today.isoformat()
+        days_since = (today - dt.date.fromisoformat(rot["last_swap"])).days if rot.get("last_swap") else 999
+        due = rot["streak"] >= R29D_STREAK and days_since >= R29D_MIN_DAYS and gap >= hurdle
+        rotation.update({"weakest": {"symbol": w_sym, "score": w_s}, "top_bench": {"symbol": b_sym, "score": b_s, "hurdle": hurdle, "rev": f"{b_up or 0:g}↑:{b_dn or 0:g}↓"},
+                         "gap": gap, "streak": rot["streak"], "due": due,
+                         "bench_ranked": [{"symbol": x[1], "score": x[0]} for x in sorted(bench_scores, reverse=True)[:6]],
+                         "held_ranked": [{"symbol": x[1], "score": x[0]} for x in sorted(held_scores)[:4]]})
+        if due:
+            gaps.append(f"R29d 輪動到期：{b_sym}（分 {b_s}，rev {b_up or 0:g}↑:{b_dn or 0:g}↓）連 {rot['streak']} 日勝最弱在倉 {w_sym}（分 {w_s}）≥{hurdle:g} → 換手：賣 {w_sym}、{b_sym} starter ≤2%；不換要寫理由（forced 旗標 5 日）")
+    # 偵測換手已發生：bench 名字出現在持倉 → 記 last_swap、streak 歸零
+    if any(s in held for s in (bench_cfg.get("L1", []) + bench_cfg.get("L2", []))) and rot.get("last_swap") != today.isoformat():
+        newly = [s for s in (bench_cfg.get("L1", []) + bench_cfg.get("L2", [])) if s in held]
+        rot["last_swap"] = today.isoformat(); rot["streak"] = 0
+        rot.setdefault("history", []).append({"date": today.isoformat(), "entered": newly})
+    rot_path.write_text(json.dumps(rot, ensure_ascii=False, indent=1))
+
     # R25 修訂：sleeve 帶寬 4–8% + 帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈
     sleeve_rows = [r for r in rows if r["bucket"] == "sleeve(ETF)"]
     sleeve_w = sum(r["weight_pct"] or 0 for r in sleeve_rows)
@@ -622,6 +695,7 @@ def build_state(*, sync_alerts=False):
              "parked_cash_equiv": parked, "cash_equivalents": sorted(cash_eq),
              "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps,
              "weakest_two": weakest_two, "add_candidates": add_candidates, "washout_candidates": washout_candidates,
+             "rotation": rotation,
              "sleeve": {"weight_pct": round(sleeve_w, 2), "since": sleeve_since, "acct_peak_since": acct_peak,
                         "acct_dd_pct": round(acct_dd, 1) if acct_dd is not None else None, "actions": sleeve_actions}}
 
@@ -708,6 +782,11 @@ def render_table(state):
     if state.get("weakest_two"):
         lines += ["", "**R29c 認列桶最弱兩檔（換手只准換這兩檔）：** " + "；".join(
             f"{w['symbol']} RS90 {w['rs90_vs_spy_pct']:+.1f}pp vs SPY（{w.get('rs90_vs_sector') or '—'}）、rev {w['rev']}、{w['weight_pct']:.1f}%" for w in state["weakest_two"])]
+    rt = state.get("rotation") or {}
+    if rt.get("weakest") and rt.get("top_bench"):
+        lines += ["", f"**R29d 輪動：** 最弱在倉 {rt['weakest']['symbol']}（{rt['weakest']['score']}）vs 候補最強 {rt['top_bench']['symbol']}（{rt['top_bench']['score']}，rev {rt['top_bench']['rev']}）差 {rt['gap']}（門檻 {rt['top_bench']['hurdle']:g}）｜連續 {rt['streak']}/10 日｜上次換手 {rt.get('last_swap') or '—'}"
+                  + ("｜**到期**" if rt.get("due") else "")
+                  + "；候補排名 " + "、".join(f"{x['symbol']} {x['score']}" for x in rt.get("bench_ranked", []))]
     if state.get("add_candidates"):
         lines += ["", "**R30 加碼候選（買強）：** " + "；".join(
             f"{c['symbol']} +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
