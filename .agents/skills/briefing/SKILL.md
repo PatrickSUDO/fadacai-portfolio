@@ -470,7 +470,7 @@ python3 tools/review_due.py     # exit 2 = 有到期；同時寫 briefing-out/ca
 | 標的 | 現價 | 趨勢 | MACD | 量能比 | 動能分 | RSI |
 
 - **趨勢**：strong_uptrend / mild_uptrend / consolidation / pullback / weak_downtrend / strong_downtrend
-- **MACD**：顯示 crossover 狀態（golden_cross 🚀 / death_cross ⚠️ / none）
+- **MACD**：顯示 crossover 狀態（golden_cross / death_cross / none）——**fact 列示，不作訊號、不加 emoji 暗示方向**（H12：金叉 3.65% = 死叉 4.01% = 基準）；狀態欄改看 **>SMA50&EMA200 / 擠壓 / EMA50 斜率**（guard `above_sma50`/`above_ema200`/`bb_squeeze`/`ema50_slope5_pct`）
 - **量能比**：volume_ratio（>1.5 爆量 / <0.7 縮量）
 - **動能分**：momentum_score（-100 ~ +100）
 - **RSI**：僅數值列示。**RSI 過高不觸發任何警示/標籤/動作**（2026-07-01 用戶定調：強者愈強，超買非賣出理由；反轉偵測交給 revision 閘門）。RSI < 30 可作超賣參考
@@ -530,7 +530,7 @@ python3 tools/review_due.py     # exit 2 = 有到期；同時寫 briefing-out/ca
 ### 7. 計畫進度 Quick
 - **認列桶部位狀態一律以機械線表述**（距 R23 線 / 收盤線 / 下一梯級 ±X%、累計減碼 vs 級距、旗標 deadline），不得只寫「thesis 完好」；同 Telegram 格式規則（2026-09-11）
 - 近期待辦狀態（✅🔄⏳）
-- 今日是否有計畫中的觸發條件被滿足（RSI 破 30、MACD 金叉等）
+- 今日是否有計畫中的觸發條件被滿足（收盤價位線、revision 轉向、站回/跌破 SMA50 與 EMA200；**不用 MACD 金叉／均線交叉當觸發，H12**）
 - 即將到期的選擇權 vs 計畫中的關鍵日期
 
 ### 8. Quick Take
@@ -865,7 +865,7 @@ Redeploy 首選：[標的 + revision 依據 + 結構]
 |------|------|------|
 | 進行中 / 符合目標 | ✅ on-track | 核心指標與 thesis 方向一致（例：quarterly_revenue_growth_yoy > 0 且加速） |
 | 待財報驗收 | ⏳ 待 event | trigger_type=event 且 trigger_date 尚未到（不能從 cache 判斷，等財報） |
-| 有風險 / 指標轉弱 | ⚠️ at-risk | quarterly growth decel 連 2Q 或 guide 下修方向；技術面 death_cross；或 Step 0.55 `revision_delta` 該股 `decel_flag`（7d 上修動能縮減，影子驗證中）|
+| 有風險 / 指標轉弱 | ⚠️ at-risk | quarterly growth decel 連 2Q 或 guide 下修方向；技術面**跌破 SMA50 且跌破 EMA200**（H12 濾網，取代 death_cross）；或 Step 0.55 `revision_delta` 該股 `decel_flag`（7d 上修動能縮減，影子驗證中）|
 | 已接近證偽條件 | 🔴 warning | falsification 條件中有 1+ 個已出現（精確比對 thesis 列的證偽點） |
 | 無法判定 | ❓ unknown | cache 缺相關指標，無法自動比對 |
 
