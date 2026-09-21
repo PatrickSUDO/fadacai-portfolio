@@ -7,7 +7,7 @@ EODHD 情緒分數無用（H7）是因為它只給正負不給事件類型。這
 寫進 research/event-ledger.jsonl，20/60 日後機械算條件報酬，briefing 只陳列（display-only，同 A4/R18 紀律）。
 
 標註器可換（--labeler）：
-  claude-haiku（預設）：`claude -p --model haiku`，30 篇一批（單篇呼叫 $0.08 太貴，批次後 ≈ $0.3/日）
+  claude-haiku（預設）：`claude -p --model haiku`，30 篇一批。用戶為 Max 訂閱 → 邊際成本 0，只佔 5 小時窗額度；批次是為了省額度與時間，CLI 回報的 total_cost_usd 為名目值
   jev：TypeSafe System One（POST /v1/systemone，TYPESAFE_API_KEY），早期存取，adapter 待 key 到後補實作
 兩者輸出同 schema，可用 `compare` 對同一批文章算一致率。
 
