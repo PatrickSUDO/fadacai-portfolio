@@ -50,7 +50,7 @@ CACHE_TTL_HOURS = 6        # news is time-sensitive; 6h = same-day reuse, next-d
 NEWS_DAYS = 7              # lookback window (matches get_news_sentiment default)
 NEWS_LIMIT_FETCH = 20      # articles to fetch per ticker (before dedup)
 NEWS_KEEP = 8              # articles to keep per ticker (after dedup, newest-first)
-BODY_CHARS = 600           # content truncation — lede + first quant sentence fits here
+BODY_CHARS = 2500          # 2026-09-21：600 → 2500，事件標註（label_events.py）需要含量化句的段落；EODHD body 中位 3–5k 字元
 TICKERS_DELAY = 0.4        # polite delay between EODHD API calls
 EODHD_BASE = "https://eodhd.com/api"
 

@@ -98,6 +98,12 @@ uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_news.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "news refresh failed (non-fatal, briefing continues without news cache)"
 
+log "Labeling news into event ledger (label_events.py, claude-haiku batch)..."
+uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" run \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "label_events failed (non-fatal)"
+uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" score >> "$LOG_DIR/launchd.log" 2>&1 || true
+
 log "Refreshing X source signals (X API v2, pay-per-use, cost-capped)..."
 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
