@@ -1489,7 +1489,9 @@ def register_reentry(ticker, exit_price, *, reason, size_usd=None, asof=None, so
             al["alerts"] = [a for a in al["alerts"] if a["id"] != aid]
             al["alerts"].append({"id": aid, "symbol": ticker, "type": typ, "level": lvl,
                                  "note": f"→ 動作：{common.format(cond=cond)} R20 撿回（resolve-flag exited 自動掛，{asof}）",
-                                 "mode": "once_per_day", "created": asof, "status": None, "last_fired": None,
+                                 # briefing_only（2026-09-22）：撿回線是「重新提名」的觀察型觸發，不是要人當下做事；
+                                 # once_per_day 會在價格停留線上時天天推 Telegram（CRDO 9/21–22 案）
+                                 "mode": "briefing_only", "created": asof, "status": None, "last_fired": None,
                                  "fired_count": 0, "expires": exp})
         pa.save_alerts(al)
         out["alerts"] = [f"{ticker}-reentry-low@{lo}", f"{ticker}-reentry-high@{hi}"]

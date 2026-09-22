@@ -16,7 +16,7 @@ model: opus
 - `/ev-check` → 預設 30 天 horizon
 - `/ev-check 7d` / `/ev-check 14d` / `/ev-check 30d` → 自選時間窗
 - `/ev-check 30d nvda-bear` → 用戶指定情境主題（agent 會以此為主要 catalyst 反推）
-- `/ev-check 30d 比選 ...` → **名額比選模式**。比選集合不是 briefing 點名的那幾檔，而是 **plan.md 候補表整層 L1 全掃**（2026-09-21 用戶質問「選 HWM 不選 ATI 什麼理由」，當次只比了 briefing 框的 HWM/CRDO，ATI 漏掉）。作法：先列 L1 每一檔的「進場分支是否成立（價格線/走強線）、分析師覆蓋 N、與空名額同鏈的上下游關係」做一張淘汰表，明寫每檔為何進或不進 EV 計算；只對淘汰表存活者跑 agent。淘汰表要出現在輸出裡，用戶事後問任何一檔都要能指出被淘汰的那一行。
+- `/ev-check 30d 比選 ...` → **名額比選模式**。比選集合不是 briefing 點名的那幾檔，而是 **plan.md 候補表整層 L1 全掃**（2026-09-21 用戶質問「選 HWM 不選 ATI 什麼理由」，當次只比了 briefing 框的 HWM/CRDO，ATI 漏掉）。作法：先列 L1 每一檔的「進場分支是否成立（價格線/走強線）、分析師覆蓋 N、與空名額同鏈的上下游關係」做一張淘汰表，明寫每檔為何進或不進 EV 計算；只對淘汰表存活者跑 agent。淘汰表要出現在輸出裡，用戶事後問任何一檔都要能指出被淘汰的那一行。**落選者同一次撤提名警報**（`shadow_signals.py record --kind cf-bench-loser` 已自動撤該標的 `price_above`/`rolling_high` 線；輸出列「已撤警報」欄，見 `feedback/alert-hygiene.md`）。
 
 ## Workflow
 

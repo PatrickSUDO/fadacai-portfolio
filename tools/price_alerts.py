@@ -34,6 +34,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
+MAX_TELEGRAM_FIRES = 2   # once_per_day 推滿 2 次自動降 briefing_only（2026-09-22，殭屍警報對策）
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from send_briefing import load_env, send_telegram  # noqa: E402
@@ -194,7 +195,14 @@ def evaluate(dry_run: bool = False, force: bool = False) -> int:
             a["fired_count"] = a.get("fired_count", 0) + 1
             if a.get("mode", "once_per_day") == "once":
                 a["status"] = "triggered"
-            if a.get("mode") == "briefing_only":
+            # 第 2 次推送即自動降級（2026-09-22）：once_per_day 觸發兩天還沒被撤，代表決定已經做了或沒人要做，
+            # 再推就是殭屍訊息（CRDO-reentry-high 9/21、9/22 連推案）。降為 briefing_only，之後只進 briefing。
+            downgraded_now = False
+            if a.get("mode", "once_per_day") == "once_per_day" and a["fired_count"] >= MAX_TELEGRAM_FIRES:
+                a["mode"] = "briefing_only"
+                downgraded_now = True
+                line += f"\n  ⤷ 第 {a['fired_count']} 次推送，已自動改為只進 briefing（不再推 Telegram）；要恢復推送請 `price_alerts.py add` 重掛"
+            if a.get("mode") == "briefing_only" and not downgraded_now:
                 quiet.append({"ts": ts.isoformat(timespec="minutes"), "id": a["id"], "symbol": sym, "line": line})
             else:
                 fired.append(line)

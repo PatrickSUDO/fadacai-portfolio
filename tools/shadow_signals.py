@@ -193,7 +193,23 @@ def cmd_record(args):
         _emit({"skipped": "duplicate", "key": list(key)})
         return 0
     save_signals(existing + [row], args.signals)
-    _emit({"recorded": row, "scoring": f"`score` after 30 days: flag_correct = name {'under' if args.correct_if == 'under' else 'out'}performed benchmark"})
+    out = {"recorded": row, "scoring": f"`score` after 30 days: flag_correct = name {'under' if args.correct_if == 'under' else 'out'}performed benchmark"}
+    # 比選落選 → 同一次撤掉該標的的向上「提名」警報（2026-09-22 CRDO 案：9/21 裁決不撿回，撿回走強線 9/22 又推一次）。
+    # 未持有名字的 price_above / rolling_high 只會是提名線；落選後留著就是殭屍。
+    if kind == "cf-bench-loser":
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import price_alerts as pa  # noqa: PLC0415
+            al = pa.load_alerts()
+            gone = [a["id"] for a in al["alerts"]
+                    if a.get("symbol") == row["ticker"] and a.get("type") in ("price_above", "rolling_high")]
+            if gone:
+                al["alerts"] = [a for a in al["alerts"] if a["id"] not in gone]
+                pa.save_alerts(al)
+            out["alerts_retired"] = gone
+        except Exception as e:  # noqa: BLE001
+            out["alerts_retired"] = {"error": str(e)[:100]}
+    _emit(out)
     return 0
 
 
