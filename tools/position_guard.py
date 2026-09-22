@@ -367,6 +367,10 @@ def build_state(*, sync_alerts=False):
         v = eq[sym]
         bucket = bucket_of(roster, sym)
         since = open_since(fills, sym)
+        # 帳本尚無建倉成交（當日新買、ledger 未入帳）→ 視為今日建倉，fail-closed：R14 鎖、R23 不 arm、峰值不從 1/1 起算
+        # （2026-09-22 HWM 案：9/21 12:00 起手 13 股，15:45 pre-close pass 時 since=None → R14 未鎖 + 峰值取 1/1 起 → 誤觸 R23-20 賣 4 股）
+        if since is None:
+            since = today.isoformat()
         days = (today - dt.date.fromisoformat(since)).days if since else None
         peak, last, peak_dt = price_stats(sym, since)
         cost = float(v["unit_cost"] or 0)
