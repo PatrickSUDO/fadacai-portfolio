@@ -298,6 +298,10 @@ def last_r23_trim_date(flags, sym, fills=None, since=None):
     用成交而不只用旗標（2026-09-15）：pre-close pass 的 day 單成交後 evening pass 要看到峰值已重置，否則同一天賣兩段。"""
     d = None
     for f in (fills or []):
+        # VOID（2026-09-22 HWM 案）：被 `trade_ledger.py annotate --evidence "VOID …"` 標記的成交是系統誤觸、已補回，
+        # 不得當作減碼 → 不重置峰值、不觸發 R28a 30 天買方鎖
+        if str(f.get("origin_evidence") or "").startswith("VOID"):
+            continue
         if f["symbol"] == sym and f["side"] != "BOUGHT" and (not since or f["date"] >= since):
             d = max(d or "", f["date"][:10])
     for f in flags.get("flags", []):
@@ -305,9 +309,14 @@ def last_r23_trim_date(flags, sym, fills=None, since=None):
         # 若只認 slug 含 r23 的旗標，峰值不重置、隔晚會再賣一段（2026-09-15 修）
         if f.get("ticker") != sym:
             continue
+        # 誤觸撤銷（2026-09-22 HWM 案）：旗標最終以「誤觸 / VOID」理由 withdrawn → 其 trimmed 記錄是系統錯誤，
+        # 不重置峰值、不觸發 R28a 買方鎖（成交本身另由 trade-ledger VOID 標記排除）
+        hist = f.get("history", [])
+        if any(h.get("action") == "withdrawn" and any(k in str(h.get("note") or "") for k in ("誤觸", "VOID")) for h in hist):
+            continue
         # trade_ledger.resolve-flag 把結果寫在 history[]（event=resolved, action=trimmed, date），
         # 不是頂層 resolution/resolved_at（2026-09-03 修：AMD 減碼後峰值未重置）
-        for h in f.get("history", []):
+        for h in hist:
             # resolved/trimmed（結案）或 trimmed_stage（多段線的中途段，MYRG 9/15）都算一次減碼 → 峰值重算
             if h.get("action") == "trimmed":
                 d = max(d or "", (h.get("date") or "")[:10])
