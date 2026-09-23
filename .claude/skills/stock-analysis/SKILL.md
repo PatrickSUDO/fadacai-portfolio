@@ -3,6 +3,7 @@ name: stock-analysis
 description: Analyze a stock ticker with fundamentals, technicals, analyst ratings, and investment thesis. Usage - /stock-analysis TICKER or /stock-analysis TICKER1 TICKER2 for comparison.
 user_invocable: true
 model: opus
+effort: high
 ---
 
 # Stock Analysis
@@ -93,7 +94,7 @@ fundamentals cache 處理：
 
    **平行數據收集（Agent 子代理 — subagent_type: "data-collector"）：**
 
-   使用 Agent tool 平行派遣以下 3 組子代理（每組指定 subagent_type: "data-collector"，自動使用 Sonnet 4.6 純數據收集）：
+   使用 Agent tool 平行派遣以下 3 組子代理（每組指定 subagent_type: "data-collector"，自動使用 Sonnet 5 純數據收集）：
 
    - **Agent 1 — Yahoo Finance**（subagent_type: "data-collector"）：`get_stock_info` + `get_financial_statement` + `get_recommendations` + `get_yahoo_finance_news` + `get_historical_stock_prices`
    - **Agent 2 — SEC EDGAR**（subagent_type: "data-collector"）：`get_financials`（all）+ `get_insider_transactions`（90d）+ `get_recent_filings`（60d）+ `get_segment_data`

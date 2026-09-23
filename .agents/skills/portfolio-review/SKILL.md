@@ -3,6 +3,7 @@ name: portfolio-review
 description: Fetch live brokerage positions and generate a comprehensive portfolio report with sector allocation, P&L analysis, options summary, and risk assessment. Use when user asks for portfolio review.
 user_invocable: true
 model: opus
+effort: high
 ---
 
 # Portfolio Review
@@ -188,7 +189,7 @@ For each option position:
 
 **平行數據收集（第一組 Agent 子代理 — subagent_type: "data-collector"）：**
 
-使用 Agent tool 平行派遣以下 3 組子代理（每組 subagent_type: "data-collector"，自動使用 Sonnet 4.6）：
+使用 Agent tool 平行派遣以下 3 組子代理（每組 subagent_type: "data-collector"，自動使用 Sonnet 5）：
 
 - **Agent 1 — Yahoo Finance**（subagent_type: "data-collector"，所有主要持倉 >3%）：`get_stock_info` + `get_yahoo_finance_news` + `get_historical_stock_prices`
 - **Agent 2 — Technical**（subagent_type: "data-collector"，所有持倉）：`get_batch_indicators` + `get_technical_indicators`（top 5 個別分析）
@@ -296,7 +297,7 @@ Note: EODHD tickers use exchange suffix format (e.g. "AAPL.US", "NVDA.US").
 
 **平行數據收集（第二組 Agent 子代理 — subagent_type: "data-collector"）：**
 
-在 Section G 數據到齊後，派遣第二組（subagent_type: "data-collector"，自動使用 Sonnet 4.6）：
+在 Section G 數據到齊後，派遣第二組（subagent_type: "data-collector"，自動使用 Sonnet 5）：
 
 - **Agent 4 — SEC EDGAR**（subagent_type: "data-collector"，top 5）：`get_insider_transactions` + `get_recent_filings`
 - **Agent 5 — FMP**（subagent_type: "data-collector"）：`getStockPeers`（top 3）+ `getBiggestGainers` / `getBiggestLosers`

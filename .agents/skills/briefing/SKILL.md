@@ -26,10 +26,10 @@ model: opus
 若需手動生成 HTML（不發送）：`python3 tools/generate_html.py briefing YYYY-MM-DD [--push]`
 
 ### 執行模型建議
-- `/briefing`（quick）→ Sonnet 4.6（純彙整；session 已長則先 `/compact`）
-- `/briefing telegram` → Sonnet 4.6（每日 launchd 自動推送，成本敏感，固定 Sonnet；週五 `--codex` 另走 gpt-5.5）
-- `/briefing full` → Opus 4.8（中等綜合 + Verdict；Phase 2 subagent 已外包 Sonnet 4.6）
-- `/briefing deep` → Opus 4.8（深度合成 + Codex 整合 + 機率/EV）
+- `/briefing`（quick）→ Sonnet 5（純彙整；session 已長則先 `/compact`）
+- `/briefing telegram` → Sonnet 5（每日 launchd 自動推送，成本敏感，固定 Sonnet；週五 `--codex` 另走 gpt-5.5）
+- `/briefing full` → Opus 5.5（中等綜合 + Verdict；Phase 2 subagent 已外包 Sonnet 5）
+- `/briefing deep` → Opus 5.5（深度合成 + Codex 整合 + 機率/EV）
 
 切換方式：`/model sonnet`、`/model opus` 或 `/model fable` 後執行 skill。
 
@@ -833,7 +833,7 @@ Redeploy 首選：[標的 + revision 依據 + 結構]
 
 ### 13. 平行 Agent 派遣
 
-同時派出 3 組 Agent 子代理（全部 subagent_type: "data-collector"，自動使用 Sonnet 4.6）：
+同時派出 3 組 Agent 子代理（全部 subagent_type: "data-collector"，自動使用 Sonnet 5）：
 
 - **Agent 1 — SEC EDGAR**（subagent_type: "data-collector"，top 5）：`get_insider_transactions`（90d）+ `get_recent_filings`（30d）
 - **Agent 2 — Yahoo Finance**（subagent_type: "data-collector"，top 5）：`get_stock_info` + `get_financial_statement` — 基本面摘要
@@ -907,7 +907,7 @@ portfolio-review 式的計畫執行進度表：
 **目的：** 每日盤中推送至 Telegram + Email 的精簡決策摘要。不跑 Phase 1-3 的完整分析，只抓推送所需的 7 個資料點，直接產出 emoji 純文字格式。
 
 ### 執行模型
-Sonnet 4.6（資料抓取為主，無深度合成需要）
+Sonnet 5（資料抓取為主，無深度合成需要）
 
 ### Step 0
 同標準規範（0a-0e）：讀 `plan.md` + `feedback/*.md` → `get_account_position` → journal 確認。

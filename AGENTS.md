@@ -342,36 +342,38 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - 不覆蓋/刪除 `.claude.json` 中現有 allow rules
 - 只 append 新權限，並向用戶展示新增內容
 
-## Skill 模型分工（2026-05-05）
+## Skill 模型分工（2026-09-23 更新：Claude 5 家族）
 
-### 數據收集 subagent — Sonnet 4.6
-所有 skill 的平行數據收集 Agent 都指定 `subagent_type: "data-collector"`（見 `.claude/agents/data-collector.md`）。
-Data-collector 每次啟動是全新 context（無歷史）。**Sonnet 4.6 + agent 內加反幻覺鐵則。** 主程仍須對權威價（Firstrade）交叉驗證，對不上即整批丟棄（見 `feedback/subagent-hallucination-guard.md`）。
+別名實測（2026-09-23，Claude Code 2.1.280）：`opus` → `claude-opus-5-5`、`sonnet` → `claude-sonnet-5`、`fable` → `claude-fable-5-1`。frontmatter 一律寫別名，換代時自動跟上，不寫死 ID。
 
-### 主 skill 執行模型（2026-06-13 更新：全面回歸 Opus 4.8）
+模型階梯：**Fable 5.1**（$10/$50，目前最強的公開模型）> **Opus 5.5**（$4/$20，Opus 線新一代，比舊 Opus 便宜）> **Sonnet 5**（$2/$10，中堅/純機械）。Opus 5.5 較新但**不比 Fable 強**——是主力款升級，不是旗艦。
 
-模型階梯：**Opus 4.8**（`claude-opus-4-8`，$15/$75，旗艦推理）> **Sonnet 4.6**（中堅/純機械）。
+**選模型的判準：判斷錯的代價 × 頻率。** 錯了會污染之後每一筆決策、且頻率低 → Fable；頻率高、錯了下一輪會被機械驗收抓到 → Opus；抓資料與格式化 → Sonnet。
+
+### 數據收集 subagent — Sonnet 5
+Data-collector 每次啟動是全新 context（無歷史）。**Sonnet + agent 內加反幻覺鐵則。** 主程仍須對權威價（Firstrade）交叉驗證，對不上即整批丟棄（見 `feedback/subagent-hallucination-guard.md`）。
+
+### 主 skill 執行模型
 
 | Skill / 任務 | 模型 | 理由 |
 |---|---|---|
-| `/ev-check` | **Opus 4.8** | 純第一性機率分布 + EV，反偷懶紀律最吃推理 |
-| `/portfolio-review` | **Opus 4.8** | 跨全組合綜合 + 風險 + EV，驅動資金決策 |
-| `/briefing deep` | **Opus 4.8** | 深度合成 + Codex 整合 + 機率/EV |
-| `/stock-analysis` | **Opus 4.8** | 單標的深掘，旗艦推理 |
-| `/options-strategy` | **Opus 4.8** | Greeks / 價差計算 + 多腿比較 |
-| `/event-vol-scan` | **Opus 4.8** | 事件買方掃描：VRP/base rate 判讀 + 末日/雙買結構 |
-| `/briefing full` | **Opus 4.8** | 中等綜合 + Verdict |
-| `/trade-review` | **Opus 4.8** | 決策歸因判讀 + 規則覆審，直接改規則層 |
-| `/briefing`（quick）| **Sonnet 4.6** | ~1min 彙整 |
-| `/briefing telegram` | **Sonnet 4.6** | 每日 launchd 自動推送，成本敏感 |
-| `/todo` | **Sonnet 4.6** | 行動清單 |
-| `/trade-journal` review/summary | **Sonnet 4.6** | 帶輕度分析 |
-| `/trade-journal` log | **Sonnet 4.6** | 純記錄/格式化 |
-| `/mcp-health` | **Sonnet 4.6** | 純連線測試 |
-| data-collector subagent | **Sonnet 4.6** | 純 MCP 抓資料，反幻覺鐵則 |
-| probability-honesty-checker subagent | **Opus 4.8** | 機率紀律執法者，用旗艦 |
+| `/trade-review` | **Fable 5.1** | 每兩週一次、直接改規則帳本；改錯影響之後每一筆 |
+| 規則修訂 / 覆審（互動） | **Fable 5.1** | 同上；session 內 `/model fable` 再做 |
+| 重大部位決策（>5% 倉位） | **Fable 5.1** | 錯的代價最高 |
+| `/ev-check` | **Opus 5.5** | 機率分布 + EV，每次有 ev_ledger 到期驗收 |
+| `/portfolio-review` | **Opus 5.5** | 跨組合綜合；月度頻率 |
+| `/stock-analysis` | **Opus 5.5** | 單標的深掘 |
+| `/options-strategy` | **Opus 5.5** | Greeks / 價差計算 |
+| `/event-vol-scan` | **Opus 5.5** | VRP/base rate 判讀 |
+| `/briefing full` / `deep` | **Opus 5.5** | 綜合 + Verdict |
+| probability-honesty-checker subagent | **Opus 5.5** | 機率紀律執法者 |
+| `/briefing`（quick）/ `telegram` | **Sonnet 5** | 每日自動推送；有事的日子 runner 自動升 opus |
+| `/todo`、`/trade-journal`、`/mcp-health` | **Sonnet 5** | 彙整/記錄/連線測試 |
+| data-collector subagent | **Sonnet 5** | 純抓資料 |
 
-**模型別名與動態升級（2026-09-14）：** skill / agent frontmatter 一律用別名 `opus` / `sonnet`（舊的 `claude-opus-4-8` / `claude-sonnet-4-6` ID 已隨 Claude 5 家族失效）。launchd telegram briefing 預設 `sonnet`，但 `briefing_runner.sh` 在「有事的日子」自動升 `opus`：auto-exec plan 非空 / position_guard 有缺口 / forced 或逾期旗標——因為機械判定已移到 code，Sonnet 剩下要做的是口吻與少量判斷；真正需要推理的日子才花 Opus。`BRIEFING_MODEL` 環境變數顯式指定時不覆寫。Fable 5.1 只用在互動的 /trade-review、/portfolio-review、規則修訂。
+**思考強度（effort）：** Opus 5.5 的 API 預設 effort 是 `medium`（舊 Opus 是 `high`）。吃推理的 skill/agent 要明確設 `high`，否則換新模型反而想得比較少——見各 frontmatter：ev-check、stock-analysis、portfolio-review、options-strategy、event-vol-scan、trade-review、probability-honesty-checker 設 `effort: high`；未設者繼承 session effort（全域預設 medium）。`briefing` 刻意不設——同一份 skill 也服務每日 telegram，full/deep 需要時以 `/effort high` 或 `claude --effort high` 臨時拉高。
+
+**動態升級（2026-09-14）：** launchd telegram briefing 預設 `sonnet`，`briefing_runner.sh` 在「有事的日子」自動升 `opus`：auto-exec plan 非空 / position_guard 有缺口 / forced 或逾期旗標。`BRIEFING_MODEL` 環境變數顯式指定時不覆寫。
 
 **長 context：** session > 100k 時先 `/compact`，再繼續執行。換主題先 `/clear`。
 

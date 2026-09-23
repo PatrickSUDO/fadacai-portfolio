@@ -3,6 +3,7 @@ name: event-vol-scan
 description: 財報/重大事件（CPI/FOMC）前的末日 buy call 與雙買 straddle 機會掃描。Usage - /event-vol-scan [days] [TICKER ...]（預設窗 14 天，掃持倉 + L1 候補 + SPY/QQQ 宏觀事件）
 user_invocable: true
 model: opus
+effort: high
 ---
 
 # Event Vol Scan — 事件前買方機會掃描

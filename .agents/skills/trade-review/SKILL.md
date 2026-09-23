@@ -2,7 +2,8 @@
 name: trade-review
 description: 每兩週交易檢討：歸因每筆成交是「系統決策」還是「你自己決策」、算基準校正 α、驗影子訊號、更新規則命中率帳本，輸出「本期該改哪一條規則」。Usage - /trade-review [2w|4w|since YYYY-MM-DD]
 user_invocable: true
-model: opus
+model: fable
+effort: high
 ---
 
 # Trade Review — 兩週交易檢討
@@ -49,7 +50,7 @@ python3 tools/trade_ledger.py annotate --id <fill_id> \
   --origin system|user --evidence "<判定依據原文>" [--bucket 信念|認列|hedge|樂透]
 ```
 
-補正時**一併記模型**（`--model claude-opus-4-8 --effort high`），這樣 `score --by model` 之後能用數據回答兩件事：貴的模型層級值不值那個成本，以及更新的模型不同意舊決策時，該不該相信它。**模型版本是排覆審順序的依據，不是推翻已驗證結論的依據**（同 `RULES-LEDGER` 的鐵則）。
+補正時**一併記模型**（`--model claude-fable-5-1 --effort high`），這樣 `score --by model` 之後能用數據回答兩件事：貴的模型層級值不值那個成本，以及更新的模型不同意舊決策時，該不該相信它。**模型版本是排覆審順序的依據，不是推翻已驗證結論的依據**（同 `RULES-LEDGER` 的鐵則）。
 
 判定準則（`origin` = **誰決定**，與 `exec_via` **誰按按鈕** 無關）：
 - **system** — plan.md 有 ref／plan #N／規則執行（梯級停利、停損鐵律、harvest 訊號）／plan v2 砍單

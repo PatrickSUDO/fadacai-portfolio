@@ -3,6 +3,7 @@ name: ev-check
 description: 強制 first-principles 機率分布 + EV 計算。用於檢查當前組合在指定時間窗的預期報酬，禁止用 default bell shape 或質性語言。Usage - /ev-check [30d|7d|14d] [optional scenario theme]
 user_invocable: true
 model: opus
+effort: high
 ---
 
 # EV / Probability Distribution Honesty Check

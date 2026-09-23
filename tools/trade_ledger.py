@@ -1700,7 +1700,7 @@ def _build_parser():
     a.add_argument("--bucket", default=None)
     a.add_argument("--thesis-id", dest="thesis_id", default=None)
     a.add_argument("--model", default=None,
-                   help="model that made the call, e.g. claude-opus-4-8 (system origin only)")
+                   help="model that made the call, e.g. claude-opus-5-5 (system origin only)")
     a.add_argument("--effort", default=None, help="reasoning effort at decision time")
     return p
 

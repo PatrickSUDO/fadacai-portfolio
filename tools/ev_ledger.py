@@ -486,7 +486,7 @@ def main():
     a.add_argument("--ev-price", type=float)
     a.add_argument("--ev-pct", type=float)
     a.add_argument("--source", default="manual")
-    a.add_argument("--model", default="claude-opus-4-8")
+    a.add_argument("--model", default="claude-opus-5-5")
     a.add_argument("--thesis-ref")
     a.add_argument("--p-up-given-thesis", type=float,
                    help="P(price up | thesis right) in %%; required with --thesis-ref")

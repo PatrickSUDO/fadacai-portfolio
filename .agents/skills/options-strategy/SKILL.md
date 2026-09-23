@@ -3,6 +3,7 @@ name: options-strategy
 description: Calculate and compare options strategies (sell put, covered call, LEAPS, naked call) for a given ticker. Usage - /options-strategy TICKER STRATEGY
 user_invocable: true
 model: opus
+effort: high
 ---
 
 # Options Strategy Calculator
@@ -36,7 +37,7 @@ Evaluate options strategies for a given ticker with risk/reward analysis.
 
 當偵測到多個 ticker（如 `/options-strategy PLTR AMD MU sell-put`）：
 
-1. 為每個 ticker 派出獨立 Agent 子代理（subagent_type: "data-collector"，Sonnet 4.6），每個 Agent 執行：
+1. 為每個 ticker 派出獨立 Agent 子代理（subagent_type: "data-collector"，Sonnet 5），每個 Agent 執行：
    - `get_stock_info` — 現價 + 基本面
    - `get_option_chain` — 選擇權鏈
    - `get_technical_indicators` — 波動率 + RSI + 動量
