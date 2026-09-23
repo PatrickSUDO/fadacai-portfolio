@@ -1360,14 +1360,16 @@ def cmd_orders(args):
     reg = load_registry(args.registry)
     today = _today(args.asof)
     rows = []
-    for e in reg["orders"].values():
+    for oid, e in reg["orders"].items():
+        # register-order 可能早於 snapshot 建條目（只有 rule_* 欄位）→ 以 key 補 order_id、缺欄給 None
+        e = {"order_id": oid, **e}
         if args.all or e.get("state") == "ORDER-SUBMITTED":
             placed = e.get("placed") or e.get("first_seen")
             try:
                 age = (today - date.fromisoformat(placed)).days
             except (TypeError, ValueError):
                 age = None
-            rows.append({**{k: e[k] for k in ("order_id", "symbol", "transaction",
+            rows.append({**{k: e.get(k) for k in ("order_id", "symbol", "transaction",
                                               "shares", "limit_price", "state")},
                          "placed": placed, "age_days": age,
                          "in_plan": (e["order_id"].split("-")[-1] in plan_order_refs())})

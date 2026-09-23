@@ -142,6 +142,15 @@ def open_since(fills, sym):
     return since
 
 
+def ledger_net_qty(fills, sym):
+    """帳本口徑淨持股（賣出不低於 0）。"""
+    sh = 0.0
+    for f in fills:
+        if f["symbol"] == sym:
+            sh = sh + float(f["qty"]) if f["side"] == "BOUGHT" else max(0.0, sh - float(f["qty"]))
+    return sh
+
+
 def qty_stats_since(fills, sym, since):
     """建倉起算的最高持股數（R8+R23 合計已賣 % 的分母）。"""
     sh, peak = 0.0, 0.0
@@ -378,7 +387,9 @@ def build_state(*, sync_alerts=False):
         since = open_since(fills, sym)
         # 帳本尚無建倉成交（當日新買、ledger 未入帳）→ 視為今日建倉，fail-closed：R14 鎖、R23 不 arm、峰值不從 1/1 起算
         # （2026-09-22 HWM 案：9/21 12:00 起手 13 股，15:45 pre-close pass 時 since=None → R14 未鎖 + 峰值取 1/1 起 → 誤觸 R23-20 賣 4 股）
-        if since is None:
+        # 同理：帳本記錄此檔已清倉（淨股數 0）但券商有持股 = 當日重新建倉未入帳（2026-09-23 NET 案：
+        # 2024 年舊倉 → since 取 2024-06-12、持有 833 天、已賣 92%，R14 鎖未套上）
+        if since is None or ledger_net_qty(fills, sym) <= 1e-6:
             since = today.isoformat()
         days = (today - dt.date.fromisoformat(since)).days if since else None
         peak, last, peak_dt = price_stats(sym, since)
