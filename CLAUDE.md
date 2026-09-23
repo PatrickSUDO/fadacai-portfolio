@@ -371,7 +371,7 @@ Data-collector 每次啟動是全新 context（無歷史）。**Sonnet + agent �
 | `/todo`、`/trade-journal`、`/mcp-health` | **Sonnet 5** | 彙整/記錄/連線測試 |
 | data-collector subagent | **Sonnet 5** | 純抓資料 |
 
-**思考強度（effort）：** Opus 5.5 的 API 預設 effort 是 `medium`（舊 Opus 是 `high`）。吃推理的 skill/agent 要明確設 `high`，否則換新模型反而想得比較少——見各 frontmatter：ev-check、stock-analysis、portfolio-review、options-strategy、event-vol-scan、trade-review、probability-honesty-checker 設 `effort: high`；未設者繼承 session effort（全域預設 medium）。`briefing` 刻意不設——同一份 skill 也服務每日 telegram，full/deep 需要時以 `/effort high` 或 `claude --effort high` 臨時拉高。
+**思考強度（effort）：** Opus 5.5 的 API 預設 effort 是 `medium`（舊 Opus 是 `high`）。吃推理的 skill/agent 要明確設 `high`，否則換新模型反而想得比較少——見各 frontmatter：ev-check、stock-analysis、portfolio-review、options-strategy、event-vol-scan、trade-review、probability-honesty-checker 設 `effort: high`；未設者繼承 session effort（全域預設 medium）。`briefing` 也設 high（2026-09-23 用戶：Max 訂閱，成本不是限制）；runner 逾時同步 900→1800 秒。
 
 **動態升級（2026-09-14）：** launchd telegram briefing 預設 `sonnet`，`briefing_runner.sh` 在「有事的日子」自動升 `opus`：auto-exec plan 非空 / position_guard 有缺口 / forced 或逾期旗標。`BRIEFING_MODEL` 環境變數顯式指定時不覆寫。
 

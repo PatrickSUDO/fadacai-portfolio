@@ -243,7 +243,7 @@ while [[ $attempt -lt $RETRY_MAX ]]; do
   # Wrap in a hard timeout (default 900s) so a hung headless claude -p
   # can't block for hours — alarm kills it and the retry loop takes over.
   # macOS has no `timeout`; perl's alarm is built-in and portable.
-  CLAUDE_TIMEOUT="${CLAUDE_TIMEOUT:-900}"
+  CLAUDE_TIMEOUT="${CLAUDE_TIMEOUT:-1800}"  # 2026-09-23 900→1800：briefing 改 effort high；9/21 opus 跑 15 分已貼 900 上限
   # --dangerously-skip-permissions: this is an unattended trusted run on the
   # user's own repo; without it, any Claude Code tool-permission prompt has no
   # way to be answered headless and the job hangs until the alarm timeout.

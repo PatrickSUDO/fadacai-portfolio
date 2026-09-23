@@ -3,6 +3,7 @@ name: briefing
 description: "Daily portfolio briefing with 3 tiers: /briefing (quick ~1min), /briefing full (~3min), /briefing deep (~5min). Replaces daily-briefing."
 user_invocable: true
 model: opus
+effort: high
 ---
 
 # Portfolio Briefing
