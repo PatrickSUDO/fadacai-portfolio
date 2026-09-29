@@ -126,6 +126,11 @@ def fill_id(rec):
     return hashlib.sha1(raw.encode()).hexdigest()[:12]
 
 
+def _fill_key(rec):
+    """Identity of a fill without exec_time (see cmd_ingest)."""
+    return (rec["date"], rec["symbol"], rec["side"], float(rec["qty"]), round(float(rec["price"]), 4))
+
+
 def benchmark_for(symbol):
     return BENCH_SEMI if symbol.upper() in SEMI_AI else BENCH_DEFAULT
 
@@ -417,15 +422,20 @@ def _match_registry(rec, registry):
     """Find a resting order that plausibly produced this fill."""
     want = "B" if rec["side"] == "BOUGHT" else "S"
     best = None
-    for entry in registry.values():
-        if entry["symbol"] != (rec["underlying"] if rec["is_option"] else rec["symbol"]):
+    for oid, entry in registry.items():
+        # register-order can create a stub before the broker snapshot fills in
+        # symbol/shares (cancelled-same-day rule orders, 2026-09-16) — skip those.
+        # Newer snapshots keep the id only as the dict key, so carry it in.
+        if entry.get("symbol") != (rec["underlying"] if rec["is_option"] else rec["symbol"]):
             continue
+        if "order_id" not in entry:
+            entry = dict(entry, order_id=oid)
         if (entry.get("transaction") or "")[:1] != want:
             continue
         lim = entry.get("limit_price") or 0
         if lim and abs(rec["price"] - lim) / lim > 0.02:
             continue
-        if entry["shares"] and abs(rec["qty"] - entry["shares"]) > max(1.0, entry["shares"] * 0.5):
+        if entry.get("shares") and abs(rec["qty"] - entry["shares"]) > max(1.0, entry["shares"] * 0.5):
             continue
         if best is None or abs(rec["price"] - lim) < abs(rec["price"] - (best.get("limit_price") or 0)):
             best = entry
@@ -1207,19 +1217,32 @@ def cmd_ingest(args):
 
     incoming = parse_history(payload)
     existing = {f["id"]: f for f in load_fills(args.ledger)}
-    added = 0
+    # Same-day history comes back WITHOUT exec_time; the next day's pull carries it.
+    # fill_id hashes exec_time, so the same fill would land twice (9/15–9/28 2026:
+    # 27 duplicates, the annotated copy orphaned, the new copy unknown). Match the
+    # timeless copy by (date, symbol, side, qty, price) and upgrade it in place,
+    # keeping its id — annotations and journal references point at that id.
+    timeless = {_fill_key(f): fid for fid, f in existing.items() if not f.get("exec_time")}
+    added = merged = 0
     for rec in incoming:
-        if rec["id"] in existing:
-            keep = {k: existing[rec["id"]][k] for k in
+        old_id = rec["id"]
+        if old_id not in existing and rec.get("exec_time"):
+            old_id = timeless.pop(_fill_key(rec), None) or rec["id"]
+            if old_id != rec["id"]:
+                merged += 1
+                rec["id"] = old_id
+        if old_id in existing:
+            keep = {k: existing[old_id][k] for k in
                     ("origin", "origin_confidence", "origin_evidence", "origin_source",
-                     "thesis_id", "bucket", "note")
-                    if k in existing[rec["id"]]}
+                     "thesis_id", "bucket", "note", "order_id", "exec_via", "model", "effort")
+                    if k in existing[old_id]}
             rec.update(keep)
         else:
             added += 1
-        existing[rec["id"]] = rec
+        existing[old_id] = rec
     save_fills(list(existing.values()), args.ledger)
-    _emit({"fetched": len(incoming), "new": added, "ledger_total": len(existing),
+    _emit({"fetched": len(incoming), "new": added, "merged_exec_time": merged,
+           "ledger_total": len(existing),
            "range": window,
            "earliest": min((f["date"] for f in existing.values()), default=None),
            "latest": max((f["date"] for f in existing.values()), default=None)})
@@ -1278,7 +1301,10 @@ def cmd_backfill_origin(args):
 
 
 def cmd_score(args):
-    fills = load_fills(args.ledger)
+    # VOID / VOID-pair = a system misfire and the fill that reversed it (HWM 9/21–22 2026).
+    # Neither is a decision; scoring them would credit or debit α that nobody chose.
+    fills = [f for f in load_fills(args.ledger)
+             if not (f.get("origin_evidence") or "").startswith("VOID")]
     scored = score(fills, since=args.since, asof=args.asof,
                    skip_options=not args.include_options)
     keys = {

@@ -7,6 +7,7 @@ briefing T6.5 只准執行本檔列出的 plan，不再自行判定機械觸發�
 
 v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝險類，單次 ≤$3k）：
   A. R23 自峰回撤線：position-state r23_armed + 前一收盤 ≤ 峰 × (1−20%/30%) → 減 1/3
+     v2（2026-09-29）：觸發收盤當日基準（SMH/SPY）≤ −2% = washout 日 → 不開火，等下一個非 washout 收盤仍破線才賣
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
   C. 選擇權管理線：id 含 bcs-exit / option 的 price_below → 收盤 < level → 平倉指令（day，ET 7–16）
   D. R24 現金停泊：閒置 = 現金 − 在掛買單 − max(3% 總值, $8k) 緩衝 > $10k → 買 SGOV 至閒置 ≤ $5k（$8k 是留給手動掛單的錢，2026-09-16）
@@ -82,6 +83,45 @@ def intraday_last(symbols: list[str]) -> dict:
         return prev_close(symbols)
 
 
+WASHOUT_BENCH_DROP = -0.02   # R23 v2（2026-09-29 /trade-review）：基準當日 ≤ −2% 的收盤不開火，等下一個非 washout 收盤再確認
+
+
+def bench_for(sym: str) -> str:
+    """R23 washout 判定用的基準：半導體對 SMH、其餘對 SPY（與 trade_ledger 計分同一張表）。"""
+    try:
+        sys.path.insert(0, str(ROOT / "tools"))
+        from trade_ledger import SEMI_AI
+        return "SMH" if sym.upper() in SEMI_AI else "SPY"
+    except Exception:  # noqa: BLE001
+        return "SPY"
+
+
+def bench_day_moves(closes: dict, benches: set[str], preclose: bool) -> dict:
+    """基準「觸發收盤」對前一收盤的漲跌幅。closes 已含觸發收盤（evening = 今日收盤、preclose = 盤中、早上 dry-run = 昨收）。
+
+    R23 v2 的前提：9/2–9/8 首批四段全開在 SMH 單日 −3%～−5% 的 washout 收盤，27 天後四段部位價比減碼價高 14–33%
+    （SMH 同期 +9%）。線本身沒錯，錯在把指數殺盤日的個股跌幅當成個股自己的弱勢。"""
+    out = {}
+    try:
+        import yfinance as yf
+        asof = closes.get("asof", "")
+        ref = date.fromisoformat(asof) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", asof or "") else date.today()
+        px = yf.download(sorted(benches), period="10d", auto_adjust=True, progress=False)["Close"]
+        if not hasattr(px, "columns"):
+            return out
+        px = px.dropna(how="all")
+        prior = px[[d.date() < ref for d in px.index]]
+        if prior.empty:
+            return out
+        for b in benches:
+            c, p = closes.get(b), float(prior[b].iloc[-1]) if b in prior else None
+            if c and p:
+                out[b] = c / p - 1
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def in_earnings_window(sym: str, earn: dict, today: date, hours=48) -> bool:
     d = (earn.get("tickers") or {}).get(sym, {}).get("next_date")
     if not d:
@@ -109,12 +149,15 @@ def main(argv):
     positions = {p["symbol"]: p for p in st.get("positions", [])}
     syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV"})
     syms = [s for s in syms if s and not s.startswith("^")]
+    r23_benches = {bench_for(s) for s, p in positions.items() if p.get("r23_armed")}
+    syms = sorted(set(syms) | r23_benches)
     # --preclose（2026-09-15 用戶採用）：15:45 ET 用即時價當「準收盤」，線要多破 BUF=0.5% 才算，賣單 day 貼盤當天成交；
     # 沒有 --preclose（22:20 evening 補網）：用真正收盤，gt90 隔日生效。
     preclose = "--preclose" in argv
     BUF = 0.005 if preclose else 0.0
     DUR_SELL = "day" if preclose else "gt90"
     closes = intraday_last(syms) if preclose else prev_close(syms)
+    bench_moves = bench_day_moves(closes, r23_benches, preclose) if r23_benches else {}
     px_note = "" if closes and "error" not in closes else f"⚠️ yfinance 失敗（{closes.get('error','空')}），退回 position-state last（非收盤，僅 dry-run 參考）"
 
     def close_of(s):
@@ -144,6 +187,12 @@ def main(argv):
             skip(sym, "R23", "財報 ±48h（R9）"); continue
         if sym in reversed_tks:
             skip(sym, "R23", "T5.5 跨日反轉，延一日"); continue
+        # R23 v2 washout 確認（2026-09-29）：觸發收盤當日基準（SMH/SPY）≤ −2% → 這是指數殺盤不是個股弱勢，
+        # 不開火；下一個基準 > −2% 的收盤仍破線才賣。抓不到基準價 → 照舊開火（fail-open，線的保護優先）。
+        b = bench_for(sym)
+        bm = bench_moves.get(b)
+        if bm is not None and bm <= WASHOUT_BENCH_DROP:
+            skip(sym, "R23", f"washout 日（{b} {bm:+.1%} ≤ −2%）→ R23 v2 等下一個非 washout 收盤確認（{dd:+.1%} 仍破線才賣）"); continue
         qty = math.floor(p["qty"] / 3)
         # C2：R8+R23 合計不得賣穿 30% runner（guard 已算 sellable_before_floor）
         left = p.get("sellable_before_floor")
@@ -155,7 +204,8 @@ def main(argv):
             skip(sym, "R23", "1/3 不足 1 股"); continue
         plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
                      "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
-                     "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3",
+                     "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3"
+                              + (f"；{b} 當日 {bm:+.1%}（非 washout）" if bm is not None else "；基準價缺，未做 washout 判定"),
                      "after": ["snapshot-orders", "register-order --rule R23", "trade_ledger flag/resolve-flag trimmed", "thesis 留痕（+30d 驗）"]})
 
     # ── B. 用戶裁決收盤線 / C. 選擇權管理線 ─────────────────────────────────
@@ -398,7 +448,7 @@ def main(argv):
         with open(ROOT / "research" / "auto-exec-log.jsonl", "a") as fh:
             for e in executed:
                 fh.write(json.dumps({"date": today.isoformat(), **e}, ensure_ascii=False) + "\n")
-        return 0 if all(e.get("status") in ("placed", "cancelled", "skipped") for e in executed) else 4
+        return 0 if all(e.get("status") in ("placed", "cancelled", "cancel_failed", "skipped") for e in executed) else 4
     return 0
 
 
@@ -449,7 +499,9 @@ def execute_plan(plan, reg, today):
         try:
             if act == "CANCEL":
                 r = _ft_cancel(p["order"]["id"])
-                rec.update(status="cancelled", broker=r)
+                # 9/28 LITE：單已成交，券商回 400，log 仍記 cancelled → 對照時看起來像撤了一張成交單
+                ok = not isinstance(r, dict) or r.get("statusCode", 200) == 200
+                rec.update(status="cancelled" if ok else "cancel_failed", broker=r)
             elif act in ("BUY", "SELL") and (p.get("order") or {}).get("type") == "limit" and p.get("qty"):
                 side = "S" if act == "SELL" else "B"
                 # 去重兩層：①同規則同向在掛；②今天已掛過任何同標的同向單（不看 rule_ref——9/16 三個 pass 疊了三套 GLD/XLE，
