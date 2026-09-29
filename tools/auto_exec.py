@@ -99,8 +99,9 @@ def bench_for(sym: str) -> str:
 def bench_day_moves(closes: dict, benches: set[str], preclose: bool) -> dict:
     """基準「觸發收盤」對前一收盤的漲跌幅。closes 已含觸發收盤（evening = 今日收盤、preclose = 盤中、早上 dry-run = 昨收）。
 
-    R23 v2 的前提：9/2–9/8 首批四段全開在 SMH 單日 −3%～−5% 的 washout 收盤，27 天後四段部位價比減碼價高 14–33%
-    （SMH 同期 +9%）。線本身沒錯，錯在把指數殺盤日的個股跌幅當成個股自己的弱勢。"""
+    R23 v2 的依據（tools/backtest_r23.py，2026-01→08 凍結樣本）：v1 15 段有 7 段開在指數殺盤日、4 段 whipsaw −$1,913；
+    加 washout 確認後淨 +$765 → +$1,400。注意它不治九月型——AMD/DDOG/CRDO 9/1–9/4 那四段觸發日基準沒跌（板塊殺盤、
+    財報跳空），v2 一段都不攔；那是 trailing stop 在 V 型反彈裡的固有成本。"""
     out = {}
     try:
         import yfinance as yf
