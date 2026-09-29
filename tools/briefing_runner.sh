@@ -249,6 +249,8 @@ while [[ $attempt -lt $RETRY_MAX ]]; do
   # way to be answered headless and the job hangs until the alarm timeout.
   # (NOTE: this does NOT bypass macOS TCC file-access dialogs — those need
   #  Full Disk Access granted to /bin/bash. See docs/briefing-auto-send.md.)
+  LOG_LINES_BEFORE=$(wc -l < "$LOG_DIR/launchd.log")
+  ERR_LINES_BEFORE=$(wc -l < "$LOG_DIR/launchd.err" 2>/dev/null || echo 0)
   if perl -e 'alarm shift; exec @ARGV' "$CLAUDE_TIMEOUT" claude -p "$PROMPT" --model "$BRIEFING_MODEL" --dangerously-skip-permissions >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err"; then
     log "Claude briefing completed successfully"
     success=true
@@ -259,6 +261,19 @@ while [[ $attempt -lt $RETRY_MAX ]]; do
       log "Claude TIMED OUT after ${CLAUDE_TIMEOUT}s (alarm) — treating as failure"
     fi
     log "Claude exited with code $EXIT_CODE"
+    # 登入失敗不會自己好，重試無意義 → 立刻推一則警告後退出（2026-09-28 OAuth 過期、
+    # 靜默全滅一天案；用戶 2026-09-29 指定：只有這類錯誤破例推 Telegram，一般斷線照舊只記 log）
+    if { tail -n +"$((LOG_LINES_BEFORE + 1))" "$LOG_DIR/launchd.log"; \
+         tail -n +"$((ERR_LINES_BEFORE + 1))" "$LOG_DIR/launchd.err" 2>/dev/null; } \
+       | grep -qiE "Failed to authenticate|OAuth session expired|OAuth token has expired|Invalid API key|authentication_error"; then
+      log "Claude auth failure detected — no retry, pushing Telegram warning"
+      printf '%s\n' "⚠️ 今日 briefing 未產出：Claude CLI 登入失敗（$(TZ=America/New_York date +%F)）" \
+        "→ 動作：終端機跑 claude setup-token，把新 token 以 CLAUDE_CODE_OAUTH_TOKEN= 寫進 fadacai-portfolio/.env，再回 session 手動 /briefing telegram --send 補發。" \
+        "詳見 briefing-out/launchd.log" \
+        | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+        || log "tg_send failed (auth warning)"
+      exit 1
+    fi
     if [[ $attempt -lt $RETRY_MAX ]]; then
       # 60s/120s/180s/240s 遞增 backoff — API 斷流常是短窗不穩，攤開重試時點
       log "Retrying in $((attempt * 60))s…"
@@ -268,7 +283,7 @@ while [[ $attempt -lt $RETRY_MAX ]]; do
 done
 
 if [[ "$success" != "true" ]]; then
-  # 失敗只記 log，不推 Telegram 錯誤訊息（用戶偏好：Telegram 只收正式 briefing）
+  # 失敗只記 log，不推 Telegram 錯誤訊息（用戶偏好：Telegram 只收正式 briefing；登入失敗例外，見上）
   log "All $RETRY_MAX attempts failed — see briefing-out/launchd.err (no Telegram error notify by design)"
   exit 1
 fi

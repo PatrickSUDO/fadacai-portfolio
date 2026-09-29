@@ -10,6 +10,7 @@ Checks (all dates derived from files, never from memory):
   trade-review     research/last-trade-review.txt              cadence 14d  (hard: >14 due, >21 🔴)
   portfolio-review newest briefing-out/portfolio-review-*.md   cadence 30d  (info: >30 due, >45 🔴)
   sa-quant-scan    newest research/sa-quant-scans/*.md         cadence 35d  (info: >35 due, >50 🔴)
+  claude-token     research/claude-token-issued.txt            cadence 335d (1y token: >335 renew, >358 🔴)
 
 Usage:
   python3 tools/review_due.py            # human lines; exit 2 if anything due, else 0
@@ -31,6 +32,9 @@ CHECKS = [
     ("trade-review", "/trade-review 交易檢討", 14, 21, "file:research/last-trade-review.txt"),
     ("portfolio-review", "/portfolio-review 全書檢視", 30, 45, "glob:briefing-out/portfolio-review-*.md"),
     ("sa-quant-scan", "SA 量化榜掃描", 35, 50, "glob:research/sa-quant-scans/*.md"),
+    # 1 年效期 token；過期 = launchd briefing 靜默全滅（2026-09-28 案）→ 提前 30 天提醒續期
+    ("claude-token", "Claude 長效 token 續期（claude setup-token → .env）", 335, 358,
+     "file:research/claude-token-issued.txt"),
 ]
 
 
