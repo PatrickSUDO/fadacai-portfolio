@@ -6,7 +6,7 @@
   actual > previous（實際升息）→ research/regime-overrides.json 寫 sleeve_target_pct=8（附理由/日期），guard 讀到就出 BUY_TO，
                                   pre-close / 收盤 pass 依 R25 規則 4 分兩批買（一半貼盤 day、一半 −4.5% GTC）
   actual < previous（降息）      → 不動（縮減條件是油 <$70 且 CPI 趨勢向下 ≥3 個月，另案）
-  無決議 / 尚未公布              → 什麼都不做（每日 20:10 本地跑一次，非 FOMC 日零成本）
+  無決議 / 尚未公布              → 什麼都不做（launchd 每 15 分鐘叫、plist 內 ET 14:05–17:00 閘，時區無關；非 FOMC 日零成本，2026-09-30）
 覆寫的解除：/trade-review 或用戶明文，工具不自動降回 6%（regime 判斷是人的事，執行是機器的事）。
 """
 import json, os, sys
