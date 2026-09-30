@@ -16,6 +16,7 @@ SCRIPT_DIR="$REPO_ROOT/tools"
 LOG_DIR="$REPO_ROOT/briefing-out"
 LOG="$LOG_DIR/trade-review-runner.log"
 export PATH="/Users/supatrick/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export TZ=America/New_York   # 美東日期為準（2026-09-30）
 cd "$REPO_ROOT" || exit 1
 mkdir -p "$LOG_DIR"
 log() { printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG"; }

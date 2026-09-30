@@ -15,6 +15,7 @@ SCRIPT_DIR="$REPO_ROOT/tools"
 LOG_DIR="$REPO_ROOT/briefing-out"
 LOG="$LOG_DIR/evening-pass.log"
 export PATH="/Users/supatrick/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export TZ=America/New_York   # 美東日期為準（2026-09-30）
 cd "$REPO_ROOT" || exit 1
 log() { printf '[%s] [%s] %s\n' "$(date '+%F %T')" "$PASS" "$*" >> "$LOG"; }
 

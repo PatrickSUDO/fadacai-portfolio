@@ -280,7 +280,9 @@ tools/briefing_runner.sh                  ← TCC-safe wrapper
 
 ## 喚醒排程 + 不睡著（單一發送時間）
 
-發送時間（系統本地 CET/CEST）：**17:00，一天只試這一次**。無備援窗；失敗只記 log，**不**推 Telegram 錯誤訊息（2026-06-11 用戶決定：Telegram 只收正式 briefing）。
+> **2026-09-30 起以美東時間為準**：launchd `StartInterval 300`，`briefing_runner.sh` 自判 ET 11:00（主窗 A）/ 15:00（備援窗 B），每窗每日一次；下方 CEST 17:00 與 pmset/caffeinate 段為舊設計，僅供參考。盤中防睡改由 `tools/keep_awake_us.sh`（launchd `com.fadacai.keep-awake-us`，ET 09:15–16:45）。
+
+（舊）發送時間（系統本地 CET/CEST）：**17:00，一天只試這一次**。無備援窗；失敗只記 log，**不**推 Telegram 錯誤訊息（2026-06-11 用戶決定：Telegram 只收正式 briefing）。
 
 **喚醒（把 Mac 叫醒）**
 - `pmset repeat wakepoweron … 16:59 weekdays` — 16:59 喚醒，涵蓋 17:00 發送窗。

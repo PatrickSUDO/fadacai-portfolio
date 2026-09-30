@@ -219,6 +219,18 @@ def send_email(telegram_text: str, full_md: str, date_str: str,
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
+def _is_intraday_send(sent_at: str) -> bool:
+    """盤前（ET 10:30 前）送出的那份不算「今天的盤中報告」，不擋 ET 11:00 主窗（2026-09-30：Mac 在台北時
+    舊排程 17:00 本地 = 05:00 ET，用戶要以美國時間為準）。解析失敗 → 視為已送（保守，避免重複推）。"""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime as _dt
+        t = _dt.fromisoformat(sent_at).astimezone(ZoneInfo("America/New_York"))
+        return (t.hour, t.minute) >= (10, 30)
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def already_sent_today(date_str: str) -> bool:
     """Return True if send-log already has a fully successful (non-dry-run) entry for date_str."""
     if not LOG_FILE.exists():
@@ -229,7 +241,8 @@ def already_sent_today(date_str: str) -> bool:
             if (entry.get("date") == date_str
                     and not entry.get("dry_run")
                     and entry.get("telegram") == "ok"
-                    and entry.get("email") == "ok"):
+                    and entry.get("email") == "ok"
+                    and _is_intraday_send(entry.get("sent_at", ""))):
                 return True
         except json.JSONDecodeError:
             continue

@@ -29,6 +29,23 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+# ── 美東時間為準（2026-09-30 用戶：「人在台灣都變成盤前寄送，時間要以美國時間為準」）──
+# 1) 整支 runner 與所有子程序（python date.today、claude session 的「今天」、send-log、journal 檔名）一律用 ET。
+# 2) launchd 改每 5 分鐘叫一次（StartInterval 300），這裡自己判斷時窗：
+#    主窗 A = ET 11:00–14:59（開盤 90 分鐘後，盤中）；備援窗 B = ET 15:00–15:45（A 失敗才會走到）。
+#    每窗每日只試一次（marker），已推送成功則兩窗都跳過（下方 send-log 檢查）。
+#    手動補發：BRIEFING_FORCE=1 bash tools/briefing_runner.sh
+export TZ=America/New_York
+if [[ "${BRIEFING_FORCE:-0}" != "1" ]]; then
+  ET_HM=$(date +%H%M); ET_DATE=$(date +%F)
+  if   (( 10#$ET_HM >= 1100 && 10#$ET_HM <= 1459 )); then SLOT=A
+  elif (( 10#$ET_HM >= 1500 && 10#$ET_HM <= 1545 )); then SLOT=B
+  else exit 0; fi
+  SLOT_MARK="$LOG_DIR/cache/briefing-slot-${SLOT}-${ET_DATE}"
+  [[ -f "$SLOT_MARK" ]] && exit 0
+  mkdir -p "$LOG_DIR/cache" && touch "$SLOT_MARK"
+fi
+
 RETRY_MAX="${RETRY_MAX:-5}"
 FRIDAY_CODEX="${FRIDAY_CODEX:-true}"
 SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
@@ -39,7 +56,7 @@ SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
 BRIEFING_MODEL_ENV="${BRIEFING_MODEL:-}"     # 使用者顯式指定 → 不動態升級
 BRIEFING_MODEL="${BRIEFING_MODEL:-sonnet}"
 
-# 2026-09-02：launchd 加了 21:00 CEST 備援窗（17:00 因 Mac 睡眠漏跑時補）。若今天已成功推送則直接退出，
+# 備援窗 B（ET 15:00）或手動重跑時：若今天已成功推送則直接退出，
 # 避免第二窗重燒一次 claude session（send_briefing.py 本身也有 dedup，這裡提前擋在 claude 之前）。
 if SEND_LOG="$SCRIPT_DIR/../briefing-out/send-log.jsonl" python3 - <<'PY'
 import json, datetime, pathlib, sys, os
@@ -49,6 +66,14 @@ try:
     for line in log.read_text().splitlines():
         r = json.loads(line)
         if r.get("date") == today and not r.get("dry_run") and r.get("telegram") == "ok":
+            # 盤前（ET 10:30 前）那份不算，讓 ET 11:00 主窗照跑（2026-09-30）
+            try:
+                from zoneinfo import ZoneInfo
+                t = datetime.datetime.fromisoformat(r.get("sent_at", "")).astimezone(ZoneInfo("America/New_York"))
+                if (t.hour, t.minute) < (10, 30):
+                    continue
+            except Exception:
+                pass
             sys.exit(0)
 except FileNotFoundError:
     pass
