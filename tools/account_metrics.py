@@ -39,14 +39,16 @@ EXCLUDE = {
     "2026-06-03": "自述日變動 +0.18% 與前日標記 +6.4% 矛盾；該日 briefing 在破損工作區執行",
 }
 
-RE_TOTAL = re.compile(r"(?:帳戶|組合)總值[^0-9$]*\$\s*([0-9,]+(?:\.[0-9]+)?)")
-RE_TOTAL2 = re.compile(r"(?:^|\|)\s*總值\s*\**\$\s*([0-9,]+(?:\.[0-9]+)?)", re.M)
-RE_PORT = re.compile(r"組合市值[^0-9$]*\$\s*([0-9,]+(?:\.[0-9]+)?)")
+RE_TOTAL = re.compile(r"(?:帳戶|組合)總值[^0-9$]*\$\s*([0-9,]+(?:\.[0-9]+)?[KkMm]?)")
+RE_TOTAL2 = re.compile(r"(?:^|\|)\s*總值\s*\**\$\s*([0-9,]+(?:\.[0-9]+)?[KkMm]?)", re.M)
+RE_PORT = re.compile(r"組合市值[^0-9$]*\$\s*([0-9,]+(?:\.[0-9]+)?[KkMm]?)")
 RE_CASH = re.compile(r"現金[^0-9$%]*\$\s*([0-9,]+(?:\.[0-9]+)?)")
 
 
 def _num(s):
-    return float(s.replace(",", ""))
+    # 「$263.4K」簡寫（2026-09-30：9/29 briefing 寫 K 被讀成 $263.4 → 假熔斷）
+    mult = {"k": 1e3, "m": 1e6}.get(s[-1].lower(), 1)
+    return float(s.rstrip("KkMm").replace(",", "")) * mult
 
 
 def scan_file(path: Path):
