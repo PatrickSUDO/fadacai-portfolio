@@ -4,10 +4,10 @@
 # 為什麼：原本 auto_exec 早上 11:00 ET 才由 briefing 執行前一收盤的判定，中間隔一夜 + 開盤 90 分鐘；
 # 防守線警報又在盤中每天一發。MYRG $274 線 8/27–9/15 來回觸價、用戶收一堆通知、最後自己手動賣。
 #
-#   preclose（21:45 本地 = 15:45 ET）：即時價當準收盤、線多破 0.5% 才算 → day 限價貼盤，收盤前成交，沒成交自動失效
-#   close   （22:20 本地 = 16:20 ET）：真正收盤重算 → 補網：15:45 沒抓到/沒成交的掛 gt90 隔日生效；ingest 今日成交讓 R23 峰值重置
+#   preclose（15:40–15:58 ET）：即時價當準收盤、線多破 0.5% 才算 → day 限價貼盤，收盤前成交，沒成交自動失效
+#   close   （16:15–19:00 ET）：真正收盤重算 → 補網：15:45 沒抓到/沒成交的掛 gt90 隔日生效；ingest 今日成交讓 R23 峰值重置
 # 兩支都：guard --sync-alerts → auto_exec --execute（AUTO_EXEC_LIVE=1）→ 有動作才發一則 Telegram。
-# launchd：com.fadacai.auto-exec-preclose（21:45）、com.fadacai.auto-exec-evening（22:20）。
+# launchd：com.fadacai.auto-exec-preclose / -evening 每 5 分鐘叫一次（StartInterval 300），時窗與「今天跑過沒」由本腳本用 ET 判斷，與本機時區無關。
 set -uo pipefail
 PASS="${1:-close}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,6 +17,22 @@ LOG="$LOG_DIR/evening-pass.log"
 export PATH="/Users/supatrick/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 cd "$REPO_ROOT" || exit 1
 log() { printf '[%s] [%s] %s\n' "$(date '+%F %T')" "$PASS" "$*" >> "$LOG"; }
+
+# ── 美東時窗閘（2026-09-30）：launchd 用「本機時區」排程，Mac 9/19 改 Asia/Taipei、9/28 重開機後 launchd 才吃到新時區，
+#    21:45/22:20 本地變成 09:45/10:20 ET——preclose 拿開盤 15 分鐘的價當「準收盤」，真正的收盤 pass 沒跑。
+#    改成 launchd 每 5 分鐘叫一次，本腳本自己用 ET 判斷該不該跑、今天跑過沒有（時區搬家不再壞）。
+ET_HM=$(TZ=America/New_York date +%H%M); ET_DATE=$(TZ=America/New_York date +%F)
+case "$PASS" in
+  preclose) WIN_LO=1540; WIN_HI=1558 ;;
+  close)    WIN_LO=1615; WIN_HI=1900 ;;
+  *)        WIN_LO=0000; WIN_HI=2359 ;;
+esac
+FORCE_RUN="${EVENING_PASS_FORCE:-0}"
+if [[ "$FORCE_RUN" != "1" ]]; then
+  if (( 10#$ET_HM < 10#$WIN_LO || 10#$ET_HM > 10#$WIN_HI )); then exit 0; fi
+fi
+MARK="$LOG_DIR/cache/evening-pass-${PASS}-${ET_DATE}.done"
+if [[ -f "$MARK" && "$FORCE_RUN" != "1" ]]; then exit 0; fi
 
 # 交易日檢查（借 price_alerts 的日曆）
 if ! python3 - <<'PY'
@@ -41,10 +57,12 @@ FLAG=""; [[ "$PASS" == "preclose" ]] && FLAG="--preclose"
 log "auto_exec --execute $FLAG"
 AUTO_EXEC_LIVE=1 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" --execute $FLAG >> "$LOG" 2>&1
 RC=$?
-log "auto_exec rc=${RC}（5 = state 非 live 拒絕執行）"
+log "auto_exec rc=${RC}（5 = state 非 live 拒絕執行）｜ET ${ET_DATE} ${ET_HM}"
+mkdir -p "$LOG_DIR/cache" && touch "$MARK"
 
 # Telegram 一則摘要（只在有動作 / 有錯 / 被拒時發）
-python3 - "$RC" "$PASS" <<'PY' | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 || log "tg_send failed"
+MSG=$(python3 - "$RC" "$PASS" <<'PY'
+
 import json, sys
 rc, pas = sys.argv[1], sys.argv[2]
 d = json.load(open("briefing-out/cache/auto-exec-plan.json"))
@@ -80,4 +98,7 @@ if not (placed or cancelled or errors or manual):
 lines.append("你不用做任何事。" if not (errors or manual) else "只有上面標「要你手動掛」的需要你。")
 print("\n".join(lines))
 PY
+)
+# 無事不發：空訊息不呼叫 tg_send（原本每晚記一行 tg_send failed / empty text）
+if [[ -n "$MSG" ]]; then printf '%s\n' "$MSG" | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 || log "tg_send failed"; fi
 exit 0

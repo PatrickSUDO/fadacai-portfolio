@@ -31,6 +31,7 @@ Usage:
 import json, math, os, re, sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / "research" / "position-state.json"
@@ -133,7 +134,7 @@ def in_earnings_window(sym: str, earn: dict, today: date, hours=48) -> bool:
 
 def main(argv):
     execute = "--execute" in argv
-    today = date.today()
+    today = datetime.now(ZoneInfo("America/New_York")).date()   # 美東交易日；Mac 在台北時 date.today() 會早一天（2026-09-30）
     st = _load(STATE, {})
     # 安全閘：live 券商持倉抓不到時 guard 退回 FIFO 重建（可能缺舊清倉紀錄、股數失真、冒出殭屍部位如 TMF）。
     # 絕不在 FIFO fallback 狀態上執行真單，dry-run 也標不可靠。
