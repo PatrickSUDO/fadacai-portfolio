@@ -46,6 +46,10 @@ if [[ "${BRIEFING_FORCE:-0}" != "1" ]]; then
   mkdir -p "$LOG_DIR/cache" && touch "$SLOT_MARK"
 fi
 
+# 每個預載步驟硬逾時（2026-10-06）：10/5 `uv run fetch_macro` 在 11:02 ET 卡死，整支 runner 掛住 → launchd 單實例
+# 不再叫起新的 → 15:00 備援窗也沒跑 → 當天零簡報零 Telegram。任何一步最多 STEP_TIMEOUT 秒，逾時視同該步失敗（非致命）。
+STEP_TIMEOUT="${STEP_TIMEOUT:-300}"
+step() { perl -e 'alarm shift; exec @ARGV' "$STEP_TIMEOUT" "$@"; }   # macOS 無 timeout(1)，perl alarm 可攜
 RETRY_MAX="${RETRY_MAX:-5}"
 FRIDAY_CODEX="${FRIDAY_CODEX:-true}"
 SKIP_NON_TRADING="${SKIP_NON_TRADING_DAYS:-true}"
@@ -104,33 +108,33 @@ fi
 
 # ── Pre-load data caches (non-fatal) ──────────────────────────────────────
 log "Refreshing macro cache (FRED)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_macro.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_macro.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "macro refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
 log "Refreshing earnings cache (yfinance)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/earnings_history.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/earnings_history.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "earnings refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
 log "Refreshing fundamentals cache (EODHD)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_fundamentals.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_fundamentals.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "fundamentals refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
 log "Refreshing news cache (EODHD raw articles)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_news.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_news.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "news refresh failed (non-fatal, briefing continues without news cache)"
 
 log "Labeling news into event ledger (label_events.py, claude-haiku batch)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" run \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" run \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "label_events failed (non-fatal)"
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" score >> "$LOG_DIR/launchd.log" 2>&1 || true
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" score >> "$LOG_DIR/launchd.log" 2>&1 || true
 
 log "Refreshing X source signals (X API v2, pay-per-use, cost-capped)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "twitter refresh failed (non-fatal, briefing continues without source signals)"
 
@@ -139,7 +143,7 @@ python3 "$SCRIPT_DIR/agenda_check.py" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/la
   || log "agenda_check failed (non-fatal)"
 
 log "Refreshing leading indicators cache (FRED/yfinance/EODHD/TWSE-TPEx)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_leading.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_leading.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "leading indicators refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
@@ -163,7 +167,7 @@ if [[ -x "$SCRIPT_DIR/briefing_local_hooks.sh" ]]; then
 fi
 
 log "Refreshing rotation correlation dashboard (H8, display-only)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/rotation_corr.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/rotation_corr.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "rotation_corr failed (non-fatal)"
 
@@ -175,7 +179,7 @@ python3 "$SCRIPT_DIR/position_guard.py" --sync-alerts \
 # T6.5 機械單清單（v1 dry-run）：以前一收盤判定，寫 briefing-out/cache/auto-exec-plan.json；
 # briefing T6.5 只准執行此清單，不自行判定機械觸發。--execute 解鎖前不送單。
 log "auto_exec dry-run (T6.5 mechanical plan)..."
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" \
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "auto_exec failed (non-fatal; briefing falls back to prose T6.5)"
 

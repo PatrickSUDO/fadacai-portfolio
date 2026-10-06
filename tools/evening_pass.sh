@@ -52,7 +52,7 @@ if [[ "$PASS" == "close" ]]; then
 fi
 
 log "guard --sync-alerts"
-uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/position_guard.py" --sync-alerts --render-plan >> "$LOG" 2>&1 || log "guard exit $? (continuing)"
+perl -e 'alarm shift; exec @ARGV' 600 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/position_guard.py" --sync-alerts --render-plan >> "$LOG" 2>&1 || log "guard exit $? (continuing)"
 
 FLAG=""; [[ "$PASS" == "preclose" ]] && FLAG="--preclose"
 log "auto_exec --execute $FLAG"
