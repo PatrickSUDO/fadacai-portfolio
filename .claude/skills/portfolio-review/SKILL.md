@@ -685,6 +685,12 @@ python3 tools/pmcc_scan.py --json briefing-out/cache/pmcc-scan.json
 Use clean markdown tables. Keep it concise but comprehensive. All dollar amounts in USD.
 Use Traditional Chinese (繁體中文) for all text output to match the user's preference.
 
+## 無人值守（2026-10-06 用戶指定）
+
+launchd `com.fadacai.portfolio-review` 每 15 分鐘叫 `tools/portfolio_review_runner.sh`：`review_due.py` 判 portfolio-review 到期（>30 天）且美東平日 11:30–15:00 盤中才跑 `claude -p "/portfolio-review" --model opus`（3600s 上限、一天一次，失敗隔天重試）→ `generate_html portfolio-review` 推報告站 → Telegram 一則（抽報告的「## 0. 本期結論」段 + 網頁連結）。登入失效 / 逾時 / 無報告 → Telegram 警告。
+
+**因此報告第一段必須是 `## 0. 本期結論`**（Portfolio Summary 之前）：5–8 行白話——帳戶一句話狀態、本期最重要的 1–3 個動作（已執行的附單號、待用戶決定的寫清楚）、下次要看的日期。Telegram 只會收到這段。
+
 ## 存檔 + HTML 生成
 報告完成後：
 1. 使用 Write tool 把完整 markdown 寫到 `briefing-out/portfolio-review-YYYY-MM-DD.md`

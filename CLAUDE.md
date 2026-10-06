@@ -18,6 +18,7 @@ This is an investment research and portfolio management workspace. The user acti
    - **今日待辦自動執行（T6.5，2026-09-08 用戶指定）**：`/briefing telegram` 產出的「今日待辦」中，屬於機械式清理/停損、SGOV 現金停泊、或 thesis 已確認的新倉/加碼，且觸發條件量化已達成、未被任何硬線（>10%集中/財報窗/R14鎖/檔數上限/`position_guard`缺口）擋下、且無 T5.5 跨日反轉旗標者，**直接下單，不再等用戶確認**——因為用戶可能不在電腦前。**金額上限 $3,000 只管新增曝險（新倉/加碼）；機械減碼/停損/平倉與 SGOV 停泊不設上限**（2026-09-14）。選擇權平倉（觸及開倉時寫死的管理線）可自動；開倉不自動。Telegram 訊息內以 `✅ 已自動執行` 標註（含單號），不符合條件的仍列 `🎯` 待辦。細則見 `.claude/skills/briefing/SKILL.md` Telegram Tier § T6.5；延伸自既有互動場景「警報先做再報」規則到無人值守場景
    - **防自圓其說雙保險（2026-09-08，同上用戶指定，不用 Codex 版）**：① **T5.5 跨日一致性檢查**——每日先讀前一交易日 telegram.txt，同一 ticker 的方向性判斷若無新數據支持卻反轉/升降級，標旗且對 T6.5 自動下單構成硬性攔阻；② **T6.5 執行後強制留痕**——每筆自動下單同時登錄一筆到期會被機械驗收的 `thesis_ledger` 條目（含具體證偽點），到期由既有 Step 0.7 `due` 機制自動驗收，不靠事後記憶
 2. `/portfolio-review` — full deep report with live data via MCP
+   - **無人值守（2026-10-06 用戶指定）**：launchd `com.fadacai.portfolio-review` 每 15 分鐘叫 `tools/portfolio_review_runner.sh`，`review_due.py` 判到期（>30 天）+ 美東平日 11:30–15:00 盤中才跑 `--model opus`（一天一次、失敗隔天重試）→ HTML 推報告站 → Telegram（報告首段 `## 0. 本期結論` + 連結）；失敗也推。手動 `--force` / `--notify-only <md>`
 3. `/stock-analysis TICKER` — individual stock deep dive
 4. `/options-strategy TICKER STRATEGY` — options calculation (supports multi-ticker comparison)
 5. `/trade-journal log|review|summary|auto` — trade records
