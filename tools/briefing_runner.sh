@@ -138,6 +138,15 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "twitter refresh failed (non-fatal, briefing continues without source signals)"
 
+# SA 自訂 screener 成員每週一自動刷新（2026-10-07：VICR 9/19–22 進榜時我們的成員還停在 9/4 手貼版）。需 .env SA_COOKIE，
+# 失效時腳本自己印 ⚠️ 並退回舊成員；非致命。產出 briefing-out/cache/sa-screener-delta.json（新進/掉榜）供 briefing Key Alerts 讀。
+if [[ "$(date +%u)" == "1" || "${SA_REFRESH_FORCE:-0}" == "1" ]]; then
+  log "Refreshing SA screener membership (weekly, SA_COOKIE)..."
+  step python3 "$SCRIPT_DIR/fetch_sa_quant.py" --refresh --list strong-buy \
+    >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "SA screener refresh failed (non-fatal)"
+fi
+
 log "Refreshing talks-book 13F agenda cache (EDGAR, TTL 7d)..."
 python3 "$SCRIPT_DIR/agenda_check.py" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "agenda_check failed (non-fatal)"

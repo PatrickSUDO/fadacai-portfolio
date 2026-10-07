@@ -526,6 +526,7 @@ python3 tools/review_due.py     # exit 2 = 有到期；同時寫 briefing-out/ca
 - **台股月營收轉負**：tw_monthly 任一檔 `turned_negative == true` → `🔴 需求證偽候選：{名} 月營收 YoY 轉負 → 提前檢討 ON/DIOD，不等財報`
 - **Revision book decel**：`book_decel == true` → `🟠 revision 動能減速（寬度 {breadth_pos_pct}%，7d {momentum_7d_pp}pp）`；`book_rollover == true` → 升 `🔴 revision 寬度跌破 50%`
 - **🔴 回檔行為熔斷（R15）**：讀 `briefing-out/cache/account-metrics.json` → `equity.circuit_breaker_active == true`（帳戶自峰回落 >10%）→ 固定顯示 `🔴 回檔熔斷生效中（峰 {peak_date} −{current_drawdown_pct}%）：信念桶禁淨減碼；清倉/降桶決定強制隔夜（寫理由過根因分類，次日確認）；僅機械單（梯級 harvest/旗標 forced/既掛 GTC）照常`（規則 `feedback/holding-period-discipline.md`；cache 缺失 → 跳過不猜）
+- **📈 SA 動能榜新進**（2026-10-07，display-only）：讀 `briefing-out/cache/sa-screener-delta.json`，`asof` 在 7 日內且 `lists.strong-buy.new` 非空 → 列 mandate 內（半導體/AI 硬體/電源/資料中心基建/軟體）的新進名字一行：`📈 SA 動能榜新進：VICR、IESC（成長 A 動能 A，站上 50/200 日線）→ 進 L2 研究池候選，不觸發、不追價`；mandate 外（金融/醫療/消費）不列。掉榜名字若是我們持倉或 L1 → 另一行 `📉 SA 動能榜掉榜：{ticker}`。每週一 runner 刷新；非週一無新資料就不出現
 - **🐦 來源訊號**：Step 0.68 cache 中 tier ∈ {trusted, core} 且 `has_number == true` 且貼文 48h 內 → `🐦 {ticker} {source_id}@{tier}：{claim 摘要}（"{raw_quote 節錄}"）`；每檔最多 1 行、全 Key Alerts 最多 3 行；Probation 不得出現於此（僅 §9.6）；display-only，不改變任何建議
 
 ### 7. 計畫進度 Quick
