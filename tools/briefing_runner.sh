@@ -156,6 +156,12 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_leading.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "leading indicators refresh failed (non-fatal, briefing continues with stale/missing cache)"
 
+# H13（2026-10-08）：小 N（<8 家分析師）名字的上修訊號被門檻擋下 → 自動登影子 cf-smalln-block（display-only，30d 計分）
+log "Small-N revision shadow scan (H13, display-only)..."
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/smalln_shadow.py" scan \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "smalln_shadow scan failed (non-fatal)"
+
 # Order snapshot must run daily and cannot be backfilled: Firstrade's order_status
 # endpoint returns ONLY resting orders, so an order placed and filled between two
 # snapshots leaves no trace to attribute the fill to. Prefetching here (rather than

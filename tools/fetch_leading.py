@@ -3,7 +3,7 @@
 fetch_leading.py — 發現層硬數字前哨（leading indicators）fetcher。
 
 Blocks（各自隔離，單塊失敗不殺其他 → carry_forward 前次值）:
-  gauges             三儀表: credit_velocity (FRED HY OAS Δ5d/Δ20d) /
+  gauges             四儀表: credit_velocity (FRED HY OAS Δ5d/Δ20d) / smallcap_rs (IWM vs SPY，H13) /
                      vix_term (^VIX vs ^VIX3M) / semis_breadth (SMH top-25 %>50DMA)
   earnings_crossread 財報季 cross-read 排序（早報者 → 晚報持倉讀序）
   pricing_watch      記憶體/功率元件報價新聞關鍵字抽取（純機械，不推方向）
@@ -253,6 +253,39 @@ def build_vix_term(th: dict) -> dict:
             "term_flag": flag, "source": "yfinance"}
 
 
+def build_smallcap_rs(th: dict) -> dict:
+    """小型股廣度 regime（H13，2026-10-08）：IWM 對 SPY 的 20/60 日相對強度 + 連續領先天數。
+    用途：「<8 家分析師門檻」放寬討論的開關——smallcap_leading 連續 ≥ persist_days 才開；display-only。"""
+    import yfinance as yf
+    px = yf.download(["IWM", "SPY"], period="6mo", progress=False, auto_adjust=True)["Close"].dropna()
+    if len(px) < 65:
+        raise RuntimeError(f"IWM/SPY history too short ({len(px)})")
+
+    def rel(h: int) -> float:
+        return round(100 * ((px["IWM"].iloc[-1] / px["IWM"].iloc[-1 - h] - 1)
+                            - (px["SPY"].iloc[-1] / px["SPY"].iloc[-1 - h] - 1)), 2)
+
+    rs20, rs60 = rel(20), rel(60)
+    r20 = ((px["IWM"] / px["IWM"].shift(20) - 1) - (px["SPY"] / px["SPY"].shift(20) - 1)).dropna().tolist()
+    streak = 0
+    for v in reversed(r20):
+        if v > 0:
+            streak += 1
+        else:
+            break
+    lead, lag, persist = th.get("lead_60d_pp", 3), th.get("lag_60d_pp", -3), th.get("persist_days", 20)
+    if rs60 >= lead and rs20 > 0:
+        regime = "smallcap_leading"
+    elif rs60 <= lag and rs20 < 0:
+        regime = "smallcap_lagging"
+    else:
+        regime = "neutral"
+    return {"rs20_pp": rs20, "rs60_pp": rs60, "lead_streak_days": streak, "regime": regime,
+            "relax_gate_open": regime == "smallcap_leading" and streak >= persist,
+            "note": f"display-only；smallcap_leading 連續 ≥{persist} 日才開啟「<8 家門檻放寬」討論（H13）",
+            "source": "yfinance IWM/SPY", "asof": px.index[-1].strftime("%Y-%m-%d")}
+
+
 def fetch_etf_constituents(bench: str, token: str) -> list | None:
     """EODHD ETF holdings（Fundamentals Data Feed）→ 動態成分；失敗回 None。"""
     if not token:
@@ -351,6 +384,14 @@ def build_gauges(cfg: dict, fred_key: str, errors: list) -> dict:
         errors.append("gauges:vix_term")
         sub_fail += 1
 
+    sc = with_retry(lambda: build_smallcap_rs(
+        th.get("smallcap_rs", {"lead_60d_pp": 3, "lag_60d_pp": -3, "persist_days": 20})), "SMALLCAP_RS", 3)
+    if sc:
+        block["smallcap_rs"] = sc
+    else:
+        errors.append("gauges:smallcap_rs")
+        sub_fail += 1
+
     if cfg and cfg.get("breadth"):
         br = with_retry(lambda: build_semis_breadth(
             cfg["breadth"], th.get("breadth", {"weak_pct": 40, "strong_pct": 80,
@@ -406,7 +447,7 @@ def build_gauges(cfg: dict, fred_key: str, errors: list) -> dict:
         errors.append(f"gauges:semis_industry_pe ({e})"[:80])
         sub_fail += 1
 
-    if sub_fail >= 5:
+    if sub_fail >= 6:
         raise RuntimeError("all gauges failed")
     if sub_fail:
         block["status"] = "partial"

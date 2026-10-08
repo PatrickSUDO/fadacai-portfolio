@@ -502,7 +502,7 @@ python3 tools/review_due.py     # exit 2 = 有到期；同時寫 briefing-out/ca
 對任一貼 52W 高 / 單日大漲 / 已漲多訊號，先查 **revision 方向**再行動：
 1. estimate 上修中（revisions up ≫ down / eps_revision_30d_pct > 0）+ 成長加速？→ **加速領導者**：在倉**讓它 run、不 trim**（強者愈強；認列桶仍按梯級停利級距走）；新資金不否決，改 starter + 回檔 ladder + bull call spread 定義風險
 
-> ⚠️ revision 引用必附 coverage：**分析師數 N≥15 全權重；8–14 半權重（須與 trend/季成長印證）；<8 不單獨觸發加減碼**；上次財報後 >45 天的 revision 標 stale 降權（per `feedback/momentum-valuation-symmetry.md` 規則 6）
+> ⚠️ revision 引用必附 coverage：**分析師數 N≥15 全權重；8–14 半權重（須與 trend/季成長印證）；<8 不單獨觸發加減碼**；上次財報後 >45 天的 revision 標 stale 降權。<8 家被擋的上修訊號由 runner `smalln_shadow.py` 自動登影子 `cf-smalln-block`（H13，display-only）；`leading-indicators.json gauges.smallcap_rs` 顯示 IWM 對 SPY regime，`relax_gate_open=true` 時在 Key Alerts 提一行「小型股連續領先 ≥20 日，H13 門檻放寬討論開啟」，不改任何建議（per `feedback/momentum-valuation-symmetry.md` 規則 6）
 
 > 🟠 **revision decel（Step 0.55 cache 旗標，影子驗證中）**：該股在 `revision_delta.decel_tickers` 中（上修仍為正但 7d/30d 動能顯著縮減）→ 在該股行尾標 `🟠 decel`。**只標記不改結論**：不因此提前 harvest、不否決加碼、不進 EV；連同 `book_decel` 記入 Section 6 Key Alerts，由 /trade-review 驗命中率。`warming_up` → 本標註完全不出現。
 2. estimate 翻下修/flat + 高倍數？→ **峰值 harvest 候選**：認列桶列入 harvest 清單（這才是「賣強」的正當時機）
@@ -1015,7 +1015,7 @@ T6 產生的**今日待辦**（明日待辦不適用，只是預告）逐條檢�
 
 下單後：
 - 立即補跑 `python3 tools/trade_ledger.py snapshot-orders`，並 **`python3 tools/trade_ledger.py register-order --id <單號> --rule <R8|R23|R24|R25|T6.5|plan-L1|options-mgmt> --note "..."`**（2026-09-14：規則單不一定寫進 plan.md，不登記會被歸因鏈判成 user——本期人工補了 14 筆）
-- **影子帳（2026-09-14 通用化）**：凡「想做但沒做」都登錄，30 天後機械計分——被 $3,000 上限擋下的新增曝險 `shadow_signals.py record --kind cf-t65-capped --correct-if under`、R1 判輪動而不減碼 `--kind cf-r1-hold --correct-if over`、比選落選者 `--kind cf-bench-loser --correct-if under`、R17 擋下的盤中衝動 `--kind cf-r17-blocked --correct-if over/under`。**沒做的決定跟做了的一樣要進帳**，這是把規則驗證樣本乘 3–5 倍的唯一免費方法
+- **影子帳（2026-09-14 通用化）**：凡「想做但沒做」都登錄，30 天後機械計分——被 $3,000 上限擋下的新增曝險 `shadow_signals.py record --kind cf-t65-capped --correct-if under`、R1 判輪動而不減碼 `--kind cf-r1-hold --correct-if over`、比選落選者 `--kind cf-bench-loser --correct-if under`、R17 擋下的盤中衝動 `--kind cf-r17-blocked --correct-if over/under`。小 N（<8 家）名字被門檻擋下的上修訊號 `cf-smalln-block`（runner 自動登，不手登）。**沒做的決定跟做了的一樣要進帳**，這是把規則驗證樣本乘 3–5 倍的唯一免費方法
 - 該待辦對應既有旗標（`research/position-flags.json`）→ 同一次 `resolve-flag --action <動作>` 或視情況更新
 - 該條目在 T6 輸出改標記 `✅ 已自動執行：{action}（單號 {order_id}，{價}×{股數}）`，取代原本的 `🎯`；同步進 T8a/T8b 兩層輸出
 - 下單 API 失敗/exception → 不重試，改列 `⚠️ 自動下單失敗：{action}（錯誤：{msg}）→ 待人工處理`，維持在待辦區
