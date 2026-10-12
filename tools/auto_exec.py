@@ -281,8 +281,9 @@ def main(argv):
         r30_syms.add(sym)
         if sym in reversed_tks:
             skip(sym, "R30", "T5.5 跨日反轉，延一日"); continue
-        if cash_available < c["room_usd"] and parked <= 0:
-            skip(sym, "R30", f"可用現金 {cash_available:,.0f} < 額度 {c['room_usd']:,.0f} 且無 SGOV 停泊"); continue
+        # 10/12 LITE 案：SGOV 只剩 $8 零股也算「有停泊」→ 放行 $2,968 買單、實際靠融資；改看停泊能否補足缺口
+        if cash_available + parked < min(c["room_usd"], 3_000):
+            skip(sym, "R30", f"可用現金 {cash_available:,.0f} + SGOV 停泊 {parked:,.0f} < 額度 {min(c['room_usd'], 3_000):,.0f}"); continue
         # 兩分支（R20 對稱）：走強分支 = 前收 ≥ 20 日高（突破確認）→ 當日 day 單貼盤接一半額度；否則回檔分支 = SMA20 限價 GTC
         prev = close_of(sym) or c["last"]
         breakout = prev >= c["high20"] * 0.999
@@ -406,14 +407,18 @@ def main(argv):
 
     # C6：T6.5 新增曝險買單的現金可用性（現金停在 SGOV 時要先賣，T+1 才能用）
     r30_notional = sum(p["qty"] * p["order"]["limit"] for p in plan if p.get("rule") == "R30-add")
-    if r30_notional and cash_available < r30_notional and parked > 0:
+    if r30_notional and cash_available < r30_notional and parked >= sgov_px:  # 不足一股的零股 SGOV 賣不出去
         plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL",
                      "qty": math.ceil(min(parked, r30_notional - cash_available) / sgov_px),
                      "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
                      "basis": f"R30 買單合計 {r30_notional:,.0f} > 可用現金 {cash_available:,.0f}，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）", "after": ["register-order --rule R24"]})
+        # C6「買單延一日」原本只寫在說明裡、execute 照掛 → 這裡真的把 R30 買單移出 plan，解泊交割後隔日再排
+        for p in [p for p in plan if p.get("rule") == "R30-add"]:
+            plan.remove(p)
+            skip(p["symbol"], "R30", f"C6 現金未到位（可用 {cash_available:,.0f}），今日先解泊 SGOV、買單延一日")
     cash_gate = {"cash_available": round(cash_available, 2), "parked_sgov": round(parked, 2),
                  "rule": "新倉/加碼買單金額 ≤ cash_available 才可當日執行；不足且 parked_sgov > 0 → 今日先掛 SGOV 賣（T+1），買單延一日；兩者皆無 → 列 🎯 待辦不下單"}
-    if cash_available < 3_000 and parked > 0 and not any(p.get("rule") == "R24-unpark" for p in plan):
+    if cash_available < 3_000 and parked >= sgov_px and not any(p.get("rule") == "R24-unpark" for p in plan):
         plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL", "qty": math.ceil(min(parked, 3_000 - cash_available) / sgov_px),
                      "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
                      "basis": f"可用現金 {cash_available:,.0f} < $3k 新曝險上限，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）",
