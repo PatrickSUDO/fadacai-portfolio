@@ -20,6 +20,7 @@ v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝�
 ④硬線：財報 ±48h（A/B/E 不執行；C 選擇權平倉仍執行）、R14 鎖住 R23（C3 裁決）、R8+R23 合計不賣穿 30% runner（C2，guard `sellable_before_floor`）、單一持倉 >10% 不由本工具處理（guard 已報）
 ⑦R28a 買方硬線：輸出 `buy_locked`（R23 觸線區 / 減碼後 30 天內的認列桶名字）；T6.5 對這些名字不得下任何買單
 ⑥現金閘（C6）：輸出 `cash_gate`（可用現金 / SGOV 停泊）；可用 < $3k 且有停泊 → 加一張 SGOV 賣單（T+1），T6.5 新曝險買單延一日
+  ⑦無槓桿硬線（C7，2026-10-13 用戶）：在掛買單合計 + 當日新買單 ≤ 現金 + T+1 SGOV 賣；超出 → 砍新買單、撤系統在掛買單（大者先），用戶單列 🎯；輸出 `leverage_gate`
 ⑤跨日反轉：讀 briefing-out/cache/crossday-flags.json（crossday_check 若有輸出）→ 命中 ticker 的 A/B 延一日
 
 --execute（v2，2026-09-15 起）：需 AUTO_EXEC_LIVE=1；evening_pass.sh 收盤後跑，現股 BUY/SELL 限價以 gt90 掛（次一交易日生效）、CANCEL 直撤；
@@ -424,10 +425,53 @@ def main(argv):
                      "basis": f"可用現金 {cash_available:,.0f} < $3k 新曝險上限，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）",
                      "after": ["register-order --rule R24"]})
 
+    # ── C7 無槓桿硬線（2026-10-13 用戶：「為啥要融資我又不想開槓桿」）──────────────────────────────
+    # Firstrade 是融資帳戶：買單成交時現金不足，券商自動借、不會問。所以要守的不是「單張買單 ≤ 現金」，
+    # 是「在掛買單合計 + 今日新買單 ≤ 現金 + T+1 到位的 SGOV 賣」——回檔梯正是在殺盤日一起成交，全部同時成交也不能借。
+    # 超出 → ① 先砍今日新買單（SGOV 停泊買單除外）② 仍超 → 撤系統掛的在掛買單（金額大者先）；用戶自掛的不撤，列 🎯 給用戶。
+    LEV_SYSTEM_RULES = ("R30", "R25", "plan", "R29a", "R20", "T6.5", "R24")
+
+    def _notional(x):
+        return (x.get("qty") or 0) * ((x.get("order") or {}).get("limit") or 0)
+
+    headroom = cash + pending_ce_sells - pending_buys
+    lev = {"cash": round(cash, 2), "pending_ce_sells": round(pending_ce_sells, 2), "resting_buys": round(pending_buys, 2),
+           "headroom_before": round(headroom, 2), "dropped_new": [], "cancel_resting": [], "user_resting_over": []}
+    new_buys = sorted([x for x in plan if x.get("action") == "BUY" and x.get("symbol") not in ("SGOV", "BIL")], key=_notional, reverse=True)
+    while new_buys and sum(_notional(x) for x in new_buys) > max(headroom, 0):
+        x = new_buys.pop(0)
+        plan.remove(x)
+        lev["dropped_new"].append({"symbol": x["symbol"], "rule": x["rule"], "usd": round(_notional(x))})
+        skip(x["symbol"], x["rule"], f"C7 無槓桿：新買單合計 > 可用現金 {max(headroom, 0):,.0f}（在掛買單已佔 {pending_buys:,.0f}）")
+    if headroom < 0:
+        resting = [(oid, o) for oid, o in (reg.get("orders") or {}).items()
+                   if o.get("state") == "ORDER-SUBMITTED" and o.get("transaction") == "B" and o.get("sec_type") == 1
+                   and o.get("symbol") not in ("SGOV", "BIL")]
+        is_sys = lambda o: (o.get("rule_ref") or "").split("-")[0] in LEV_SYSTEM_RULES  # noqa: E731
+        sys_rest = sorted([t for t in resting if is_sys(t[1])],
+                          key=lambda t: (t[1].get("shares") or 0) * (t[1].get("limit_price") or 0), reverse=True)
+        already = {x["order"]["id"] for x in plan if x.get("action") == "CANCEL"}
+        deficit = -headroom
+        for oid, o in sys_rest:
+            if deficit <= 0:
+                break
+            usd = (o.get("shares") or 0) * (o.get("limit_price") or 0)
+            if oid not in already:
+                plan.append({"rule": "C7-cancel", "symbol": o["symbol"], "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
+                             "basis": f"無槓桿硬線：在掛買單 {pending_buys:,.0f} > 現金 {cash + pending_ce_sells:,.0f}（缺 {deficit:,.0f}）→ 撤 {o.get('rule_ref')} 買單 ${usd:,.0f}", "after": []})
+                lev["cancel_resting"].append({"id": oid, "symbol": o["symbol"], "rule": o.get("rule_ref"), "usd": round(usd)})
+            deficit -= usd
+        if deficit > 0:
+            lev["user_resting_over"] = [{"id": oid, "symbol": o["symbol"], "usd": round((o.get("shares") or 0) * (o.get("limit_price") or 0))}
+                                        for oid, o in resting if not is_sys(o)]
+            lev["todo"] = f"🎯 系統買單撤完仍超過現金 {deficit:,.0f}：用戶自掛買單若全部成交會動用融資，請自行撤或縮"
+    lev["headroom_after"] = round(headroom + sum(c["usd"] for c in lev["cancel_resting"]), 2)
+    lev["rule"] = "在掛買單合計 + 當日新買單 ≤ 現金 + T+1 到位 SGOV 賣；永不借券商的錢"
+
     out = {"asof": today.isoformat(), "close_asof": closes.get("asof"), "pass": "preclose" if preclose else "close",
            "buffer": BUF, "mode": "dry-run" if not execute else "execute",
            "execute_unlock": EXECUTE_UNLOCK.isoformat(), "px_note": px_note,
-           "plan": plan, "skipped": skipped, "cash_gate": cash_gate, "buy_locked": buy_locked,
+           "plan": plan, "skipped": skipped, "cash_gate": cash_gate, "leverage_gate": lev, "buy_locked": buy_locked,
            "discipline": "T6.5 只執行本清單；新倉/加碼/選擇權開倉不在此；所有觸發以前一收盤判定（R17）"}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=2))

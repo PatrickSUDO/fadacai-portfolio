@@ -1182,8 +1182,15 @@ def cmd_snapshot_orders(args):
     added, updated = 0, 0
     for oid, entry in fresh.items():
         if oid in reg["orders"]:
-            reg["orders"][oid].update({"last_seen": seen, "state": entry["state"],
-                                       "filled": entry["filled"]})
+            # 券商回的是 ground truth：除了 last_seen/state/filled，也補齊/刷新 symbol、方向、股數、限價、sec_type
+            # （10/13 AMAT 案：先 register-order 再快照 → 登記簿只有 rule_ref 的空殼，guard/auto_exec 的在掛買單合計少算 $2,445；
+            #   XLE 案：用戶在 App 改限價，舊值 61.15 一直留著）。rule_ref / first_seen / placed 等登記欄位不動。
+            cur = reg["orders"][oid]
+            cur.update({"last_seen": seen, "state": entry["state"], "filled": entry["filled"]})
+            for k in ("symbol", "transaction", "shares", "limit_price", "avg_exe_price", "price_type",
+                      "duration_type", "sec_type", "order_id", "placed"):
+                if entry.get(k) is not None and (cur.get(k) is None or k in ("shares", "limit_price", "avg_exe_price", "duration_type")):
+                    cur[k] = entry[k]
             updated += 1
         else:
             reg["orders"][oid] = entry
