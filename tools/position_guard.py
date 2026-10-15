@@ -8,7 +8,7 @@
   C2  R8+R23 合計 30% runner 保底  C3 R14 窗內 R23 不 arm（2026-09-14）
   R16 樂透桶停損單缺口            R24 閒置現金 > $10k
   R28 a) R23 觸線區/減碼後 30 天禁加碼  b) 減碼後跌破成本 → 旗標  c) 單名累計虧損 ≥1.5% 帳戶 → forced 旗標
-  R29 a) 認列桶殘倉 <1.5% 不配名額  b) gate ≤ min(財報, 15 交易日)  c) 最弱兩檔（換手對象）
+  R29 a) 認列桶殘倉 <1.5% 不配名額（殘倉=減碼過；R14 窗內未減碼的 starter 豁免，2026-10-14）  b) gate ≤ min(財報, 15 交易日)  c) 最弱兩檔（換手對象）
   R30 加碼候選（買強：未實現>0 + revision up>down + 價>SMA50 + 權重<6%）
   R25 修訂 sleeve 帶 4–8% / ETF 自峰 −10% 減至 2% / 帳戶自 sleeve 建立後峰 −10% 賣半 / R8 梯級
   桶別缺口（roster.json 沒登記的持倉）  旗標一致性（旗標/警報/thesis 三方）
@@ -517,8 +517,16 @@ def build_state(*, sync_alerts=False):
         sec_ret = (mkt.get(sec_etf) or {}).get("ret90")
         rs90_sec = (mf["ret90"] - sec_ret) * 100 if (mf.get("ret90") is not None and sec_ret is not None) else None
         if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
+            # 2026-10-14 /trade-review §6：R29a 只管「殘倉」= R8/R23 減碼過的部位（cum_sold > 0）。
+            # 依 H10 以 ≤2% 起手、仍在 R14 30 天窗內且從未減碼的 starter 不是殘倉——HWM 9/21 / NET 9/23 /
+            # BE 9/30 三案都被 10 日時鐘逼成「補或清」（一清需 bypass R14、兩補買在殺盤週，α ≈ −$900），
+            # 這是 H10 ≤2% 起手 × R29a <1.5% × R14 30 天三條定義互咬，不是判斷錯。starter 補倉走登錄的
+            # 回檔/走強分支，不走時鐘；R14 窗過後仍 <1.5% 才回到殘倉條款。
+            is_starter = bool(r14_locked and cum_sold <= 0)
             ok_flag = [f for f in fl if f.get("deadline") and (dt.date.fromisoformat(f["deadline"]) - today).days <= R29_TAIL_CAL_DAYS]
-            if not ok_flag:
+            if is_starter:
+                why.append(f"R29a starter 豁免（R14 窗內、未減碼，{weight:.1f}% 補倉走分支不走 10 日時鐘）")
+            elif not ok_flag:
                 gaps.append(f"{sym}: R29a 認列桶殘倉 {weight:.1f}% < {R29_TAIL_PCT}% 不配名額 → 10 個交易日內補到 ≥{R29_REBUILD_PCT:g}%（thesis 確認且未 R28a 鎖）或清倉；開旗標 deadline ≤ {(today + dt.timedelta(days=R29_TAIL_CAL_DAYS)).isoformat()}")
         if bucket == "認列":
             cap_dl = today + dt.timedelta(days=R28_FLAG_MAX_CAL_DAYS)

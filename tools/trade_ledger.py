@@ -1230,11 +1230,17 @@ def cmd_ingest(args):
     # timeless copy by (date, symbol, side, qty, price) and upgrade it in place,
     # keeping its id — annotations and journal references point at that id.
     timeless = {_fill_key(f): fid for fid, f in existing.items() if not f.get("exec_time")}
+    # 2026-10-14: the broker also re-serialises qty/price across pulls (5 vs 5.0, 297.68 vs
+    # 297.680), so two pulls of the SAME timed fill hashed to different ids — 6 duplicate
+    # pairs 9/30–10/2 double-counted in `score`. Match timed fills by (exec_time + key) too.
+    timed = {(f.get("exec_time"),) + _fill_key(f): fid
+             for fid, f in existing.items() if f.get("exec_time")}
     added = merged = 0
     for rec in incoming:
         old_id = rec["id"]
         if old_id not in existing and rec.get("exec_time"):
-            old_id = timeless.pop(_fill_key(rec), None) or rec["id"]
+            old_id = (timed.get((rec["exec_time"],) + _fill_key(rec))
+                      or timeless.pop(_fill_key(rec), None) or rec["id"])
             if old_id != rec["id"]:
                 merged += 1
                 rec["id"] = old_id
