@@ -516,6 +516,7 @@ def build_state(*, sync_alerts=False):
         sec_etf = next((etf for etf, members in SECTOR_ETF.items() if sym in members), "SPY")
         sec_ret = (mkt.get(sec_etf) or {}).get("ret90")
         rs90_sec = (mf["ret90"] - sec_ret) * 100 if (mf.get("ret90") is not None and sec_ret is not None) else None
+        r29a_note = None
         if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
             # 2026-10-14 /trade-review §6：R29a 只管「殘倉」= R8/R23 減碼過的部位（cum_sold > 0）。
             # 依 H10 以 ≤2% 起手、仍在 R14 30 天窗內且從未減碼的 starter 不是殘倉——HWM 9/21 / NET 9/23 /
@@ -525,7 +526,7 @@ def build_state(*, sync_alerts=False):
             is_starter = bool(r14_locked and cum_sold <= 0)
             ok_flag = [f for f in fl if f.get("deadline") and (dt.date.fromisoformat(f["deadline"]) - today).days <= R29_TAIL_CAL_DAYS]
             if is_starter:
-                why.append(f"R29a starter 豁免（R14 窗內、未減碼，{weight:.1f}% 補倉走分支不走 10 日時鐘）")
+                r29a_note = f"R29a starter 豁免（R14 窗內、未減碼，{weight:.1f}% 補倉走分支不走 10 日時鐘）"
             elif not ok_flag:
                 gaps.append(f"{sym}: R29a 認列桶殘倉 {weight:.1f}% < {R29_TAIL_PCT}% 不配名額 → 10 個交易日內補到 ≥{R29_REBUILD_PCT:g}%（thesis 確認且未 R28a 鎖）或清倉；開旗標 deadline ≤ {(today + dt.timedelta(days=R29_TAIL_CAL_DAYS)).isoformat()}")
         if bucket == "認列":
@@ -590,6 +591,7 @@ def build_state(*, sync_alerts=False):
             "open_sell_orders": sells, "open_flags": [f["id"] for f in fl],
             "alerts": [a["id"] for a in al], "pending_theses": [t["id"] for t in th], "pair_due": pair_due,
             "next_earnings": e.get("next_date"), "earnings_days": earn_days, "in_earnings_window": in_earn_window,
+            "r29a_note": r29a_note,
         })
 
     # R30 候選排序：擠壓中的優先（63% 勝率），其次 EMA50 斜率；機器一次只掛一梯時先掛排前面的
