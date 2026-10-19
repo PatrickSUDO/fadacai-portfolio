@@ -71,6 +71,7 @@ R29_TAIL_PCT, R29_TAIL_CAL_DAYS, R29_REBUILD_PCT = 1.5, 14, 2.0
 R30_MAX_WEIGHT, R30_MAX_USD = 6.0, 3_000
 # R25 修訂（2026-09-14）：sleeve 目標 6%、帶 4–8%；ETF 自峰 −10% → 減至 4%；帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈；GLD/XLE 套 R8 梯級
 SLEEVE_TARGET, SLEEVE_LO, SLEEVE_HI, SLEEVE_ETF_DD, SLEEVE_ACCT_DD = 6.0, 4.0, 8.0, -10.0, -10.0
+SLEEVE_HALF_RESET_DD = -5.0  # 賣半期間解除：帳戶回升到 sleeve 建立後峰值 −5% 以內
 FUND = ROOT / "briefing-out" / "cache" / "fundamentals-snapshot.json"
 # H11（2026-09-17）：板塊相對 RS——軟體對 IGV、半導體/硬體對 SMH、其餘對 SPY；R29c 排序仍用 SPY，這欄只顯示與影子計分
 SECTOR_ETF = {"IGV": {"CRM", "CRWD", "PLTR", "TWLO", "DDOG", "SNPS", "NOW", "TEAM", "WDAY", "ZS", "NET", "SNOW", "MDB", "INTU", "ADBE", "PANW", "HUBS", "SHOP", "MSFT", "ORCL"},
@@ -695,16 +696,27 @@ def build_state(*, sync_alerts=False):
     ovr = _load_json(ROOT / "research" / "regime-overrides.json", {})
     sleeve_target = float(ovr.get("sleeve_target_pct") or SLEEVE_TARGET)
     sleeve_hi = max(SLEEVE_HI, sleeve_target + 2.0)
-    if sleeve_rows and sleeve_target > SLEEVE_TARGET and sleeve_w < sleeve_target - 0.5:
+    # 賣半期間（2026-10-19 修：10/16 同晚 SELL_HALF + BUY_TO 雙發，隔日帳戶回到 −9% 又全數買回）：
+    # 賣半後到帳戶回升至峰值 −5% 前，不補倉（BUY_TO／<4% 補回皆停）、不重複賣半；賣單沒成交（sleeve 仍 >80% 觸發時權重）才重發
+    ss_path = ROOT / "research" / "sleeve-state.json"
+    ss = _load_json(ss_path, {})
+    if ss.get("sell_half_date") and acct_dd is not None and acct_dd > SLEEVE_HALF_RESET_DD:
+        ss = {"last_reset": today.isoformat(), "prev_sell_half_date": ss["sell_half_date"]}
+        ss_path.write_text(json.dumps(ss, ensure_ascii=False, indent=1))
+    half_active = bool(ss.get("sell_half_date"))
+    if sleeve_rows and sleeve_target > SLEEVE_TARGET and sleeve_w < sleeve_target - 0.5 and not half_active:
         gaps.append(f"R25 規則 1 sleeve 目標 {sleeve_target:g}%（{ovr.get('reason','regime 覆寫')}）> 現 {sleeve_w:.1f}% → 分兩批補到 {sleeve_target:g}%（auto_exec G）")
         sleeve_actions.append({"symbol": "SLEEVE", "action": "BUY_TO", "target_weight_pct": sleeve_target, "why": ovr.get("reason", "regime 覆寫")})
     if sleeve_rows:
         if sleeve_w > sleeve_hi:
             gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% > {sleeve_hi:g}% 上緣 → 減回 {sleeve_target:g}%（賣出去 SGOV）")
             sleeve_actions.append({"symbol": "SLEEVE", "action": "TRIM_TO", "target_weight_pct": sleeve_target, "why": f"合計 {sleeve_w:.1f}% > {sleeve_hi:g}%"})
-        elif sleeve_w < SLEEVE_LO and sleeve_target <= SLEEVE_TARGET:
+        elif sleeve_w < SLEEVE_LO and sleeve_target <= SLEEVE_TARGET and not half_active:
             gaps.append(f"R25 修訂 sleeve 合計 {sleeve_w:.1f}% < {SLEEVE_LO:g}% 下緣 → 補回 {SLEEVE_TARGET:g}%（除非帳戶回撤觸發賣半中）")
-        if acct_dd is not None and acct_dd <= SLEEVE_ACCT_DD:
+        if acct_dd is not None and acct_dd <= SLEEVE_ACCT_DD and (not half_active or sleeve_w > 0.8 * (ss.get("sleeve_w_at_trigger") or 0)):
+            if not half_active:
+                ss_path.write_text(json.dumps({"sell_half_date": today.isoformat(), "sleeve_w_at_trigger": round(sleeve_w, 2),
+                                               "acct_dd_at_trigger": round(acct_dd, 1)}, ensure_ascii=False, indent=1))
             gaps.append(f"R25 修訂 帳戶自 sleeve 建立（{sleeve_since}）後峰值 ${acct_peak:,.0f} 回撤 {acct_dd:+.1f}% ≤ −10% → sleeve 賣一半換子彈（進 SGOV，redeploy 走飛輪）")
             sleeve_actions.append({"symbol": "SLEEVE", "action": "SELL_HALF", "why": f"帳戶自 sleeve 建立後峰值回撤 {acct_dd:+.1f}%"})
     # R20 撿回條目雙分支驗證（2026-09-14 程式化）：pending reentry-* 必含回檔與走強兩分支
@@ -771,7 +783,8 @@ def build_state(*, sync_alerts=False):
              "weakest_two": weakest_two, "add_candidates": add_candidates, "washout_candidates": washout_candidates,
              "rotation": rotation, "sector_gate": sector_gate,
              "sleeve": {"weight_pct": round(sleeve_w, 2), "since": sleeve_since, "acct_peak_since": acct_peak,
-                        "acct_dd_pct": round(acct_dd, 1) if acct_dd is not None else None, "actions": sleeve_actions}}
+                        "acct_dd_pct": round(acct_dd, 1) if acct_dd is not None else None, "actions": sleeve_actions,
+                        "sell_half_since": ss.get("sell_half_date")}}
 
     if sync_alerts:
         changed = _sync_r23_alerts(alerts, rows, today)
@@ -868,7 +881,8 @@ def render_table(state):
         lines += ["", "R30 加碼候選：無（條件＝未實現>0、30d revision up>down、價>SMA50、權重<6%、非 R28a 鎖、非財報窗）"]
     sl = state.get("sleeve") or {}
     if sl.get("since"):
-        lines += [f"sleeve {sl['weight_pct']:.1f}%（帶 4–8%）｜帳戶自 {sl['since']} 峰 ${sl['acct_peak_since'] or 0:,.0f} 回撤 {sl['acct_dd_pct']:+.1f}%（−10% 賣半換子彈）"]
+        lines += [f"sleeve {sl['weight_pct']:.1f}%（帶 4–8%）｜帳戶自 {sl['since']} 峰 ${sl['acct_peak_since'] or 0:,.0f} 回撤 {sl['acct_dd_pct']:+.1f}%（−10% 賣半換子彈）"
+                  + (f"｜賣半期間自 {sl['sell_half_since']}，回到 {SLEEVE_HALF_RESET_DD:g}% 以內前不補倉" if sl.get("sell_half_since") else "")]
     if state.get("sector_gate"):
         lines += ["", "**買方板塊閘門（R31）：** " + "；".join(
             f"{k} {v['last']} vs SMA50 {v['sma50']}（{v['ext_sma50_pct']:+.1f}%）→ {v['note']}" for k, v in state["sector_gate"].items())]
