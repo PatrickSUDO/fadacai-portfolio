@@ -4,7 +4,7 @@
 # 為什麼：review_due.py 9/14 起已在 30 天到期時直推 Telegram，但「提醒 → 有人開 session 跑」仍靠人；
 # 9/3 之後第 33 天才在 10/6 由用戶手動觸發。這支把最後一步交給 launchd，做法同 trade_review_runner.sh：
 #   到期（review_due.py portfolio-review 狀態 due/red）→ 美東盤中時窗 → claude -p "/portfolio-review" --model opus
-#   → 報告轉 HTML 推報告站 → Telegram 一則（§0 本期結論 + 網頁連結）
+#   → 報告轉 HTML 推報告站 → Telegram 一則（第 0 節 本期結論 + 網頁連結）
 # 失敗（登入失效 / 逾時 / 沒產出）也推 Telegram。
 #
 # 時間以美東為準（memory: feedback-schedule-us-eastern-time）：launchd 每 15 分鐘叫一次，本腳本自判

@@ -4,7 +4,7 @@
 # 為什麼：/trade-review 的到期提醒 9/14 起已由 review_due.py 直推 Telegram，但「提醒 → 有人開 session 跑」
 # 這一步仍靠人；9/29 是第 15 天才由用戶手動跑。這支把最後一步也交給 launchd：
 #   到期（review_due.py trade-review 狀態 due/red）→ claude -p "/trade-review" --model fable
-#   → 報告轉 HTML 推報告站 → Telegram 一則（§6 本期結論 + 網頁連結）
+#   → 報告轉 HTML 推報告站 → Telegram 一則（第 6 節 本期結論 + 網頁連結）
 # 失敗（登入失效 / 逾時 / 沒產出）也推 Telegram——這是兩週一次的工作，靜默失敗的代價是整期規則沒被計分。
 #
 # launchd：com.fadacai.trade-review（每日 09:30 本地 = 21:30 ET 前一日收盤後）；不到期直接退出，零成本。
@@ -48,15 +48,15 @@ notify_report() {   # $1 = report md path
   else
     log "generate_html rc=$rc（連結不附）"
   fi
-  # Telegram：標題 + §6 結論（去 markdown）+ 連結；≤3000 字元（telegram tier 同上限）
+  # Telegram：標題 + 第 6 節 結論（去 markdown）+ 連結；≤3000 字元（telegram tier 同上限）
   python3 - "$md" "$lint_line" "$url" <<'PY' | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 || log "tg_send failed (report)"
 import re, sys
 md, lint_line, url = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(md, encoding="utf-8").read()
 title = text.splitlines()[0].lstrip("# ").strip()
-# 2026-10-19 用戶：Telegram 推白話 §0（先讀這段）；舊報告沒有 §0 才退回 §6
+# 2026-10-19 用戶：Telegram 推白話 第 0 節（先讀這段）；舊報告沒有 第 0 節 才退回 第 6 節
 m = re.search(r"## 0\..*?(?=\n---|\n## |\Z)", text, re.S) or re.search(r"## 6\..*?(?=\n---|\n## |\Z)", text, re.S)
-sec6 = m.group(0) if m else "（找不到 §0/§6 結論段）"
+sec6 = m.group(0) if m else "（找不到 第 0 節/第 6 節 結論段）"
 sec6 = re.sub(r"^## [06]\.\s*", "", sec6.strip())
 sec6 = re.sub(r"\*\*(.+?)\*\*", r"\1", sec6)
 sec6 = re.sub(r"`([^`]*)`", r"\1", sec6)

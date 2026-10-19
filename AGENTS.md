@@ -7,6 +7,7 @@ This is an investment research and portfolio management workspace. The user acti
 - **All output in Traditional Chinese (繁體中文)**
 - Thread/social media posts: plain text only, NO markdown, NO tables
 - Reports and analysis: markdown tables are fine
+- **不用 § 符號**（2026-10-19 用戶）：章節引用一律寫「第 N 節」或直接寫段名（本期結論、附錄）
 
 ## Workflow
 1. `/briefing` — quick daily check (~1 min); `/briefing full` (~3 min); `/briefing deep` (~5 min)
@@ -15,7 +16,7 @@ This is an investment research and portfolio management workspace. The user acti
    - 例：`/briefing telegram --send`、`/briefing full --send`
    - launchd 每個交易日**美東 11:00**（盤中，開盤 90 分鐘後；A 窗失敗 → 美東 15:00 B 窗備援）自動執行 `/briefing telegram --send`（週五加 `--codex`）。**一律以美國時間為準（2026-09-30 用戶）**：launchd 每 5 分鐘叫一次、runner `export TZ=America/New_York` 自判時窗，Mac 在哪個時區都一樣；盤前 10:30 ET 前手動送的那份不擋 11:00 盤中窗；手動補發 `BRIEFING_FORCE=1 bash tools/briefing_runner.sh`。機械 pass（15:40–15:58 / 16:15–19:00 ET）、盤中防睡 `keep_awake_us.sh` 同理；runner 固定 `--model sonnet`（`BRIEFING_MODEL` 覆寫）、重試 5 次（2026-08-05 五修：API mid-stream 斷流連殺對策）。三次以上全滅 → 互動 session 手動 `/briefing telegram --send` 補發（dedup 防重複）
    - Setup 文件：`docs/briefing-auto-send.md`
-   - **今日待辦自動執行（T6.5，2026-09-08 用戶指定）**：`/briefing telegram` 產出的「今日待辦」中，屬於機械式清理/停損、SGOV 現金停泊、或 thesis 已確認的新倉/加碼，且觸發條件量化已達成、未被任何硬線（>10%集中/財報窗/R14鎖/檔數上限/`position_guard`缺口）擋下、且無 T5.5 跨日反轉旗標者，**直接下單，不再等用戶確認**——因為用戶可能不在電腦前。**金額上限 $3,000 只管新增曝險（新倉/加碼）；機械減碼/停損/平倉與 SGOV 停泊不設上限**（2026-09-14）。選擇權平倉（觸及開倉時寫死的管理線）可自動；開倉不自動。Telegram 訊息內以 `✅ 已自動執行` 標註（含單號），不符合條件的仍列 `🎯` 待辦。細則見 `.claude/skills/briefing/SKILL.md` Telegram Tier § T6.5；延伸自既有互動場景「警報先做再報」規則到無人值守場景
+   - **今日待辦自動執行（T6.5，2026-09-08 用戶指定）**：`/briefing telegram` 產出的「今日待辦」中，屬於機械式清理/停損、SGOV 現金停泊、或 thesis 已確認的新倉/加碼，且觸發條件量化已達成、未被任何硬線（>10%集中/財報窗/R14鎖/檔數上限/`position_guard`缺口）擋下、且無 T5.5 跨日反轉旗標者，**直接下單，不再等用戶確認**——因為用戶可能不在電腦前。**金額上限 $3,000 只管新增曝險（新倉/加碼）；機械減碼/停損/平倉與 SGOV 停泊不設上限**（2026-09-14）。選擇權平倉（觸及開倉時寫死的管理線）可自動；開倉不自動。Telegram 訊息內以 `✅ 已自動執行` 標註（含單號），不符合條件的仍列 `🎯` 待辦。細則見 `.claude/skills/briefing/SKILL.md` Telegram Tier T6.5 節；延伸自既有互動場景「警報先做再報」規則到無人值守場景
    - **防自圓其說雙保險（2026-09-08，同上用戶指定，不用 Codex 版）**：① **T5.5 跨日一致性檢查**——每日先讀前一交易日 telegram.txt，同一 ticker 的方向性判斷若無新數據支持卻反轉/升降級，標旗且對 T6.5 自動下單構成硬性攔阻；② **T6.5 執行後強制留痕**——每筆自動下單同時登錄一筆到期會被機械驗收的 `thesis_ledger` 條目（含具體證偽點），到期由既有 Step 0.7 `due` 機制自動驗收，不靠事後記憶
 2. `/portfolio-review` — full deep report with live data via MCP
    - **無人值守（2026-10-06 用戶指定）**：launchd `com.fadacai.portfolio-review` 每 15 分鐘叫 `tools/portfolio_review_runner.sh`，`review_due.py` 判到期（>30 天）+ 美東平日 11:30–15:00 盤中才跑 `--model opus`（一天一次、失敗隔天重試）→ HTML 推報告站 → Telegram（報告首段 `## 0. 本期結論` + 連結）；失敗也推。手動 `--force` / `--notify-only <md>`
@@ -25,7 +26,7 @@ This is an investment research and portfolio management workspace. The user acti
 6. `/mcp-health` — test all MCP server connections
 7. `/event-vol-scan [days] [TICKER ...]` — 財報/CPI/FOMC 前末日 buy call / 雙買 straddle 機會掃描（引擎 `tools/event_vol_scan.py`；賣方策略不適用、仍守財報 ±48h 禁令）
 8. `/trade-review [2w|4w|since YYYY-MM-DD]` — **每兩週交易檢討（自我進化引擎）**：歸因每筆成交是「系統決策」還是「脫離 plan 的自主決策」，算**三個並列指標**、驗影子訊號、更新 `feedback/RULES-LEDGER.md` 規則命中率，輸出「本期該改哪一條規則」。引擎 `tools/trade_ledger.py`；briefing 距上次 >14 天會提醒。**每期加跑帳戶級四指標**（期間報酬/CAGR/MDD/Sharpe + profit factor）：`tools/account_metrics.py scan && report --live <即時總值>`（淨值標記刮自 journal/briefing 快照，2026-06-01 起；FIFO 已實現含選擇權）
-   - **無人值守（2026-09-29 用戶指定）**：launchd `com.fadacai.trade-review` 每日 09:30 本地跑 `tools/trade_review_runner.sh`——`review_due.py` 判 trade-review 到期（>14 天）才執行 `claude -p "/trade-review" --model fable`，產出 → `generate_html trade-review` 推報告站 → Telegram 一則（§6 本期結論 + 網頁連結）；登入失效／逾時／無產出也推 Telegram（兩週一次的工作不准靜默失敗）。手動：`--force` 忽略到期、`--notify-only <md>` 只做 HTML + 推送。log `briefing-out/trade-review-runner.log`
+   - **無人值守（2026-09-29 用戶指定）**：launchd `com.fadacai.trade-review` 每日 09:30 本地跑 `tools/trade_review_runner.sh`——`review_due.py` 判 trade-review 到期（>14 天）才執行 `claude -p "/trade-review" --model fable`，產出 → `generate_html trade-review` 推報告站 → Telegram 一則（第 6 節 本期結論 + 網頁連結）；登入失效／逾時／無產出也推 Telegram（兩週一次的工作不准靜默失敗）。手動：`--force` 忽略到期、`--notify-only <md>` 只做 HTML + 推送。log `briefing-out/trade-review-runner.log`
    - **交易 α**（`score`）：進出對不對。β 對**實際使用的基準回歸**算（半導體對 SMH、其餘對 SPY）——用券商 β（對大盤測）套 SMH 會嚴重過度調整，結論會反過來
    - **持有 α**（`holding-alpha`）：該不該繼續抱。滾動窗 + 建倉至今。**沒有這項，純交易指標會獎勵頻繁進出、把「抱對」記為零貢獻**；首測持有 α 量級大於交易 α
    - **beta capture**（`beta-capture`）：行情好的時候吃到沒有。拆基準上漲/下跌日各自回歸 β；**up-β < down-β = 漲不上跌得凶**。梯級停利 + 買梯會機械性壓低 up-capture，這是純 α 看不見的成本
@@ -72,7 +73,7 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 ## Key Files
 - `plan.md` — **狀態版（2026-09-02 重建）**：三條硬線 + 持倉表生成區（`tools/position_guard.py --render-plan` 自動寫入，禁手改）+ 唯一一張候補表 + R19 pair 追蹤。手改只限候補表與硬線，且只在用戶要求時。歷史決策全文 `research/plan-history.md`（凍結）
 - `research/roster.json` — **桶別唯一資料源**（信念/認列/sleeve/樂透）；每檔持倉必須登記，否則 guard 報缺口；改桶別改這裡不改散文
-- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期、**C2 R8+R23 合計 30% runner 保底、R16 樂透停損缺口、R24 閒置現金、R28（R23 觸線區/減碼後 30 天禁加碼 `buy_locked`／減碼後跌破成本殘倉須旗標／單名累計虧損 ≥1.5% 帳戶 forced 旗標，2026-09-14 CRDO 案）**、**R29 認列桶機動性（殘倉 <1.5% 不配名額／gate ≤ min(財報,15 交易日)／`weakest_two` 換手只換最弱兩檔／**d) 節奏輪動：`research/bench.json` 候補綜合分連 10 日勝最弱在倉 ≥15 分且距上次換手 ≥14 天 → 換一檔，兩週最多一檔，出場 60 天內門檻加倍**，2026-09-17）、R30 買強 `add_candidates`（未實現>0 + revision up>down + 價>SMA50 + 權重<6% → 回檔 SMA20 GTC ≤$3k）、R25 修訂 sleeve 帶 4–8% + 帳戶自 sleeve 建立後峰 −10% 賣半換子彈（`feedback/harvest-bucket-mobility.md`、`hedge-sleeve.md` §7）** → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
+- `tools/position_guard.py` — **持倉守門**（briefing Step 0.75 / trade-review 5.5 每次跑）：Firstrade live 持倉 → R14 天數、R23 arm/線/警報自動掛撤、R8 GTC 缺口、>10% 硬線、檔數上限、財報窗、桶別缺口、旗標逾期、**C2 R8+R23 合計 30% runner 保底、R16 樂透停損缺口、R24 閒置現金、R28（R23 觸線區/減碼後 30 天禁加碼 `buy_locked`／減碼後跌破成本殘倉須旗標／單名累計虧損 ≥1.5% 帳戶 forced 旗標，2026-09-14 CRDO 案）**、**R29 認列桶機動性（殘倉 <1.5% 不配名額／gate ≤ min(財報,15 交易日)／`weakest_two` 換手只換最弱兩檔／**d) 節奏輪動：`research/bench.json` 候補綜合分連 10 日勝最弱在倉 ≥15 分且距上次換手 ≥14 天 → 換一檔，兩週最多一檔，出場 60 天內門檻加倍**，2026-09-17）、R30 買強 `add_candidates`（未實現>0 + revision up>down + 價>SMA50 + 權重<6% → 回檔 SMA20 GTC ≤$3k）、R25 修訂 sleeve 帶 4–8% + 帳戶自 sleeve 建立後峰 −10% 賣半換子彈（`feedback/harvest-bucket-mobility.md`、`hedge-sleeve.md` 第 7 節）** → `research/position-state.json` + plan.md 標記區；exit 2 = 有缺口，逐條進 Key Alerts
 - `journal/` — 每日交易日誌（YYYY-MM-DD.md），含完整倉位快照
 - `feedback/` — 交易風格偏好，所有 skills 每次必讀
 - `feedback/RULES-LEDGER.md` — **規則自己的命中率帳本**（失效 ≥2 次 → 強制覆審）；由 `/trade-review` 每兩週更新；巧合欄與一致性檢查 `tools/rule_stats.py ledger-audit [--write|--check]`，產出檢查 `tools/review_lint.py`，判準 `feedback/skill-vs-luck.md`（R26 放棄條件 2028-09-06 裁決）
@@ -96,7 +97,7 @@ codex exec --color never --skip-git-repo-check --sandbox read-only \
 - `research/source-config.json` — **來源信用系統：私有來源白名單 + X 抓取配置 + 計分門檻**（gitignore，schema 範例見 `docs/source-config.example.json`）。`platform ∈ x|substack|rss|podcast|manual`；`kind ∈ fact|view`；`tier` 只由 `tools/source_credit.py tiers` 機械寫回，不手改。**`bias: talks-book` + `agenda_check.sec_cik`（2026-09-16，@BillAckman）**：該來源的主張引用前必對照 `tools/agenda_check.py` 抓的最新 13F 前 N 大持倉（cache `briefing-out/cache/agenda-13f.json`，TTL 7 天），觀點與持倉同向 → 標 agenda 不當獨立訊號；`--claim "<文字>" --source <id>` 可粗配
 - `research/source-credit.jsonl` — **來源信用帳**：每則可計分主張的登錄與驗收記錄（gitignore）。工具 `tools/source_credit.py add-claim/due/resolve/resolve-due/stats/tiers/list`；fact 型主張只列不猜、人工核對官方數字；view 型到期自動用價格驗價（同 `shadow_signals.py` 邏輯）。**所有 tier display-only**，驗滿 ≥2 期 `/trade-review` 且 Trusted+ hit_rate≥65%/mean lead>0 才可升硬閘門（R21，見 `feedback/RULES-LEDGER.md`）。細節見 `docs/source-credit.md`
 - `research/sa-quant-scans/` + `briefing-out/cache/sa-screener-delta.json` — **SA 量化榜**：`tools/fetch_sa_quant.py --refresh` 用 `.env SA_COOKIE` 經 `/api/v3/screeners/<id>` + `/api/v3/screener_results` 自動抓兩張自訂 screener 成員（2026-10-07 逆向，取代手貼），`briefing_runner` 每週一刷新 strong-buy、delta 進 briefing Key Alerts（📈 新進 display-only → L2 候選）；月度全掃 `review_due` 35 天提醒。SA quant 排名是價格落後指標（SNPS/CLS 兩案）只當 confirm；cookie 約 3–4 週過期，過期時 Chrome 登入態讀頁面為備援
-- `briefing-out/cache/twitter-signals.json` — **來源訊號快照**（TTL 20h）。工具 `tools/fetch_twitter.py`（X API v2，按量計費，`max_reads_per_run` 硬上限，成本估算見 `docs/source-credit.md`），briefing_runner 每日預載、archive_cache 凍結。Probation tier 僅 briefing §9.6 陳列，Trusted+ 才可進 Key Alerts / Telegram
+- `briefing-out/cache/twitter-signals.json` — **來源訊號快照**（TTL 20h）。工具 `tools/fetch_twitter.py`（X API v2，按量計費，`max_reads_per_run` 硬上限，成本估算見 `docs/source-credit.md`），briefing_runner 每日預載、archive_cache 凍結。Probation tier 僅 briefing 第 9.6 節 陳列，Trusted+ 才可進 Key Alerts / Telegram
 
 ### 模型版本記錄（因應模型換代）
 新規則寫入 `feedback/RULES-LEDGER.md` 時填 `作者` 欄；`/trade-review` 補正歸因時帶 `--model` / `--effort`。
@@ -336,7 +337,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
   python3 tools/fmp_query.py <toolName> [--args '<json>']
   ```
   例：`python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`（無參數工具省略 --args）。結果直接是 JSON。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
-- **FMP 免費層實測清單（2026-07-28 全面掃描）**：✅ 可用 — `getTreasuryRates`（全曲線）、`getHistoricalIndustryPE`/`getIndustryPESnapshot`（行業 PE 日頻，`fetch_leading.py` 半導體估值溫度計用）、`getSectorPESnapshot`、`getSectorPerformanceSnapshot`、`getAftermarketQuote`（盤前盤後報價）、`getShareFloat`、`getDividendsCalendar`、`getIndexQuote`（^VIX 可、^VIX3M 402）、加上原有 peers/movers/profile/earnings-calendar。❌ 402 — transcripts、COT、Senate/House trades、stock news、press releases、analyst estimates、grades、price targets、financial scores、economic calendar、SP500 constituents、insider stats（**§9.5 逐字稿改走 SEC 8-K exhibit**）
+- **FMP 免費層實測清單（2026-07-28 全面掃描）**：✅ 可用 — `getTreasuryRates`（全曲線）、`getHistoricalIndustryPE`/`getIndustryPESnapshot`（行業 PE 日頻，`fetch_leading.py` 半導體估值溫度計用）、`getSectorPESnapshot`、`getSectorPerformanceSnapshot`、`getAftermarketQuote`（盤前盤後報價）、`getShareFloat`、`getDividendsCalendar`、`getIndexQuote`（^VIX 可、^VIX3M 402）、加上原有 peers/movers/profile/earnings-calendar。❌ 402 — transcripts、COT、Senate/House trades、stock news、press releases、analyst estimates、grades、price targets、financial scores、economic calendar、SP500 constituents、insider stats（**第 9.5 節 逐字稿改走 SEC 8-K exhibit**）
 
 ## Research Boundaries
 - 不主動研究用戶未要求的付費 API/服務

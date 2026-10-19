@@ -26,8 +26,8 @@ REQUIRED = [
     (r"in_range|分布外|分布內", "EV 校準：in_range"),
     (r"R26", "R26 兩指標走向（BSS / holding-α vs SMH）"),
     (r"ledger-audit|巧合", "RULES-LEDGER 巧合欄 / ledger-audit 已跑"),
-    (r"## 6\.|該改哪一條規則", "§6 本期結論"),
-    (r"## 0\.", "§0 本期結論（白話，先讀這段；2026-10-19 用戶）"),
+    (r"## 6\.|該改哪一條規則", "第 6 節 本期結論"),
+    (r"## 0\.", "第 0 節 本期結論（白話，先讀這段；2026-10-19 用戶）"),
     (r"## 附錄", "附錄：計算過程（2026-10-19 用戶：計算不進正文）"),
 ]
 
@@ -43,17 +43,17 @@ def lint(path: Path) -> list[str]:
         sec5 = m.group(0)
         scored = re.search(r"\+\s*命中|\+\s*失效|命中 \+|失效 \+", sec5)
         if scored and not re.search(r"\[(up|down)\]", sec5):
-            problems.append("§5 有計分但無 [up]/[down] regime 標籤")
+            problems.append("第 5 節 有計分但無 [up]/[down] regime 標籤")
         if not scored and "本期無計分" not in sec5:
-            problems.append("§5 無計分卻未寫「本期無計分」")
+            problems.append("第 5 節 無計分卻未寫「本期無計分」")
 
     m = re.search(r"## 6\..*", text, re.S)
     if m:
         n = len(re.findall(r"\*\*規則：\*\*", m.group(0)))
         if n == 0:
-            problems.append("§6 沒有「**規則：**」結論")
+            problems.append("第 6 節 沒有「**規則：**」結論")
         elif n > 2:
-            problems.append(f"§6 有 {n} 條結論（最多 2）")
+            problems.append(f"第 6 節 有 {n} 條結論（最多 2）")
 
     dm = REPORT_RE.search(str(path))
     if dm:

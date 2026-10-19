@@ -89,7 +89,7 @@ DRY_RUN=1 python3 tools/fetch_leading.py --force                  # 只列計畫
 
 ## 消費點
 
-- briefing Step 0.55 載入 + 🚦 一行儀表（全 tier）；Section 4.6 財報 Cross-Read；Section 6 Key Alerts 的 regime-break / 台股轉負 / book_decel 旗標；§9.5 pricing excerpt 作 raw_quote 來源；Telegram T8a/T8b 🚦 區塊
+- briefing Step 0.55 載入 + 🚦 一行儀表（全 tier）；Section 4.6 財報 Cross-Read；Section 6 Key Alerts 的 regime-break / 台股轉負 / book_decel 旗標；第 9.5 節 pricing excerpt 作 raw_quote 來源；Telegram T8a/T8b 🚦 區塊
 - portfolio-review Step 0.5 + Section F
 
 ## 注意事項

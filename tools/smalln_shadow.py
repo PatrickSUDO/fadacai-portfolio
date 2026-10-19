@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """smalln_shadow.py — 小覆蓋名字（分析師 <8 家）revision 訊號被門檻擋下的影子帳（H13，2026-10-08 用戶採用）
 
-Why：規則「<8 家不單獨觸發加減碼」（momentum-valuation-symmetry.md §6）2026-07-01 補上時沒有結構化案例。
+Why：規則「<8 家不單獨觸發加減碼」（momentum-valuation-symmetry.md 第 6 節）2026-07-01 補上時沒有結構化案例。
 2026-10-08 兩個切片的實測（archive 52 天 54 檔；SA 榜 83 檔首次進榜）都顯示 7–10 月小 N 名字跟著上修訊號做
 是負貢獻（<8 家：20 日對 SPY 命中 25–29%、平均 −4% ~ −10%），但樣本小、單一 regime（大型股集中的估值壓縮期）。
 用戶問「這樣會不會錯過」——答案是把「錯過」變成可計分的東西：凡小 N 名字出現「上修家數 > 下修」或
@@ -41,7 +41,7 @@ N_CACHE = CACHE / "analyst-n.json"
 SUMMARY = CACHE / "smalln-shadow.json"
 SNAP = CACHE / "fundamentals-snapshot.json"
 LEADING = CACHE / "leading-indicators.json"
-SMALL_N = 8            # 規則門檻（momentum-valuation-symmetry.md §6）
+SMALL_N = 8            # 規則門檻（momentum-valuation-symmetry.md 第 6 節）
 PCT_MIN = 5.0          # 共識 EPS 30 日變動 ≥ +5% 也算上修訊號（不看家數）
 DEDUP_DAYS = 30
 N_TTL_DAYS = 7

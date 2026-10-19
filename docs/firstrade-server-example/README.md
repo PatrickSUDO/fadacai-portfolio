@@ -15,4 +15,4 @@ claude mcp add firstrade-server -- uv --directory $(pwd) run server.py
 
 **工具**：`get_account_position` / `get_account_balance` / `get_account_history` / `get_single_quote` / `get_watchlist_quote`
 
-session 過期（~30 天）→ 重跑 `ft_setup.py`。細節見 `../setup-troubleshooting.md §3`。
+session 過期（~30 天）→ 重跑 `ft_setup.py`。細節見 `../setup-troubleshooting.md 第 3 節`。

@@ -163,7 +163,7 @@ python3 tools/ev_ledger.py resolve-due && python3 tools/ev_ledger.py stats
 - **n<30 的分組只記錄方向，不改規則**；相關樣本（同跨一段行情的多筆）算一筆證據，不按筆數計
 - 系統性偏差確立（如「30-60d 一致過度樂觀」連兩期同向）→ 修正對象是 **probability-honesty-checker 的形狀規則表 / 各 skill prompt**，寫入 `RULES-LEDGER` 帶命中率追蹤 — **不建 ML 模型**（n>150 獨立已解決樣本前不重評，見 AGENTS.md）
 - Goodhart 警戒：校準變好但分布變窄（永遠給 hedged 分布）= 假改善，對照分布寬度一起看
-- `stats` 的四項——獨立 n、Brier skill score（>0 才是技能）、`in_range`（分布外 = 漏分支非運氣）、thesis × 定價 2×2（「對但沒用」= priced-in 候選）——原樣抄進報告 §4，`review_lint.py` 會查
+- `stats` 的四項——獨立 n、Brier skill score（>0 才是技能）、`in_range`（分布外 = 漏分支非運氣）、thesis × 定價 2×2（「對但沒用」= priced-in 候選）——原樣抄進報告 第 4 節，`review_lint.py` 會查
 - **priced_in_pct 三分位**（2026-09-14 起 `stats` 自帶）：高三分位 realized<EV 比例是否顯著高於低三分位；n<30 只記方向。連兩期同向且差距 ≥20pp → 才討論把 priced_in 納入 probability-honesty-checker 的形狀規則表（display-only 直到那時）
 
 **4a. A4 高估旗標（影子模式，Phase 1 只記錄不阻擋）**
@@ -236,7 +236,7 @@ python3 tools/source_credit.py tiers --dry-run
 - **backtest_share > 0.8** → 標「僅回測」，實盤期樣本不足前不當已驗證命中率
 - **noise**（`vague_ratio > 0.7` 且 `n_total ≥ 5`）→ 建議該來源 `disable`（連續講不可驗證的模糊主張）
 - **tier 只抄 `tiers --dry-run` 輸出**，不手改 `research/source-config.json`；抽查認可後才拿掉 `--dry-run` 套用
-- **R21 升級條件**（display-only → 可作硬閘門輸入）：連續 **2 期** `/trade-review` 內，Trusted+ 來源 `hit_rate ≥ 0.65` 且 `mean_lead_time_days > 0`（真的有領先，不是巧合追認）才討論升級；未達標維持 §9.6 display-only
+- **R21 升級條件**（display-only → 可作硬閘門輸入）：連續 **2 期** `/trade-review` 內，Trusted+ 來源 `hit_rate ≥ 0.65` 且 `mean_lead_time_days > 0`（真的有領先，不是巧合追認）才討論升級；未達標維持 第 9.6 節 display-only
 
 ## Step 5 — 更新規則命中率帳本
 
@@ -307,10 +307,10 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 **改法：** [具體修改，或「證據不足，繼續觀察 N 期」]
 
 ## 附錄：計算過程
-[§2 的 β 回歸、持有 α、beta capture 的逐筆/逐檔數字；§4 影子計分明細；account_metrics / rule_stats / ev_ledger 原始輸出；agent 計算日誌。正文只引結論與一兩個關鍵數字，細節全部在這裡]
+[第 2 節 的 β 回歸、持有 α、beta capture 的逐筆/逐檔數字；第 4 節 影子計分明細；account_metrics / rule_stats / ev_ledger 原始輸出；agent 計算日誌。正文只引結論與一兩個關鍵數字，細節全部在這裡]
 ```
 
-**語句紀律（2026-10-19 用戶）**：§0 與 §6 用白話、一句一意、先講結論再講數字；代號（R23/H10/α）首次出現附一句中文；統計量先講「它代表什麼」再給數字。計算過程一律進附錄，正文不放公式與逐筆表。Telegram 推的是 §0。
+**語句紀律（2026-10-19 用戶）**：第 0 節 與 第 6 節 用白話、一句一意、先講結論再講數字；代號（R23/H10/α）首次出現附一句中文；統計量先講「它代表什麼」再給數字。計算過程一律進附錄，正文不放公式與逐筆表。Telegram 推的是 第 0 節。
 
 **最後一節只准寫一條**（最多兩條）。列十條等於沒有結論。
 
@@ -319,7 +319,7 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 1. 更新 `research/last-trade-review.txt` 為今日日期（briefing 讀它算到期提醒）
 2. `python3 tools/review_lint.py briefing-out/trade-review-YYYY-MM-DD.md` **必 exit 0**（缺段 / 結論 >2 條 / 收尾沒做都會擋；擋了就補，不改 lint。寫入報告時 PostToolUse hook 會自動先跑一次，這裡再跑是確認 last-trade-review 已更新）
 3. 若改動了任何 `.claude/skills/` 或 AGENTS.md → `python3 tools/sync_agents_skills.py`
-4. **commit + push**（用戶 2026-09-14 自主範圍：不問）。無人值守時 `tools/trade_review_runner.sh` 會接手做 HTML + Telegram（§0 白話結論 + 連結；無 §0 才退回 §6）；互動 session 跑完也可 `bash tools/trade_review_runner.sh --notify-only briefing-out/trade-review-YYYY-MM-DD.md` 推一則
+4. **commit + push**（用戶 2026-09-14 自主範圍：不問）。無人值守時 `tools/trade_review_runner.sh` 會接手做 HTML + Telegram（第 0 節 白話結論 + 連結；無 第 0 節 才退回 第 6 節）；互動 session 跑完也可 `bash tools/trade_review_runner.sh --notify-only briefing-out/trade-review-YYYY-MM-DD.md` 推一則
 
 ## 無人值守（2026-09-29）
 

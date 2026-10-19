@@ -518,7 +518,7 @@ def build_state(*, sync_alerts=False):
         rs90_sec = (mf["ret90"] - sec_ret) * 100 if (mf.get("ret90") is not None and sec_ret is not None) else None
         r29a_note = None
         if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
-            # 2026-10-14 /trade-review §6：R29a 只管「殘倉」= R8/R23 減碼過的部位（cum_sold > 0）。
+            # 2026-10-14 /trade-review 第 6 節：R29a 只管「殘倉」= R8/R23 減碼過的部位（cum_sold > 0）。
             # 依 H10 以 ≤2% 起手、仍在 R14 30 天窗內且從未減碼的 starter 不是殘倉——HWM 9/21 / NET 9/23 /
             # BE 9/30 三案都被 10 日時鐘逼成「補或清」（一清需 bypass R14、兩補買在殺盤週，α ≈ −$900），
             # 這是 H10 ≤2% 起手 × R29a <1.5% × R14 30 天三條定義互咬，不是判斷錯。starter 補倉走登錄的

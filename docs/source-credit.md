@@ -37,9 +37,9 @@ tools/archive_cache.py          ← twitter-signals.json 併入每日凍結快�
 
 | Skill | 消費點 |
 |---|---|
-| `/briefing` | Step 0.68（Load cache）、Step 0.7 2b（facts_due 驗收）、§9.5 3c（訊號擷取管道）、Section 6 Key Alerts 🐦 行、§9.6（Deep tier 陳列表，僅此處可見 Probation）、Telegram T3.5/T8a/T8b |
+| `/briefing` | Step 0.68（Load cache）、Step 0.7 2b（facts_due 驗收）、第 9.5 節 3c（訊號擷取管道）、Section 6 Key Alerts 🐦 行、第 9.6 節（Deep tier 陳列表，僅此處可見 Probation）、Telegram T3.5/T8a/T8b |
 | `/trade-review` | 4d（`resolve-due && stats && tiers --dry-run`，判讀信用帳 + R21 升級門檻） |
-| `/stock-analysis` | §4b 訊號擷取來源管道第 5 項 |
+| `/stock-analysis` | 第 4b 節 訊號擷取來源管道第 5 項 |
 
 ## 資料模型
 
@@ -139,8 +139,8 @@ tools/archive_cache.py          ← twitter-signals.json 併入每日凍結快�
 
 | Tier | 可出現位置 | 可作用途 |
 |---|---|---|
-| **Probation** | 僅 briefing §9.6（Deep tier 陳列表） | 不得作任何 prior、不得進 Key Alerts / Telegram |
-| **Trusted** | Key Alerts 🐦 行、Telegram T3.5/T8a/T8b、§9.5 3c 訊號擷取 | medium confidence prior |
+| **Probation** | 僅 briefing 第 9.6 節（Deep tier 陳列表） | 不得作任何 prior、不得進 Key Alerts / Telegram |
+| **Trusted** | Key Alerts 🐦 行、Telegram T3.5/T8a/T8b、第 9.5 節 3c 訊號擷取 | medium confidence prior |
 | **Core** | 同 Trusted，額外可提試單候選背景 | 仍須過 R14 持有期閘 / R15 回檔熔斷 / R18 財報窗禁令等既有硬閘門，不繞過 |
 
 **升級為可作硬閘門輸入的條件（R21，見 `feedback/RULES-LEDGER.md`）**：連續 **2 期** `/trade-review` 內，Trusted+ 來源 `hit_rate ≥ 0.65` 且 `mean_lead_time_days > 0`（真的有領先，不是巧合追認）。未達標前，所有 tier 皆維持 display-only。
@@ -294,9 +294,9 @@ x.com/search?q=("kw1" OR "kw2") <公司> since:<確認日−45天> until:<確認
 
 ## 消費點（各 skill 的引用位置）
 
-- `/briefing` Step 0.68（cache 讀取與紀律）、Step 0.7 `2b`（facts_due 人工驗收）、§9.5 `3c`（訊號擷取管道，含 `--ev` provenance 格式 `src=<source_id>@<tier>, claim=<id>`）、Section 6 Key Alerts 🐦 行（Trusted+ only）、§9.6（Deep tier，唯一可見 Probation 的陳列位置）、Telegram T3.5/T8a/T8b
+- `/briefing` Step 0.68（cache 讀取與紀律）、Step 0.7 `2b`（facts_due 人工驗收）、第 9.5 節 `3c`（訊號擷取管道，含 `--ev` provenance 格式 `src=<source_id>@<tier>, claim=<id>`）、Section 6 Key Alerts 🐦 行（Trusted+ only）、第 9.6 節（Deep tier，唯一可見 Probation 的陳列位置）、Telegram T3.5/T8a/T8b
 - `/trade-review` 4d（`resolve-due && stats && tiers --dry-run`，判讀 n<3/backtest_share/noise，R21 升級門檻檢查）
-- `/stock-analysis` §4b 訊號擷取來源管道第 5 項
+- `/stock-analysis` 第 4b 節 訊號擷取來源管道第 5 項
 
 ## 已知限制
 
@@ -313,5 +313,5 @@ x.com/search?q=("kw1" OR "kw2") <公司> since:<確認日−45天> until:<確認
 
 - 來源設定加 `bias: "talks-book"` 與 `agenda_check: {sec_cik, form: "13F-HR"}`（billackman：CIK 1336528）。
 - `tools/agenda_check.py` 抓 EDGAR 最新 13F-HR infotable → 前 12 大持倉（含 put/call 標記）→ `briefing-out/cache/agenda-13f.json`，TTL 7 天，runner 預載。`--claim "<文字>" --source billackman` 粗配主張與持倉（點名持倉 / 看空且有 put / 無關）。
-- 引用規則：briefing §9.6 陳列其主張必附一行 13F 對照；`add-claim --note agenda=same|none`；`/trade-review` 4d 看命中率時分「同向」「無關」兩組——**同向組命中率高不算預測力，算 agenda 揭露**，不得升 tier 依據。
+- 引用規則：briefing 第 9.6 節 陳列其主張必附一行 13F 對照；`add-claim --note agenda=same|none`；`/trade-review` 4d 看命中率時分「同向」「無關」兩組——**同向組命中率高不算預測力，算 agenda 揭露**，不得升 tier 依據。
 - 限制：13F 有 45 天延遲、不含空單與多數衍生品，只看得到多頭現貨與 put/call 選擇權；「看空言論 + 13F 無 put」不能證明沒部位。

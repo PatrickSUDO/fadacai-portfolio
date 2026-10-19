@@ -61,7 +61,7 @@ claude mcp add fmp-mcp --env FMP_API_KEY=xxxx -- node /path/to/fmp-mcp/dist/inde
 
 > 缺任一 server 不會讓整個框架失效——`/mcp-health` 會標出不可用者，skills 內建 retry → 健康檢查 → WebSearch fallback。
 >
-> macOS 上安裝 Python 套件別用 `pip3`（會撞 PEP 668），一律用 `uv`/`uvx`；`fmp-mcp` 建議跑成常駐 HTTP server 而非 stdio（見 `setup-troubleshooting.md` §2）；子代理拿不到 project-scope 的 MCP 時，改用專案根目錄的 `.mcp.json`（範本 `.mcp.json.example`）。
+> macOS 上安裝 Python 套件別用 `pip3`（會撞 PEP 668），一律用 `uv`/`uvx`；`fmp-mcp` 建議跑成常駐 HTTP server 而非 stdio（見 `setup-troubleshooting.md` 第 2 節）；子代理拿不到 project-scope 的 MCP 時，改用專案根目錄的 `.mcp.json`（範本 `.mcp.json.example`）。
 
 ### MCP Servers 功能一覽
 
