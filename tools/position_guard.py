@@ -752,7 +752,7 @@ def build_state(*, sync_alerts=False):
     #   證據（9/1–10/14 十二筆買進）：SMH 在 SMA50 下方 4–6% 時買的 TWLO/AMD +$987；上方 4–11% 時買的 NET/PWR/AMAT/BE/DIOD −$1,999。
     #   只擋「新曝險的走強分支」，不碰賣方規則、不碰回檔分支。
     sector_gate = {}
-    for etf in ("SMH", "SPY"):
+    for etf in ("SMH", "SPY", "IGV"):   # 軟體名字的板塊 ETF 是 IGV（SECTOR_ETF）
         g = mkt.get(etf) or {}
         if g.get("last") and g.get("sma50"):
             ext = (g["last"] / g["sma50"] - 1) * 100
