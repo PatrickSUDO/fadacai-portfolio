@@ -34,6 +34,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+R31_EXT_PCT = 5.0   # R31（2026-10-19 用戶）：板塊 ETF 收盤高於 SMA50 ≥5% → 走強分支關，只准回檔 GTC
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
@@ -550,7 +551,7 @@ def build_state(*, sync_alerts=False):
                   and not buy_lock and not in_earn_window)
         if add_ok:
             room = min(R30_MAX_USD, (R30_MAX_WEIGHT - weight) / 100 * total) if total else R30_MAX_USD
-            add_candidates.append({"symbol": sym, "bucket": bucket, "weight_pct": round(weight, 2), "unrealized_pct": round(unreal, 1),
+            add_candidates.append({"symbol": sym, "bucket": bucket, "sector_etf": sec_etf, "weight_pct": round(weight, 2), "unrealized_pct": round(unreal, 1),
                                    "ema50_slope5_pct": round(mf["ema50_slope5_pct"], 2) if mf.get("ema50_slope5_pct") is not None else None,
                                    "strength": ("強" if (mf.get("ema50_slope5_pct") or 0) >= 2.0 else "普"),
                                    "bb_squeeze": bool(mf.get("bb_squeeze")),
@@ -747,12 +748,28 @@ def build_state(*, sync_alerts=False):
                             "--note", f"深洗盤買點影子：自 60 日高 {w['dd60_pct']}%、rev {w['rev']}、站回 10 日高；假設買 $3k starter"],
                            capture_output=True, text=True, timeout=60)
 
+    # ── R31 買方板塊閘門（2026-10-19 用戶採用）：板塊 ETF 收盤高於 SMA50 ≥ R31_EXT_PCT → 該板塊的 R30/L1 走強分支關、只准回檔 GTC 不追。
+    #   證據（9/1–10/14 十二筆買進）：SMH 在 SMA50 下方 4–6% 時買的 TWLO/AMD +$987；上方 4–11% 時買的 NET/PWR/AMAT/BE/DIOD −$1,999。
+    #   只擋「新曝險的走強分支」，不碰賣方規則、不碰回檔分支。
+    sector_gate = {}
+    for etf in ("SMH", "SPY"):
+        g = mkt.get(etf) or {}
+        if g.get("last") and g.get("sma50"):
+            ext = (g["last"] / g["sma50"] - 1) * 100
+            sector_gate[etf] = {"last": round(g["last"], 2), "sma50": round(g["sma50"], 2), "sma20": round(g.get("sma20") or 0, 2),
+                                "ext_sma50_pct": round(ext, 1), "extended": ext >= R31_EXT_PCT,
+                                "below_sma20": bool(g.get("sma20") and g["last"] < g["sma20"]),
+                                "note": (f"走強分支關（板塊高於 SMA50 ≥{R31_EXT_PCT:g}%）" if ext >= R31_EXT_PCT else "走強分支開")}
+    for c in add_candidates:
+        gate = sector_gate.get(c.get("sector_etf") or "SPY") or {}
+        c["r31_extended"] = bool(gate.get("extended"))
+
     state = {"asof": today.isoformat(), "source": source, "total_account_value": total, "cash": cash,
              "pending_buy_notional": round(pend_buy, 2), "idle_cash": round(idle, 2) if idle is not None else None,
              "parked_cash_equiv": parked, "cash_equivalents": sorted(cash_eq),
              "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps,
              "weakest_two": weakest_two, "add_candidates": add_candidates, "washout_candidates": washout_candidates,
-             "rotation": rotation,
+             "rotation": rotation, "sector_gate": sector_gate,
              "sleeve": {"weight_pct": round(sleeve_w, 2), "since": sleeve_since, "acct_peak_since": acct_peak,
                         "acct_dd_pct": round(acct_dd, 1) if acct_dd is not None else None, "actions": sleeve_actions}}
 
@@ -852,6 +869,9 @@ def render_table(state):
     sl = state.get("sleeve") or {}
     if sl.get("since"):
         lines += [f"sleeve {sl['weight_pct']:.1f}%（帶 4–8%）｜帳戶自 {sl['since']} 峰 ${sl['acct_peak_since'] or 0:,.0f} 回撤 {sl['acct_dd_pct']:+.1f}%（−10% 賣半換子彈）"]
+    if state.get("sector_gate"):
+        lines += ["", "**買方板塊閘門（R31）：** " + "；".join(
+            f"{k} {v['last']} vs SMA50 {v['sma50']}（{v['ext_sma50_pct']:+.1f}%）→ {v['note']}" for k, v in state["sector_gate"].items())]
     if state["gaps"]:
         lines += ["", "**⚠️ 缺口：**"] + [f"- {g}" for g in state["gaps"]]
     else:

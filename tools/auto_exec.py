@@ -88,6 +88,20 @@ def intraday_last(symbols: list[str]) -> dict:
 WASHOUT_BENCH_DROP = -0.02   # R23 v2（2026-09-29 /trade-review）：基準當日 ≤ −2% 的收盤不開火，等下一個非 washout 收盤再確認
 
 
+def _shadow_record(today, sym, kind, price, size, note):
+    """登一筆影子（同日同標的同 kind 去重）；失敗不擋執行。"""
+    try:
+        import shadow_signals as ss
+        rows = ss.load_signals()
+        if (today.isoformat(), sym, kind) in {(r.get("date"), r.get("ticker"), r.get("signal")) for r in rows}:
+            return
+        rows.append({"date": today.isoformat(), "ticker": sym, "signal": kind, "ref_price": price, "size_usd": size,
+                     "note": note, "correct_if": "under", "mode": "shadow", "status": "open"})
+        ss.save_signals(rows)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def bench_for(sym: str) -> str:
     """R23 washout 判定用的基準：半導體對 SMH、其餘對 SPY（與 trade_ledger 計分同一張表）。"""
     try:
@@ -288,6 +302,14 @@ def main(argv):
         # 兩分支（R20 對稱）：走強分支 = 前收 ≥ 20 日高（突破確認）→ 當日 day 單貼盤接一半額度；否則回檔分支 = SMA20 限價 GTC
         prev = close_of(sym) or c["last"]
         breakout = prev >= c["high20"] * 0.999
+        # R31 買方板塊閘門（2026-10-19 用戶）：板塊 ETF 高於 SMA50 ≥5% → 走強分支關，改回檔 GTC；被擋的那張登影子 cf-r31-blocked（30d 跑輸 = 擋對）
+        etf = c.get("sector_etf") or bench_for(sym)
+        gate = (st.get("sector_gate") or {}).get(etf) or {}
+        if breakout and gate.get("extended"):
+            _shadow_record(today, sym, "cf-r31-blocked", float(prev), min(c["room_usd"], 3_000) * 0.5,
+                           f"R31：{etf} 高於 SMA50 {gate.get('ext_sma50_pct'):+.1f}% ≥5%，R30 走強分支不開火、改回檔 SMA20 GTC；未買的走強單 30d 跑輸基準 = 擋對")
+            skip(sym, "R31", f"板塊 {etf} 高於 SMA50 {gate.get('ext_sma50_pct'):+.1f}% ≥5% → 走強分支關，只掛回檔 GTC（影子 cf-r31-blocked）")
+            breakout = False
         if breakout:
             limit = round(prev * 1.002, 2)
             qty = math.floor(min(c["room_usd"], 3_000) * 0.5 / limit)

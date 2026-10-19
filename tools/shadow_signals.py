@@ -323,7 +323,7 @@ def _build_parser():
     b.add_argument("--note", default="", help="why the add was wanted / which window blocked it")
 
     rc = sub.add_parser("record", help="generic counterfactual: a decision NOT taken, scored at +30d")
-    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-smalln-block（smalln_shadow.py 自動登，H13）| cf-manual")
+    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-smalln-block（smalln_shadow.py 自動登，H13）| cf-r31-blocked（auto_exec 自動登，R31）| cf-manual")
     rc.add_argument("--ticker", required=True)
     rc.add_argument("--price", type=float, required=True, help="price when the decision was (not) made")
     rc.add_argument("--size", type=float, default=None, help="USD the action would have been")
