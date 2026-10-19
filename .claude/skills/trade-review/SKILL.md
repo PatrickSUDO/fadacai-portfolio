@@ -276,6 +276,11 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 ```markdown
 # 交易檢討 YYYY-MM-DD（期間 YYYY-MM-DD ~ YYYY-MM-DD）
 
+## 0. 本期結論（先讀這段）
+[白話、直接切入重點，≤6 行，每行一個意思、最多兩個數字（2026-10-19 用戶：「語法更直白切入重點，計算過程放附錄」）：
+ ① 這兩週帳戶賺賠多少、對 SPY/QQQ/SMH 如何 ② 誰的決定對（系統 vs 用戶，一句） ③ 最貴的一個錯 ④ 該改哪一條規則（一條）
+ ⑤ 下期要做的一件事。不放推導、不放 α/β 公式、不放 agent 計算日誌——那些全放「附錄」]
+
 ## 1. 帳本健康
 新增成交 N 筆｜歸因覆蓋率 X%（上期 Y%）｜快照天數 D｜本期人工補正 M 筆
 
@@ -300,7 +305,12 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 **規則：** [具體到檔名與條號]
 **為什麼：** [一句話 + 數字]
 **改法：** [具體修改，或「證據不足，繼續觀察 N 期」]
+
+## 附錄：計算過程
+[§2 的 β 回歸、持有 α、beta capture 的逐筆/逐檔數字；§4 影子計分明細；account_metrics / rule_stats / ev_ledger 原始輸出；agent 計算日誌。正文只引結論與一兩個關鍵數字，細節全部在這裡]
 ```
+
+**語句紀律（2026-10-19 用戶）**：§0 與 §6 用白話、一句一意、先講結論再講數字；代號（R23/H10/α）首次出現附一句中文；統計量先講「它代表什麼」再給數字。計算過程一律進附錄，正文不放公式與逐筆表。Telegram 推的是 §0。
 
 **最後一節只准寫一條**（最多兩條）。列十條等於沒有結論。
 
@@ -309,7 +319,7 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 1. 更新 `research/last-trade-review.txt` 為今日日期（briefing 讀它算到期提醒）
 2. `python3 tools/review_lint.py briefing-out/trade-review-YYYY-MM-DD.md` **必 exit 0**（缺段 / 結論 >2 條 / 收尾沒做都會擋；擋了就補，不改 lint。寫入報告時 PostToolUse hook 會自動先跑一次，這裡再跑是確認 last-trade-review 已更新）
 3. 若改動了任何 `.claude/skills/` 或 CLAUDE.md → `python3 tools/sync_agents_skills.py`
-4. **commit + push**（用戶 2026-09-14 自主範圍：不問）。無人值守時 `tools/trade_review_runner.sh` 會接手做 HTML + Telegram（§6 結論 + 連結）；互動 session 跑完也可 `bash tools/trade_review_runner.sh --notify-only briefing-out/trade-review-YYYY-MM-DD.md` 推一則
+4. **commit + push**（用戶 2026-09-14 自主範圍：不問）。無人值守時 `tools/trade_review_runner.sh` 會接手做 HTML + Telegram（§0 白話結論 + 連結；無 §0 才退回 §6）；互動 session 跑完也可 `bash tools/trade_review_runner.sh --notify-only briefing-out/trade-review-YYYY-MM-DD.md` 推一則
 
 ## 無人值守（2026-09-29）
 

@@ -54,9 +54,10 @@ import re, sys
 md, lint_line, url = sys.argv[1], sys.argv[2], sys.argv[3]
 text = open(md, encoding="utf-8").read()
 title = text.splitlines()[0].lstrip("# ").strip()
-m = re.search(r"## 6\..*?(?=\n---|\n## |\Z)", text, re.S)
-sec6 = m.group(0) if m else "（找不到 §6 結論段）"
-sec6 = re.sub(r"^## 6\.\s*", "", sec6.strip())
+# 2026-10-19 用戶：Telegram 推白話 §0（先讀這段）；舊報告沒有 §0 才退回 §6
+m = re.search(r"## 0\..*?(?=\n---|\n## |\Z)", text, re.S) or re.search(r"## 6\..*?(?=\n---|\n## |\Z)", text, re.S)
+sec6 = m.group(0) if m else "（找不到 §0/§6 結論段）"
+sec6 = re.sub(r"^## [06]\.\s*", "", sec6.strip())
 sec6 = re.sub(r"\*\*(.+?)\*\*", r"\1", sec6)
 sec6 = re.sub(r"`([^`]*)`", r"\1", sec6)
 sec6 = re.sub(r"^#+\s*", "", sec6, flags=re.M)
