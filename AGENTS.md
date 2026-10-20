@@ -288,7 +288,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - **Rolling → Adjusted Risk → Risk-Free State**：落袋用 Adjusted Risk 視角（新倉真實風險 = size − 累積已認列），不是「賣了就少賺」。
 - **Pre-emptive（非止損式）風險管理 + Scenario Planning**；慎用 Put/SPY 對沖（漲了變反向認列虧損 = Double-Kill）。
 - **定位先行**；**主動組合支數 14–18（理想 14–16），>18 砍一進一不淨增**，>30 無益。
-- **分桶**：每倉位歸 🔵信念桶（讓它 run、只在 thesis 破或 >10% 才動）或 🟢認列循環桶（高 β/週期/肥利潤 → 系統性 harvest）；疑問時歸認列。
+- **分桶**：每倉位歸 🔵信念桶（讓它 run、只在 thesis 破或 >10% 才動）或 🟢認列循環桶（高 β/週期/肥利潤 → 系統性 harvest）；疑問時歸認列。**R32 信念桶退場（2026-10-20 用戶）**：每檔信念桶必須掛可證偽 thesis gate；gate failed / 修正 down>up 且 <EMA200 且對板塊落後 ≥10pp / 自成本 −20% → 當日降認列 + 旗標，R8/R23 立即生效（`feedback/conviction-bucket-exit.md`）。**R30 信念桶加碼上限 6% → 8.5%**（同日，贏家優先權；證據：等權持倉 +57% vs 帳戶 +23%，7–9 月贏家因 6% 上限無法加碼）。
 - **兩層候補**：🟡L1 On-Deck（thesis 驗證+觸發明確，補空位只從 L1 拉）/ 🔵L2 Research Pool（需修復或擴 Universe）；砍倉依砍因歸層（組合理由→L1，thesis 破→L2）。
 - **技術面三態原則（H12，2026-09-17，`feedback/ma-filter-evidence.md`）**：技術指標只描述狀態不產生觸發。可用：①趨勢濾網 >SMA50 且 >EMA200（R30/R29d 閘門）②趨勢中低波動整理：布林帶寬擠壓、回檔 SMA20（R30 排序優先）③趨勢強度 EMA50 5 日斜率（R30 排序、R29d 綜合分）。**不用**：5/10/20 日均線（含 EMA20）、DEMA/TEMA、均線交叉、MACD 任何用法、SAR、肯特納、通道突破當日、差值、加速度——30 檔×5 年全部 ≈ 隨便買。RSI 維持只列數值。方向仍由 revision 定，技術面只決定先買誰與結構
 - **新倉 starter 結構（H10 偏好，2026-09-14 用戶「可以鬆一點」）**：新倉/非既有領導者一律起手 ≤2%，其餘走回檔梯或走強確認後補（CLS 9/8→9/9 即範例）；`priced_in_pct > +150%` 的名字起手 ≤1.5%、不一次買滿（2026-09-14 用戶調高門檻）。**是偏好不是硬線**：可違反，但違反時 journal 必標 `⚠️ H10 bypass` 並在 /trade-review 分組計分（H1/H2 證據：新倉貴價買全負、既有領導者加碼全正）

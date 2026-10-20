@@ -69,6 +69,15 @@ R28_LOSS_BUDGET_PCT = 1.5
 R29_TAIL_PCT, R29_TAIL_CAL_DAYS, R29_REBUILD_PCT = 1.5, 14, 2.0
 # R30（2026-09-14，CRM 案：只有賣強沒有買強）：加碼候選 = 未實現 >0、30d revision up>down、價 > SMA50、權重 <6%、非 R28a 鎖、非財報窗
 R30_MAX_WEIGHT, R30_MAX_USD = 6.0, 3_000
+# 2026-10-20 用戶：信念桶 R30 上限 6% → 8.5%（硬線 10% 之下）。7–9 月 MU/CRWD/PLTR/NVDA 全在 7.4–8.1%，R30 結構性不可能加碼贏家，
+# 飛輪「第一順位投入信念桶領導者」在程式裡開不了火，錢流向新名字（9/23–10/9 五筆 −$1,999）。H2：加碼既有領導者全正。
+R30_MAX_WEIGHT_BY_BUCKET = {"信念": 8.5, "認列": 6.0}
+# R32 信念桶退場（2026-10-20 用戶「信念桶真的不行還是要有退場機制」）
+R32_RS_SECTOR_PP = -10.0      # 90 日對板塊落後 ≥10pp
+R32_UNREAL_FLOOR = -20.0      # 信念桶自成本 −20% = 覆審線（不是停損，是強制裁決）
+R32_FAILED_DAYS = 45          # thesis gate 判 failed 後 45 天內視為退場觸發
+R32_ADMIN_SLUGS = ("auto-exec", "bcs-close", "options", "pair", "reentry")   # 這些不算信念 gate
+
 # R25 修訂（2026-09-14）：sleeve 目標 6%、帶 4–8%；ETF 自峰 −10% → 減至 4%；帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈；GLD/XLE 套 R8 梯級
 SLEEVE_TARGET, SLEEVE_LO, SLEEVE_HI, SLEEVE_ETF_DD, SLEEVE_ACCT_DD = 6.0, 4.0, 8.0, -10.0, -10.0
 SLEEVE_HALF_RESET_DD = -5.0  # 賣半期間解除：帳戶回升到 sleeve 建立後峰值 −5% 以內
@@ -456,6 +465,31 @@ def build_state(*, sync_alerts=False):
 
         # ── R28（CRDO 案）──
         up, down = rev_30d(fund, sym)
+        # ── R32 信念桶退場（2026-10-20 用戶）：信念 = 讓它 run，但「真的不行」要有機械出口 ──
+        #   a) 每檔信念桶必須有一個待驗的 thesis gate（不含 auto-exec / 選擇權管理 / pair / 撿回類），否則缺口
+        #   b) 退場觸發（任一）→ 當日降認列（roster.json）+ 旗標 deadline ≤15 交易日；降級後 R8/R23 立即生效：
+        #      ① thesis gate 45 天內判 failed  ② 30 日修正 down>up 且收盤 <EMA200 且 90 日對板塊落後 ≥10pp  ③ 自成本 ≤ −20%
+        conviction_exit = None
+        if bucket == "信念":
+            # 只有被標為信念 gate 的條目才算（gate_for=信念 或 source=conviction-gate）：gate 依定義是「多方條件」，failed 才等於信念破；
+            # 其他 thesis（含空方 signal-inference）failed 不觸發——10/20 MU 案：供給反撲 thesis 被證偽是利多，不是退場
+            is_gate = lambda t: (t.get("gate_for") == "信念" or t.get("source") == "conviction-gate")  # noqa: E731
+            real_gates = [t for t in th if is_gate(t)]
+            if not real_gates:
+                gaps.append(f"{sym}: R32 信念桶無待驗 thesis gate（需 --source conviction-gate 或 gate_for=信念）→ 7 日內登錄一條可證偽的 gate（到期 ≤ 下次財報 +5 日），否則視同無 thesis、降認列")
+            recent_failed = [t for t in theses.get("theses", []) if t.get("ticker") == sym and t.get("status") == "failed" and is_gate(t)
+                             and (today - dt.date.fromisoformat((t.get("updated") or "2000-01-01")[:10])).days <= R32_FAILED_DAYS]
+            below_e200 = bool(mf.get("ema200") and last and last < mf["ema200"])
+            rev_weak = (up is not None and down is not None and down > up)
+            lag = (rs90_sec is not None and rs90_sec <= R32_RS_SECTOR_PP)
+            if recent_failed:
+                conviction_exit = f"thesis gate failed（{recent_failed[0]['id']}）"
+            elif rev_weak and below_e200 and lag:
+                conviction_exit = f"修正 {up:g}↑:{down:g}↓ 轉弱 + 收盤 <EMA200 + 90 日對板塊 {rs90_sec:+.0f}pp"
+            elif unreal is not None and unreal <= R32_UNREAL_FLOOR:
+                conviction_exit = f"自成本 {unreal:+.0f}% ≤ {R32_UNREAL_FLOOR:g}%"
+            if conviction_exit:
+                gaps.append(f"{sym}: R32 信念桶退場條件命中（{conviction_exit}）→ 當日降認列（roster.json buckets）+ flag deadline ≤15 交易日；降級後 R8/R23 立即生效，不得以「thesis 完好」續留信念桶")
         buy_lock = None
         trim_recent = bool(def_trim_dt and (today - dt.date.fromisoformat(def_trim_dt)).days <= R28_BUYLOCK_DAYS)
         if bucket == "認列" and armed and dd is not None and dd <= R28_BUYLOCK_DD:
@@ -548,10 +582,10 @@ def build_state(*, sync_alerts=False):
         above_e200 = bool(mf.get("ema200") and last and last > mf["ema200"]) if mf.get("ema200") else True  # 資料不足不擋
         add_ok = (bucket in ("認列", "信念") and unreal is not None and unreal >= 3.0 and up is not None and up > down
                   and mf.get("sma50") and last and last > mf["sma50"] and above_e200
-                  and weight is not None and weight < R30_MAX_WEIGHT
+                  and weight is not None and weight < R30_MAX_WEIGHT_BY_BUCKET.get(bucket, R30_MAX_WEIGHT)
                   and not buy_lock and not in_earn_window)
         if add_ok:
-            room = min(R30_MAX_USD, (R30_MAX_WEIGHT - weight) / 100 * total) if total else R30_MAX_USD
+            room = min(R30_MAX_USD, (R30_MAX_WEIGHT_BY_BUCKET.get(bucket, R30_MAX_WEIGHT) - weight) / 100 * total) if total else R30_MAX_USD
             add_candidates.append({"symbol": sym, "bucket": bucket, "sector_etf": sec_etf, "weight_pct": round(weight, 2), "unrealized_pct": round(unreal, 1),
                                    "ema50_slope5_pct": round(mf["ema50_slope5_pct"], 2) if mf.get("ema50_slope5_pct") is not None else None,
                                    "strength": ("強" if (mf.get("ema50_slope5_pct") or 0) >= 2.0 else "普"),
@@ -575,6 +609,7 @@ def build_state(*, sync_alerts=False):
 
         rows.append({
             "symbol": sym, "bucket": bucket, "qty": v["qty"], "unit_cost": round(cost, 2),
+            "conviction_exit": conviction_exit,
             "rs90_vs_spy_pct": round(rs90, 1) if rs90 is not None else None, "rev_up_30d": up, "rev_down_30d": down,
             "sector_etf": sec_etf, "rs90_vs_sector_pct": round(rs90_sec, 1) if rs90_sec is not None else None,
             "ema200": round(mf["ema200"], 2) if mf.get("ema200") else None, "above_ema200": above_e200,
