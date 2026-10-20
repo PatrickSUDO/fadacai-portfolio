@@ -10,7 +10,7 @@ v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝�
      v2（2026-09-29）：觸發收盤當日基準（SMH/SPY）≤ −2% = washout 日 → 不開火，等下一個非 washout 收盤仍破線才賣
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
   C. 選擇權管理線：id 含 bcs-exit / option 的 price_below → 收盤 < level → 平倉指令（day，ET 7–16）
-  D. R24 現金停泊：閒置 = 現金 − 在掛買單 − max(3% 總值, $8k) 緩衝 > $10k → 買 SGOV 至閒置 ≤ $5k（$8k 是留給手動掛單的錢，2026-09-16）
+  D. R24 現金停泊：閒置 = 現金 − 在掛買單 − max(3% 總值, $8k) 緩衝 > $10k → 買基準 ETF QQQ 至閒置 ≤ $5k（R33，2026-10-20；SGOV 只當緩衝）（$8k 是留給手動掛單的錢，2026-09-16）
   E. R8 梯級 GTC 缺口：position-state gaps 中 kind 含 R8 → 掛下一級賣單（限價=級距價）
   F. R30 加碼候選（2026-09-14 買強）：guard add_candidates → 回檔 SMA20 限價 GTC 10 日，單次 ≤$3k；條件消失 → 撤單
   G. R25 修訂 sleeve：guard sleeve.actions（ETF 自峰 −10% / 合計 >8% / 帳戶自 sleeve 建立後峰 −10% 賣半）→ 賣單，所得進 SGOV
@@ -161,10 +161,11 @@ def main(argv):
     alerts = (_load(ALERTS, {}) or {}).get("alerts", [])
     earn = _load(EARN, {})
     reg = _load(REGISTRY, {})
+    roster = _load(ROOT / "research" / "roster.json", {})
     xday = _load(XDAY, {})
     reversed_tks = set(xday.get("tickers", [])) if isinstance(xday, dict) else set()
     positions = {p["symbol"]: p for p in st.get("positions", [])}
-    syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV"})
+    syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV", "QQQ"})
     syms = [s for s in syms if s and not s.startswith("^")]
     r23_benches = {bench_for(s) for s, p in positions.items() if p.get("r23_armed")}
     syms = sorted(set(syms) | r23_benches)
@@ -263,10 +264,14 @@ def main(argv):
     buffer = max(BUFFER_PCT * total, RESERVE_USD)
     idle = cash - pending_buys - buffer
     sgov_px = close_of("SGOV") or 100.5
-    if idle > IDLE_TRIGGER:
-        qty = math.floor((idle - IDLE_TARGET) / sgov_px)
-        plan.append({"rule": "R24", "symbol": "SGOV", "action": "BUY", "qty": qty,
-                     "order": {"type": "limit", "limit": round(sgov_px + 0.01, 2), "duration": "gtc"},
+    # R33（2026-10-20 用戶：以打敗 QQQ/SMH 為目標）：$8k 緩衝與 30 日需求之外的閒置改停泊基準 ETF（QQQ），不再買 SGOV——
+    # 2026 證據：賣出款若留在基準會多 +$150k；SGOV 只當現金緩衝。QQQ 在 roster.benchmark_parking，不佔名額、不進 α、不套 R23。
+    park_sym = (roster.get("benchmark_parking") or ["QQQ"])[0]
+    park_px = close_of(park_sym) or 0
+    if idle > IDLE_TRIGGER and park_px:
+        qty = math.floor((idle - IDLE_TARGET) / park_px)
+        plan.append({"rule": "R24", "symbol": park_sym, "action": "BUY", "qty": qty,
+                     "order": {"type": "limit", "limit": round(park_px * 1.002, 2), "duration": "gtc"},
                      "basis": f"閒置 = 現金 {cash:,.0f} − 在掛買單 {pending_buys:,.0f} − 緩衝 {buffer:,.0f}（max 3%, $8k）= {idle:,.0f} > 10k",
                      "after": ["register-order --rule R24"]})
     else:

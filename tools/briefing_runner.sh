@@ -162,6 +162,12 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/smalln_shadow.py" sca
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "smalln_shadow scan failed (non-fatal)"
 
+# R34（2026-10-20）：發現層跨板塊新鮮訊號（display-only，63 日計分）；宇宙每週刷新
+log "Discovery scan (R34, display-only)..."
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/discovery_scan.py" scan $([[ "$(date +%u)" == "1" ]] && echo --refresh-universe) \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" || log "discovery_scan failed (non-fatal)"
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/discovery_scan.py" score >> "$LOG_DIR/launchd.log" 2>&1 || true
+
 # Order snapshot must run daily and cannot be backfilled: Firstrade's order_status
 # endpoint returns ONLY resting orders, so an order placed and filled between two
 # snapshots leaves no trace to attribute the fill to. Prefetching here (rather than

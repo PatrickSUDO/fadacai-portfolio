@@ -295,7 +295,9 @@ def bucket_of(roster, sym):
         if sym in syms:
             return b
     # R25（2026-09-04）：被動 sleeve ETF（GLD/XLE）視為 sleeve 桶，但不計 18 檔
-    if sym in roster.get("passive_sleeve", []):
+    if sym in roster.get("exiting", []):
+        return "exiting"   # 2026-10-20：用戶砍單進行中（反彈限價 + 失守線），不佔名額、不套 R8/R23/C2、不報無桶別
+    if sym in roster.get("passive_sleeve", []) or sym in roster.get("benchmark_parking", []):
         return "sleeve(ETF)"
     return None
 
@@ -453,7 +455,7 @@ def build_state(*, sync_alerts=False):
         if bucket == "認列" and runner_floor_hit:
             if sells:
                 gaps.append(f"{sym}: R8+R23 合計已賣 {cum_sold:.0f}% ≥ 70%，觸 30% runner 保底 → 撤在掛減碼單 {[o['id'] for o in sells]}（C2）")
-        elif bucket == "認列" and pending_sell > sellable_left + 1e-6:
+        elif bucket == "認列" and pending_sell > sellable_left + 1e-6 and not any(("清倉" in (f.get("reason") or "")) or ("exit" in (f.get("id") or "")) or ("cut" in (f.get("id") or "")) for f in open_flags(flags, sym)):
             gaps.append(f"{sym}: 在掛賣單 {pending_sell:g} 股 > 保底前可賣 {sellable_left:.0f} 股（已賣 {cum_sold:.0f}%）→ 縮單，勿賣穿 30% runner（C2）")
         if bucket == "認列" and unreal is not None and not runner_floor_hit:
             for tier_pct, _sell in R8_TIERS:
@@ -634,7 +636,8 @@ def build_state(*, sync_alerts=False):
     # R30 候選排序：擠壓中的優先（63% 勝率），其次 EMA50 斜率；機器一次只掛一梯時先掛排前面的
     add_candidates.sort(key=lambda c: (not c.get("bb_squeeze"), -(c.get("ema50_slope5_pct") or -99)))
 
-    passive = set(roster.get("passive_sleeve", []))
+    passive = set(roster.get("passive_sleeve", [])) | set(roster.get("benchmark_parking", []))   # R33 基準停泊同 sleeve 不佔名額
+    passive |= set(roster.get("exiting", []))
     n = len([r for r in rows if r["symbol"] not in passive])  # R25：被動 sleeve ETF 不計檔數
     # R29c：認列桶最弱兩檔（90d RS vs SPY 由弱到強，同 RS 看 revision 淨值）——換手只准換這兩檔
     harvest_rows = [r for r in rows if r["bucket"] == "認列" and r.get("rs90_vs_spy_pct") is not None]
