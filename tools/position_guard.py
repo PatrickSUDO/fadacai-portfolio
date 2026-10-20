@@ -475,33 +475,6 @@ def build_state(*, sync_alerts=False):
         #   a) 每檔信念桶必須有一個待驗的 thesis gate（不含 auto-exec / 選擇權管理 / pair / 撿回類），否則缺口
         #   b) 退場觸發（任一）→ 當日降認列（roster.json）+ 旗標 deadline ≤15 交易日；降級後 R8/R23 立即生效：
         #      ① thesis gate 45 天內判 failed  ② 30 日修正 down>up 且收盤 <EMA200 且 90 日對板塊落後 ≥10pp  ③ 自成本 ≤ −20%
-        # ── R36 持倉版基準門檻（機械代理；EV 裁決在 review）──
-        bench_swap = None
-        if bucket in ("認列", "信念") and rs90_sec is not None and rs90_sec <= R36_RS_PP \
-                and not (up is not None and down is not None and up > down) and mf.get("sma50") and last and last < mf["sma50"]:
-            bench_swap = f"90 日對 {sec_etf} {rs90_sec:+.0f}pp、修正 {up if up is not None else '—'}↑:{down if down is not None else '—'}↓、收盤 <SMA50"
-            gaps.append(f"{sym}: R36 基準替代候選（{bench_swap}）→ 下次 review 跑 365d EV，EV < {sec_etf} hurdle − 10pp 即賣出換成 {sec_etf}（不是現金）；換成的 ETF 進 roster benchmark_slots 不計 18 檔")
-        conviction_exit = None
-        if bucket == "信念":
-            # 只有被標為信念 gate 的條目才算（gate_for=信念 或 source=conviction-gate）：gate 依定義是「多方條件」，failed 才等於信念破；
-            # 其他 thesis（含空方 signal-inference）failed 不觸發——10/20 MU 案：供給反撲 thesis 被證偽是利多，不是退場
-            is_gate = lambda t: (t.get("gate_for") == "信念" or t.get("source") == "conviction-gate")  # noqa: E731
-            real_gates = [t for t in th if is_gate(t)]
-            if not real_gates:
-                gaps.append(f"{sym}: R32 信念桶無待驗 thesis gate（需 --source conviction-gate 或 gate_for=信念）→ 7 日內登錄一條可證偽的 gate（到期 ≤ 下次財報 +5 日），否則視同無 thesis、降認列")
-            recent_failed = [t for t in theses.get("theses", []) if t.get("ticker") == sym and t.get("status") == "failed" and is_gate(t)
-                             and (today - dt.date.fromisoformat((t.get("updated") or "2000-01-01")[:10])).days <= R32_FAILED_DAYS]
-            below_e200 = bool(mf.get("ema200") and last and last < mf["ema200"])
-            rev_weak = (up is not None and down is not None and down > up)
-            lag = (rs90_sec is not None and rs90_sec <= R32_RS_SECTOR_PP)
-            if recent_failed:
-                conviction_exit = f"thesis gate failed（{recent_failed[0]['id']}）"
-            elif rev_weak and below_e200 and lag:
-                conviction_exit = f"修正 {up:g}↑:{down:g}↓ 轉弱 + 收盤 <EMA200 + 90 日對板塊 {rs90_sec:+.0f}pp"
-            elif unreal is not None and unreal <= R32_UNREAL_FLOOR:
-                conviction_exit = f"自成本 {unreal:+.0f}% ≤ {R32_UNREAL_FLOOR:g}%"
-            if conviction_exit:
-                gaps.append(f"{sym}: R32 信念桶退場條件命中（{conviction_exit}）→ 當日降認列（roster.json buckets）+ flag deadline ≤15 交易日；降級後 R8/R23 立即生效，不得以「thesis 完好」續留信念桶")
         buy_lock = None
         trim_recent = bool(def_trim_dt and (today - dt.date.fromisoformat(def_trim_dt)).days <= R28_BUYLOCK_DAYS)
         if bucket == "認列" and armed and dd is not None and dd <= R28_BUYLOCK_DD:
@@ -564,6 +537,33 @@ def build_state(*, sync_alerts=False):
         sec_etf = next((etf for etf, members in SECTOR_ETF.items() if sym in members), "SPY")
         sec_ret = (mkt.get(sec_etf) or {}).get("ret90")
         rs90_sec = (mf["ret90"] - sec_ret) * 100 if (mf.get("ret90") is not None and sec_ret is not None) else None
+        # ── R36 持倉版基準門檻（機械代理；EV 裁決在 review）──
+        bench_swap = None
+        if bucket in ("認列", "信念") and rs90_sec is not None and rs90_sec <= R36_RS_PP \
+                and not (up is not None and down is not None and up > down) and mf.get("sma50") and last and last < mf["sma50"]:
+            bench_swap = f"90 日對 {sec_etf} {rs90_sec:+.0f}pp、修正 {up if up is not None else '—'}↑:{down if down is not None else '—'}↓、收盤 <SMA50"
+            gaps.append(f"{sym}: R36 基準替代候選（{bench_swap}）→ 下次 review 跑 365d EV，EV < {sec_etf} hurdle − 10pp 即賣出換成 {sec_etf}（不是現金）；換成的 ETF 進 roster benchmark_slots 不計 18 檔")
+        conviction_exit = None
+        if bucket == "信念":
+            # 只有被標為信念 gate 的條目才算（gate_for=信念 或 source=conviction-gate）：gate 依定義是「多方條件」，failed 才等於信念破；
+            # 其他 thesis（含空方 signal-inference）failed 不觸發——10/20 MU 案：供給反撲 thesis 被證偽是利多，不是退場
+            is_gate = lambda t: (t.get("gate_for") == "信念" or t.get("source") == "conviction-gate")  # noqa: E731
+            real_gates = [t for t in th if is_gate(t)]
+            if not real_gates:
+                gaps.append(f"{sym}: R32 信念桶無待驗 thesis gate（需 --source conviction-gate 或 gate_for=信念）→ 7 日內登錄一條可證偽的 gate（到期 ≤ 下次財報 +5 日），否則視同無 thesis、降認列")
+            recent_failed = [t for t in theses.get("theses", []) if t.get("ticker") == sym and t.get("status") == "failed" and is_gate(t)
+                             and (today - dt.date.fromisoformat((t.get("updated") or "2000-01-01")[:10])).days <= R32_FAILED_DAYS]
+            below_e200 = bool(mf.get("ema200") and last and last < mf["ema200"])
+            rev_weak = (up is not None and down is not None and down > up)
+            lag = (rs90_sec is not None and rs90_sec <= R32_RS_SECTOR_PP)
+            if recent_failed:
+                conviction_exit = f"thesis gate failed（{recent_failed[0]['id']}）"
+            elif rev_weak and below_e200 and lag:
+                conviction_exit = f"修正 {up:g}↑:{down:g}↓ 轉弱 + 收盤 <EMA200 + 90 日對板塊 {rs90_sec:+.0f}pp"
+            elif unreal is not None and unreal <= R32_UNREAL_FLOOR:
+                conviction_exit = f"自成本 {unreal:+.0f}% ≤ {R32_UNREAL_FLOOR:g}%"
+            if conviction_exit:
+                gaps.append(f"{sym}: R32 信念桶退場條件命中（{conviction_exit}）→ 當日降認列（roster.json buckets）+ flag deadline ≤15 交易日；降級後 R8/R23 立即生效，不得以「thesis 完好」續留信念桶")
         r29a_note = None
         if bucket == "認列" and weight is not None and weight < R29_TAIL_PCT:
             # 2026-10-14 /trade-review 第 6 節：R29a 只管「殘倉」= R8/R23 減碼過的部位（cum_sold > 0）。
