@@ -72,7 +72,7 @@ python3 tools/trade_ledger.py beta-capture --window 180 --bench SMH
 
 ### 2d. 帳戶級四指標（每期必跑，2026-07-29 起）
 
-**實作成本（2026-10-20 用戶「組合跟操作感覺比 SMH/QQQ 還糟」）**：每期加算「當期持倉名單等權買抱同期報酬 − 帳戶同期報酬」，並列 SMH/QQQ/SPY 同期。這個差距就是現金停泊、賣贏家、買新名字的總成本；選股好不好看前者，操作好不好看差距。第 0 節必列一行（有倖存者偏差，持倉名單取期初而非期末）。
+**實作成本（2026-10-20 用戶「組合跟操作感覺比 SMH/QQQ 還糟」）**：每期加算「當期持倉名單等權買抱同期報酬 − 帳戶同期報酬」，並列 SMH/QQQ/SPY 同期。這個差距就是現金停泊、賣贏家、買新名字的總成本；選股好不好看前者，操作好不好看差距。工具 `python3 tools/impl_cost.py --since <期初> --acct-start <期初淨值> --acct-now <期末淨值>`（同時印期內賣出 vs 抱到今天、依標的/依月）。第 0 節必列一行（有倖存者偏差，持倉名單取期初而非期末）。
 
 ```bash
 python3 tools/account_metrics.py scan && python3 tools/account_metrics.py report --live <Step 0b 即時帳戶總值>
