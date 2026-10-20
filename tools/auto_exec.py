@@ -165,7 +165,7 @@ def main(argv):
     xday = _load(XDAY, {})
     reversed_tks = set(xday.get("tickers", [])) if isinstance(xday, dict) else set()
     positions = {p["symbol"]: p for p in st.get("positions", [])}
-    syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV"} | set(roster.get("benchmark_parking") or ["VOO"]))
+    syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV"} | set(roster.get("benchmark_parking") or ["VOO"]) | set(roster.get("benchmark_slots") or []))
     syms = [s for s in syms if s and not s.startswith("^")]
     r23_benches = {bench_for(s) for s, p in positions.items() if p.get("r23_armed")}
     syms = sorted(set(syms) | r23_benches)
@@ -240,7 +240,8 @@ def main(argv):
                          "basis": f"前收 {c:.2f} < 結構線 {lvl}（{aid}）", "note": note[:160],
                          "after": ["register-order --rule options-mgmt", "remove alert"]})
             continue
-        if "收盤" in note and ("trim" in aid or "derating" in aid or "減" in note):
+        # 2026-10-20：失守線警報（mode=close_confirm，id *-exit-close）一律視為用戶收盤線；舊式靠 note 關鍵字的也保留
+        if a.get("mode") == "close_confirm" or ("收盤" in note and ("trim" in aid or "derating" in aid or "減" in note)):
             if in_earnings_window(sym, earn, today):
                 skip(sym, "close-line", "財報 ±48h"); continue
             if sym in reversed_tks:
@@ -250,6 +251,17 @@ def main(argv):
             qty = int(m.group(1)) if m else (math.floor(p.get("qty", 0) / 3) if "1/3" in note else None)
             if not qty:
                 skip(sym, "close-line", "note 內無股數，需人工"); continue
+            # 兩段式出場（2026-10-20）：失守線成立時，先撤同標的所有在掛賣單（反彈限價那張），再掛貼盤賣，避免兩張賣單同時成交變成放空
+            for oid, o in (reg.get("orders") or {}).items():
+                if o.get("symbol") == sym and o.get("transaction") == "S" and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+                    plan.append({"rule": "user-close-line-cancel", "symbol": sym, "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
+                                 "basis": f"失守線 {aid} 成立 → 先撤同標的在掛賣單 {oid}（{o.get('shares')}@{o.get('limit_price')}），避免與貼盤賣單重複成交", "after": []})
+            held = int(float(p.get("qty", 0) or 0))
+            keep = re.search(r"保留\s*(\d+)\s*股", note)
+            floor_keep = int(keep.group(1)) if keep else 0      # 部分減碼：note 寫「保留 N 股」→ 不賣穿（DIOD 留 100 股給 covered call）
+            qty = max(0, min(qty, held - floor_keep))
+            if qty <= 0:
+                skip(sym, "close-line", f"持有 {held} 股 ≤ 保留 {floor_keep} 股（反彈單已成交或已減完）→ 不賣，警報可撤"); continue
             plan.append({"rule": "user-close-line", "symbol": sym, "action": "SELL", "qty": qty, "alert_id": aid,
                          "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
                          "basis": f"前收 {c:.2f} < 裁決線 {lvl}（{aid}）", "note": note[:160],
@@ -289,10 +301,16 @@ def main(argv):
                      "after": ["register-order --rule R8（限價=級距價，需人工確認股數）"]})
 
     parked = float(st.get("parked_cash_equiv") or 0)
+    # R33：基準停泊（VOO）與 R36 替代格也可解泊（T+1）；解泊順序 VOO/替代格 → SGOV（SGOV 是 $8k 緩衝，最後動）
+    park_syms = list(roster.get("benchmark_parking") or []) + list(roster.get("benchmark_slots") or [])
+    parked_bench = sum(float(positions[x].get("qty") or 0) * float(close_of(x) or positions[x].get("last") or 0) for x in park_syms if x in positions)
+    unpark_sym = next((x for x in park_syms if x in positions and float(positions[x].get("qty") or 0) * float(close_of(x) or 0) >= 500), "SGOV")
+    unpark_px = (close_of(unpark_sym) or (100.5 if unpark_sym == "SGOV" else 0))
+    unpark_val = parked_bench if unpark_sym != "SGOV" else parked
     # 在掛的現金等價賣單（SGOV 解泊，T+1）視為即將到位的現金，避免重複出解泊單
     pending_ce_sells = sum((o.get('shares', 0) or 0) * (o.get('limit_price', 0) or 0)
                            for o in (reg.get('orders') or {}).values()
-                           if o.get('state') == 'ORDER-SUBMITTED' and o.get('transaction') == 'S' and o.get('symbol') in ('SGOV', 'BIL'))
+                           if o.get('state') == 'ORDER-SUBMITTED' and o.get('transaction') == 'S' and o.get('symbol') in set(['SGOV', 'BIL'] + park_syms))
     cash_available = cash - pending_buys + pending_ce_sells
     # ── F. R30 加碼候選（買強，2026-09-14）：回檔 SMA20 限價 GTC 10 日；候選消失 → 撤掛 R30 單 ─────
     r30_syms = set()
@@ -302,7 +320,7 @@ def main(argv):
         if sym in reversed_tks:
             skip(sym, "R30", "T5.5 跨日反轉，延一日"); continue
         # 10/12 LITE 案：SGOV 只剩 $8 零股也算「有停泊」→ 放行 $2,968 買單、實際靠融資；改看停泊能否補足缺口
-        if cash_available + parked < min(c["room_usd"], 3_000):
+        if cash_available + parked + parked_bench < min(c["room_usd"], 3_000):
             skip(sym, "R30", f"可用現金 {cash_available:,.0f} + SGOV 停泊 {parked:,.0f} < 額度 {min(c['room_usd'], 3_000):,.0f}"); continue
         # 兩分支（R20 對稱）：走強分支 = 前收 ≥ 20 日高（突破確認）→ 當日 day 單貼盤接一半額度；否則回檔分支 = SMA20 限價 GTC
         prev = close_of(sym) or c["last"]
@@ -392,7 +410,7 @@ def main(argv):
     # ── H. 陳舊自動賣單：R23 / user-close-line / R25 的在掛賣單若非今日掛且仍未成交 → 撤（隔晚依新收盤重算重掛）──
     for oid, o in (reg.get("orders") or {}).items():
         rr = o.get("rule_ref") or ""
-        if o.get("transaction") == "S" and rr.split("-")[0] in ("R23", "user", "R25") \
+        if ((o.get("transaction") == "S" and rr.split("-")[0] in ("R23", "user", "R25")) or (o.get("transaction") == "B" and rr == "R24")) \
                 and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")) \
                 and (o.get("rule_registered_at") or o.get("first_seen") or "") < (today - timedelta(days=1)).isoformat():
             plan.append({"rule": f"{rr}-cancel", "symbol": o["symbol"], "action": "CANCEL", "qty": o.get("shares"),
@@ -435,20 +453,20 @@ def main(argv):
 
     # C6：T6.5 新增曝險買單的現金可用性（現金停在 SGOV 時要先賣，T+1 才能用）
     r30_notional = sum(p["qty"] * p["order"]["limit"] for p in plan if p.get("rule") == "R30-add")
-    if r30_notional and cash_available < r30_notional and parked >= sgov_px:  # 不足一股的零股 SGOV 賣不出去
-        plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL",
-                     "qty": math.ceil(min(parked, r30_notional - cash_available) / sgov_px),
-                     "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
+    if r30_notional and cash_available < r30_notional and unpark_px and unpark_val >= unpark_px:  # 不足一股的零股賣不出去
+        plan.append({"rule": "R24-unpark", "symbol": unpark_sym, "action": "SELL",
+                     "qty": math.ceil(min(unpark_val, r30_notional - cash_available) / unpark_px),
+                     "order": {"type": "limit", "limit": round(unpark_px * 0.998, 2), "duration": "day"},
                      "basis": f"R30 買單合計 {r30_notional:,.0f} > 可用現金 {cash_available:,.0f}，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）", "after": ["register-order --rule R24"]})
         # C6「買單延一日」原本只寫在說明裡、execute 照掛 → 這裡真的把 R30 買單移出 plan，解泊交割後隔日再排
         for p in [p for p in plan if p.get("rule") == "R30-add"]:
             plan.remove(p)
             skip(p["symbol"], "R30", f"C6 現金未到位（可用 {cash_available:,.0f}），今日先解泊 SGOV、買單延一日")
-    cash_gate = {"cash_available": round(cash_available, 2), "parked_sgov": round(parked, 2),
+    cash_gate = {"cash_available": round(cash_available, 2), "parked_sgov": round(parked, 2), "parked_bench": round(parked_bench, 2), "unpark_sym": unpark_sym,
                  "rule": "新倉/加碼買單金額 ≤ cash_available 才可當日執行；不足且 parked_sgov > 0 → 今日先掛 SGOV 賣（T+1），買單延一日；兩者皆無 → 列 🎯 待辦不下單"}
-    if cash_available < 3_000 and parked >= sgov_px and not any(p.get("rule") == "R24-unpark" for p in plan):
-        plan.append({"rule": "R24-unpark", "symbol": "SGOV", "action": "SELL", "qty": math.ceil(min(parked, 3_000 - cash_available) / sgov_px),
-                     "order": {"type": "limit", "limit": round(sgov_px - 0.01, 2), "duration": "day"},
+    if cash_available < 3_000 and unpark_px and unpark_val >= unpark_px and not any(p.get("rule") == "R24-unpark" for p in plan):
+        plan.append({"rule": "R24-unpark", "symbol": unpark_sym, "action": "SELL", "qty": math.ceil(min(unpark_val, 3_000 - cash_available) / unpark_px),
+                     "order": {"type": "limit", "limit": round(unpark_px * 0.998, 2), "duration": "day"},
                      "basis": f"可用現金 {cash_available:,.0f} < $3k 新曝險上限，SGOV 停泊 {parked:,.0f} → 先解泊（C6，T+1）",
                      "after": ["register-order --rule R24"]})
 

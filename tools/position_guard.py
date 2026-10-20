@@ -301,7 +301,11 @@ def bucket_of(roster, sym):
     # R25（2026-09-04）：被動 sleeve ETF（GLD/XLE）視為 sleeve 桶，但不計 18 檔
     if sym in roster.get("exiting", []):
         return "exiting"   # 2026-10-20：用戶砍單進行中（反彈限價 + 失守線），不佔名額、不套 R8/R23/C2、不報無桶別
-    if sym in roster.get("passive_sleeve", []) or sym in roster.get("benchmark_parking", []) or sym in roster.get("benchmark_slots", []):
+    if sym in roster.get("benchmark_parking", []):
+        return "parking(ETF)"      # R33 停泊：不佔名額、不套任何規則、不是 sleeve
+    if sym in roster.get("benchmark_slots", []):
+        return "bench-slot(ETF)"   # R36 替代格：同上，有 R35 PASS 名字時優先賣它
+    if sym in roster.get("passive_sleeve", []):
         return "sleeve(ETF)"
     return None
 
@@ -363,6 +367,7 @@ def build_state(*, sync_alerts=False):
     today = dt.date.today()
     roster = _load_json(ROSTER, {})
     fills = load_fills()
+    _exiting_prune_pending = True
     registry = _load_json(REGISTRY, {})
     flags = _load_json(FLAGS, {"flags": []})
     alerts = _load_json(ALERTS, {"alerts": []})
@@ -808,6 +813,13 @@ def build_state(*, sync_alerts=False):
                             "--ticker", w["symbol"], "--price", str(w["last"]), "--size", "3000", "--correct-if", "over",
                             "--note", f"深洗盤買點影子：自 60 日高 {w['dd60_pct']}%、rev {w['rev']}、站回 10 日高；假設買 $3k starter"],
                            capture_output=True, text=True, timeout=60)
+
+    # exiting 自動清理（2026-10-20）：出場完成的名字不再留在 roster.exiting（否則撿回時被當 exiting 不套規則）
+    gone = [x for x in roster.get("exiting", []) if x not in {r["symbol"] for r in rows}]
+    if gone:
+        roster["exiting"] = [x for x in roster["exiting"] if x not in gone]
+        ROSTER.write_text(json.dumps(roster, ensure_ascii=False, indent=2))
+        print(f"🧹 exiting 已出清，自 roster 移除：{gone}", file=sys.stderr)
 
     # ── R31 買方板塊閘門（2026-10-19 用戶採用）：板塊 ETF 收盤高於 SMA50 ≥ R31_EXT_PCT → 該板塊的 R30/L1 走強分支關、只准回檔 GTC 不追。
     #   證據（9/1–10/14 十二筆買進）：SMH 在 SMA50 下方 4–6% 時買的 TWLO/AMD +$987；上方 4–11% 時買的 NET/PWR/AMAT/BE/DIOD −$1,999。
