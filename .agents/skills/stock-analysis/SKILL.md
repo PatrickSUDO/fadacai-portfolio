@@ -525,3 +525,6 @@ Use Traditional Chinese (繁體中文) for all text output.
 python3 tools/generate_html.py stock-analysis briefing-out/stock-analysis-<TICKER>-YYYY-MM-DD.md --push
 ```
 成功時印出網頁連結，失敗（repo 尚未建立）時印警告並繼續。
+
+## R35 基準門檻（2026-10-20 用戶）
+收尾 `ev_ledger add` 後，若標的非既有持倉，跑 `python3 tools/bench_hurdle.py TICKER --ev <365d EV%>`，把 PASS/FAIL 與「需要的 EV」寫進 Verdict 第一行；FAIL 的 Verdict 不得寫「可建倉」，只能寫「不買，停泊 VOO；觸發條件 X 時重評」。
