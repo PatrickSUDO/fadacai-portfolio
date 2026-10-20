@@ -77,6 +77,10 @@ R32_RS_SECTOR_PP = -10.0      # 90 日對板塊落後 ≥10pp
 R32_UNREAL_FLOOR = -20.0      # 信念桶自成本 −20% = 覆審線（不是停損，是強制裁決）
 R32_FAILED_DAYS = 45          # thesis gate 判 failed 後 45 天內視為退場觸發
 R32_ADMIN_SLUGS = ("auto-exec", "bcs-close", "options", "pair", "reentry")   # 這些不算信念 gate
+# R36（2026-10-20 用戶「SMH/VOO 換弱倉還有嗎」）：持倉版基準門檻——90 日對基準 ETF 落後 ≥ R36_RS_PP 且 修正非 up>down 且 收盤 <SMA50
+# → 標「基準替代候選」，下次 review 跑 365d EV：EV < hurdle − 10pp → 賣出換成該基準 ETF（不是現金），ETF 佔「基準替代格」不計 18 檔
+R36_RS_PP = -10.0
+
 
 # R25 修訂（2026-09-14）：sleeve 目標 6%、帶 4–8%；ETF 自峰 −10% → 減至 4%；帳戶自 sleeve 建立後峰值 −10% → 賣一半換子彈；GLD/XLE 套 R8 梯級
 SLEEVE_TARGET, SLEEVE_LO, SLEEVE_HI, SLEEVE_ETF_DD, SLEEVE_ACCT_DD = 6.0, 4.0, 8.0, -10.0, -10.0
@@ -297,7 +301,7 @@ def bucket_of(roster, sym):
     # R25（2026-09-04）：被動 sleeve ETF（GLD/XLE）視為 sleeve 桶，但不計 18 檔
     if sym in roster.get("exiting", []):
         return "exiting"   # 2026-10-20：用戶砍單進行中（反彈限價 + 失守線），不佔名額、不套 R8/R23/C2、不報無桶別
-    if sym in roster.get("passive_sleeve", []) or sym in roster.get("benchmark_parking", []):
+    if sym in roster.get("passive_sleeve", []) or sym in roster.get("benchmark_parking", []) or sym in roster.get("benchmark_slots", []):
         return "sleeve(ETF)"
     return None
 
@@ -471,6 +475,12 @@ def build_state(*, sync_alerts=False):
         #   a) 每檔信念桶必須有一個待驗的 thesis gate（不含 auto-exec / 選擇權管理 / pair / 撿回類），否則缺口
         #   b) 退場觸發（任一）→ 當日降認列（roster.json）+ 旗標 deadline ≤15 交易日；降級後 R8/R23 立即生效：
         #      ① thesis gate 45 天內判 failed  ② 30 日修正 down>up 且收盤 <EMA200 且 90 日對板塊落後 ≥10pp  ③ 自成本 ≤ −20%
+        # ── R36 持倉版基準門檻（機械代理；EV 裁決在 review）──
+        bench_swap = None
+        if bucket in ("認列", "信念") and rs90_sec is not None and rs90_sec <= R36_RS_PP \
+                and not (up is not None and down is not None and up > down) and mf.get("sma50") and last and last < mf["sma50"]:
+            bench_swap = f"90 日對 {sec_etf} {rs90_sec:+.0f}pp、修正 {up if up is not None else '—'}↑:{down if down is not None else '—'}↓、收盤 <SMA50"
+            gaps.append(f"{sym}: R36 基準替代候選（{bench_swap}）→ 下次 review 跑 365d EV，EV < {sec_etf} hurdle − 10pp 即賣出換成 {sec_etf}（不是現金）；換成的 ETF 進 roster benchmark_slots 不計 18 檔")
         conviction_exit = None
         if bucket == "信念":
             # 只有被標為信念 gate 的條目才算（gate_for=信念 或 source=conviction-gate）：gate 依定義是「多方條件」，failed 才等於信念破；
@@ -612,6 +622,7 @@ def build_state(*, sync_alerts=False):
         rows.append({
             "symbol": sym, "bucket": bucket, "qty": v["qty"], "unit_cost": round(cost, 2),
             "conviction_exit": conviction_exit,
+            "bench_swap_candidate": bench_swap,
             "rs90_vs_spy_pct": round(rs90, 1) if rs90 is not None else None, "rev_up_30d": up, "rev_down_30d": down,
             "sector_etf": sec_etf, "rs90_vs_sector_pct": round(rs90_sec, 1) if rs90_sec is not None else None,
             "ema200": round(mf["ema200"], 2) if mf.get("ema200") else None, "above_ema200": above_e200,
@@ -637,7 +648,7 @@ def build_state(*, sync_alerts=False):
     add_candidates.sort(key=lambda c: (not c.get("bb_squeeze"), -(c.get("ema50_slope5_pct") or -99)))
 
     passive = set(roster.get("passive_sleeve", [])) | set(roster.get("benchmark_parking", []))   # R33 基準停泊同 sleeve 不佔名額
-    passive |= set(roster.get("exiting", []))
+    passive |= set(roster.get("exiting", [])) | set(roster.get("benchmark_slots", []))
     n = len([r for r in rows if r["symbol"] not in passive])  # R25：被動 sleeve ETF 不計檔數
     # R29c：認列桶最弱兩檔（90d RS vs SPY 由弱到強，同 RS 看 revision 淨值）——換手只准換這兩檔
     harvest_rows = [r for r in rows if r["bucket"] == "認列" and r.get("rs90_vs_spy_pct") is not None]

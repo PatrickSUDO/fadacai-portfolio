@@ -704,3 +704,6 @@ python3 tools/generate_html.py portfolio-review briefing-out/portfolio-review-YY
 - The full report with G section will make many MCP calls. Expect 2-3 minutes for a 20-stock portfolio.
 - If the user wants a quick report, they can say "快速報告" to skip section G.
 - Fetch stock_info once per ticker and reuse data across G2 and G3 sections.
+
+## R36 持倉版基準門檻（2026-10-20 用戶）
+讀 `position-state.json` 的 `bench_swap_candidate` 非空者，每檔跑 probability-honesty-checker 365d EV 並 `tools/bench_hurdle.py TICKER --ev`：EV < hurdle − 10pp → 本期結論列「賣出換成 <基準 ETF>」（T6.5 可自動：賣出與買 ETF 同日、等額），登 `benchmark_slots` 與影子 `cf-r36-swap`；hurdle ±10pp 內續抱不加碼；≥ hurdle + 10pp 解除候選。
