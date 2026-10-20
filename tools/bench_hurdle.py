@@ -26,7 +26,7 @@ def bench_for(tk: str) -> str:
     return "VOO"
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("ticker"); ap.add_argument("--ev", type=float, required=True, help="12 個月 EV（%）"); ap.add_argument("--bench", default=None)
+    ap = argparse.ArgumentParser(); ap.add_argument("ticker"); ap.add_argument("--ev", type=float, required=True, help="12 個月 EV（百分比數字）"); ap.add_argument("--bench", default=None)
     a = ap.parse_args(); cfg = json.loads((ROOT / "research/benchmark-hurdles.json").read_text())
     b = (a.bench or bench_for(a.ticker)).upper(); h = cfg["hurdle_12m_pct"].get(b, cfg["hurdle_12m_pct"]["VOO"]); m = cfg["margin_pp"]
     ok = a.ev >= h + m
