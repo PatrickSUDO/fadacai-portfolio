@@ -492,6 +492,15 @@ def build_state(*, sync_alerts=False):
                 buy_lock = None
             else:
                 buy_lock = f"R23 減碼 {def_trim_dt} 後 30 天內" + (f"（收回 {trim_px:.0f} 且 rev up>down 即解鎖）" if trim_px else "")
+        if not buy_lock:
+            # 用戶砍單裁決（`SYM-exit-close` 失守線）後 30 天禁買：10/21 SNPS 依裁決賣 15 股當天，R30 回檔分支又要買回 6 股
+            for a in alerts.get("alerts", []):
+                if a.get("id") == f"{sym}-exit-close" and a.get("created"):
+                    try:
+                        if (today - dt.date.fromisoformat(a["created"][:10])).days <= R28_BUYLOCK_DAYS:
+                            buy_lock = f"用戶 {a['created'][:10]} 砍單裁決後 30 天內（{sym}-exit-close）"
+                    except ValueError:
+                        pass
         if buy_lock:
             bo = open_buy_orders(registry, sym)
             if bo:

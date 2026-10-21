@@ -589,6 +589,7 @@ def execute_plan(plan, reg, today):
     for oid, o in (reg.get("orders") or {}).items():
         if str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
             open_same.setdefault((o.get("symbol"), o.get("transaction")), []).append((oid, o.get("rule_ref")))
+    cancelled_now = set()  # 10/20 SNPS：本輪剛撤的反彈單仍在 registry 標 SUBMITTED，被去重當成「已有同向單」而跳過失守賣單
     for p in plan:
         rule, sym, act = p.get("rule"), p.get("symbol"), p.get("action")
         rec = {"rule": rule, "symbol": sym, "action": act, "qty": p.get("qty"), "limit": (p.get("order") or {}).get("limit")}
@@ -598,6 +599,8 @@ def execute_plan(plan, reg, today):
                 # 9/28 LITE：單已成交，券商回 400，log 仍記 cancelled → 對照時看起來像撤了一張成交單
                 ok = not isinstance(r, dict) or r.get("statusCode", 200) == 200
                 rec.update(status="cancelled" if ok else "cancel_failed", broker=r)
+                if ok:
+                    cancelled_now.add(p["order"]["id"])
             elif act in ("BUY", "SELL") and (p.get("order") or {}).get("type") == "limit" and p.get("qty"):
                 side = "S" if act == "SELL" else "B"
                 # 去重兩層：①同規則同向在掛；②今天已掛過任何同標的同向單（不看 rule_ref——9/16 三個 pass 疊了三套 GLD/XLE，
@@ -607,6 +610,8 @@ def execute_plan(plan, reg, today):
                              if o.get("symbol") == sym and o.get("transaction") == side
                              and (o.get("first_seen") or o.get("updated") or "")[:10] == today.isoformat()
                              and ("FILLED" in str(o.get("state", "")) or str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")))]
+                dup = [o for o in dup if o not in cancelled_now]
+                dup_today = [o for o in dup_today if o not in cancelled_now]
                 if dup or dup_today:
                     rec.update(status="skipped", why=f"今天已有同向單 {dup or dup_today}，不重掛"); results.append(rec); continue
                 dur = "day" if (p.get("order") or {}).get("duration") == "day" else "gt90"
