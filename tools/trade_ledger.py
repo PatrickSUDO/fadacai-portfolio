@@ -224,6 +224,7 @@ def fetch_positions():
         eq[sym] = {"qty": float(item.get("quantity") or 0),
                    "unit_cost": float(item.get("unit_cost") or 0),
                    "last": float(item.get("last") or 0),
+                   "prev_close": float(item.get("close") or 0),
                    "market_value": float(item.get("market_value") or 0)}
     res = bal.get("result") or bal
     return {"equities": eq,

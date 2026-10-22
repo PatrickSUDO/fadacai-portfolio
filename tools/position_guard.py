@@ -641,7 +641,7 @@ def build_state(*, sync_alerts=False):
             "sector_etf": sec_etf, "rs90_vs_sector_pct": round(rs90_sec, 1) if rs90_sec is not None else None,
             "ema200": round(mf["ema200"], 2) if mf.get("ema200") else None, "above_ema200": above_e200,
             "above_sma50": bool(mf.get("sma50") and last and last > mf["sma50"]),
-            "last": round(last, 2) if last else None, "weight_pct": round(weight, 2) if weight is not None else None,
+            "last": round(last, 2) if last else None, "prev_close": v.get("prev_close") or None, "weight_pct": round(weight, 2) if weight is not None else None,
             "unrealized_pct": round(unreal, 1) if unreal is not None else None,
             "open_since": since, "days_held": days, "r14_locked": r14_locked,
             "peak_qty": peak_qty, "cum_sold_pct": round(cum_sold, 1), "sellable_before_floor": int(sellable_left),

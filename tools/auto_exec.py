@@ -60,8 +60,27 @@ def prev_close(symbols: list[str]) -> dict:
         import yfinance as yf
         px = yf.download(symbols, period="7d", auto_adjust=True, progress=False)["Close"]
         if hasattr(px, "columns"):
-            last = px.dropna(how="all").iloc[-1]
-            asof = px.dropna(how="all").index[-1].date().isoformat()
+            px = px.dropna(how="all")
+            # 盤中跑（早上 dry-run）時 yfinance 最後一列是今天的未完成 K 棒——那是盤中價不是收盤，丟掉
+            # （2026-10-22：GLD/AVGO 盤中價被標成「前收」，dry-run 誤列失守線觸發）
+            from zoneinfo import ZoneInfo
+            now_et = datetime.now(ZoneInfo("America/New_York"))
+            if len(px) > 1 and px.index[-1].date() == now_et.date() and now_et.hour < 16:
+                # 同日還見過 yfinance 日線整列缺前一交易日（10/21 缺）→ 丟掉今天會退到前前收。改用 fast_info 的 previousClose
+                prev_day = now_et.date() - timedelta(days=3 if now_et.weekday() == 0 else 1)
+                out = {"asof": prev_day.isoformat(), "asof_intraday_fallback": True}
+                for s in symbols:
+                    try:
+                        v = yf.Ticker(s).fast_info["previous_close"]
+                        if v and not math.isnan(float(v)):
+                            out[s] = float(v)
+                    except Exception:  # noqa: BLE001
+                        pass
+                if len(out) > 1:
+                    return out
+                px = px.iloc[:-1]
+            last = px.iloc[-1]
+            asof = px.index[-1].date().isoformat()
             return {"asof": asof, **{s: float(last[s]) for s in symbols if s in last and not math.isnan(float(last[s]))}}
         return {}
     except Exception as e:  # noqa: BLE001
@@ -175,6 +194,11 @@ def main(argv):
     BUF = 0.005 if preclose else 0.0
     DUR_SELL = "day" if preclose else "gt90"
     closes = intraday_last(syms) if preclose else prev_close(syms)
+    # 盤中 dry-run：持倉的前收以券商收盤欄位為準（yfinance 日線會整列缺前一交易日、fast_info 偏差可達 2%，2026-10-22）
+    if not preclose and closes.get("asof_intraday_fallback"):
+        for q in st.get("positions", []):
+            if q.get("prev_close") and q["symbol"] in syms:
+                closes[q["symbol"]] = float(q["prev_close"])
     bench_moves = bench_day_moves(closes, r23_benches, preclose) if r23_benches else {}
     px_note = "" if closes and "error" not in closes else f"⚠️ yfinance 失敗（{closes.get('error','空')}），退回 position-state last（非收盤，僅 dry-run 參考）"
 
