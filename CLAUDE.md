@@ -337,7 +337,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
   - polymarket-mcp: `get_trending_markets()`
 - Health test also fails → fallback to WebSearch/WebFetch for equivalent data
 - 在輸出中標記 "⚠️ [server] MCP 不可用，使用替代數據源"
-- **fmp-mcp 專屬 fallback（session 過期無需 `/mcp` reconnect）**：`mcp__fmp-mcp__*` 回 `Session not found or expired` 時，**不需手動 reconnect**，直接跑旁路 helper（每次建全新 MCP session，永不過期）：
+- **fmp-mcp 專屬 fallback（session 過期無需 `/mcp` reconnect）**：**2026-10-23 已把容器內 toolception session 快取 TTL 從 1 小時改 30 天（Dockerfile），平常不該再過期；容器重建後舊 session 要 reconnect 一次**。若仍出現：`mcp__fmp-mcp__*` 回 `Session not found or expired` 時，**不需手動 reconnect**，直接跑旁路 helper（每次建全新 MCP session，永不過期）：
   ```bash
   python3 tools/fmp_query.py <toolName> [--args '<json>']
   ```
