@@ -278,6 +278,8 @@ def main(argv):
             # 兩段式出場（2026-10-20）：失守線成立時，先撤同標的所有在掛賣單（反彈限價那張），再掛貼盤賣，避免兩張賣單同時成交變成放空
             for oid, o in (reg.get("orders") or {}).items():
                 if o.get("symbol") == sym and o.get("transaction") == "S" and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+                    if (o.get("rule_ref") or "").startswith("user-close-line"):
+                        continue   # 已經是失守線賣單（例：手動補單 10/23 GLD/AVGO）→ 不撤；下面的 SELL 會被「已在券商同規則同向」去重
                     plan.append({"rule": "user-close-line-cancel", "symbol": sym, "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
                                  "basis": f"失守線 {aid} 成立 → 先撤同標的在掛賣單 {oid}（{o.get('shares')}@{o.get('limit_price')}），避免與貼盤賣單重複成交", "after": []})
             held = int(float(p.get("qty", 0) or 0))

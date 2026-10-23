@@ -59,6 +59,13 @@ log "auto_exec --execute $FLAG"
 AUTO_EXEC_LIVE=1 uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" --execute $FLAG >> "$LOG" 2>&1
 RC=$?
 log "auto_exec rc=${RC}（5 = state 非 live 拒絕執行）｜ET ${ET_DATE} ${ET_HM}"
+# 2026-10-23（10/22 close pass 案）：Firstrade 斷線時 guard 退回 ledger 資料 → auto_exec rc=5 拒絕執行。
+# 原本照樣寫 marker → 當晚不再重試，失守線全部漏執行。改成：rc=5 且離時窗結束 >20 分鐘 → 不寫 marker、不發 Telegram，等下一個 tick 重試。
+LAST_CALL=$(( 10#$WIN_HI - 20 ))
+if [[ "$RC" == "5" ]] && (( 10#$ET_HM < LAST_CALL )); then
+  log "state 非 live，${ET_HM} 未到最後一輪（${LAST_CALL}）→ 不寫 marker，下個 tick 重試"
+  exit 0
+fi
 mkdir -p "$LOG_DIR/cache" && touch "$MARK"
 
 # Telegram 一則摘要（只在有動作 / 有錯 / 被拒時發）

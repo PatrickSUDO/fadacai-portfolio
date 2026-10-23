@@ -119,7 +119,8 @@ def live_positions():
         pos = trade_ledger.fetch_positions()
         return pos
     except Exception as e:  # noqa: BLE001
-        print(f"[warn] live positions unavailable ({str(e)[:80]}); falling back to ledger FIFO", file=sys.stderr)
+        msg = str(e)
+        print(f"[warn] live positions unavailable ({type(e).__name__}: {msg[:80]} … {msg[-120:]}); falling back to ledger FIFO", file=sys.stderr)
         return None
 
 
@@ -740,8 +741,12 @@ def build_state(*, sync_alerts=False):
                          "gap": gap, "streak": rot["streak"], "due": due,
                          "bench_ranked": [{"symbol": x[1], "score": x[0]} for x in sorted(bench_scores, reverse=True)[:6]],
                          "held_ranked": [{"symbol": x[1], "score": x[0]} for x in sorted(held_scores)[:4]]})
-        if due:
-            gaps.append(f"R29d 輪動到期：{b_sym}（分 {b_s}，rev {b_up or 0:g}↑:{b_dn or 0:g}↓）連 {rot['streak']} 日勝最弱在倉 {w_sym}（分 {w_s}）≥{hurdle:g} → 換手：賣 {w_sym}、{b_sym} starter ≤2%；不換要寫理由（forced 旗標 5 日）")
+        # 2026-10-23：R29d 與 R35 對齊——候補是新名字，換手前必須先過 R35（12 月 EV ≥ 基準 hurdle + 10pp）；
+        # 已有 r29d 旗標（決定待裁）就不重複報缺口，只在 rotation 欄留狀態
+        r29d_pending = any("r29d" in (f.get("id") or "") for f in open_flags(flags, w_sym))
+        rotation["r29d_flag_open"] = r29d_pending
+        if due and not r29d_pending:
+            gaps.append(f"R29d 輪動到期：{b_sym}（分 {b_s}，rev {b_up or 0:g}↑:{b_dn or 0:g}↓）連 {rot['streak']} 日勝最弱在倉 {w_sym}（分 {w_s}）≥{hurdle:g} → 先跑 {b_sym} 12 月 EV 過 R35（bench_hurdle.py），PASS 才換：賣 {w_sym}、{b_sym} starter ≤2%；不換寫理由（flag --slug r29d-…，deadline 5 交易日）")
     # 偵測換手已發生：bench 名字出現在持倉 → 記 last_swap、streak 歸零
     if any(s in held for s in (bench_cfg.get("L1", []) + bench_cfg.get("L2", []))) and rot.get("last_swap") != today.isoformat():
         newly = [s for s in (bench_cfg.get("L1", []) + bench_cfg.get("L2", [])) if s in held]
@@ -914,6 +919,11 @@ def _sync_r23_alerts(alerts, rows, today):
     return changed
 
 
+def _f1(v, spec):
+    """None-safe 數字格式（render 不得因單一缺值讓 guard 整支失敗）。"""
+    return format(v, spec) if isinstance(v, (int, float)) else "—"
+
+
 def render_table(state):
     lines = [
         f"> 生成：{state['asof']}（來源 {state['source']}）｜{state['n_positions']} 檔 / 上限 {state['max_positions']}"
@@ -938,7 +948,7 @@ def render_table(state):
         lines.append(f"| {r['symbol']} | {r['bucket'] or '❓'} | {r['qty']:g} | {r['unit_cost']:.2f} | {r['last'] or '—'} | {w} | {u} | {days} | {d} | {r23} | {sold} | {sells} | {fl} | {earn} |")
     if state.get("weakest_two"):
         lines += ["", "**R29c 認列桶最弱兩檔（換手只准換這兩檔）：** " + "；".join(
-            f"{w['symbol']} RS90 {w['rs90_vs_spy_pct']:+.1f}pp vs SPY（{w.get('rs90_vs_sector') or '—'}）、rev {w['rev']}、{w['weight_pct']:.1f}%" for w in state["weakest_two"])]
+            f"{w['symbol']} RS90 {_f1(w.get('rs90_vs_spy_pct'), '+.1f')}pp vs SPY（{w.get('rs90_vs_sector') or '—'}）、rev {w.get('rev')}、{_f1(w.get('weight_pct'), '.1f')}%" for w in state["weakest_two"])]
     rt = state.get("rotation") or {}
     if rt.get("weakest") and rt.get("top_bench"):
         lines += ["", f"**R29d 輪動：** 最弱在倉 {rt['weakest']['symbol']}（{rt['weakest']['score']}）vs 候補最強 {rt['top_bench']['symbol']}（{rt['top_bench']['score']}，rev {rt['top_bench']['rev']}）差 {rt['gap']}（門檻 {rt['top_bench']['hurdle']:g}）｜連續 {rt['streak']}/10 日｜上次換手 {rt.get('last_swap') or '—'}"
@@ -984,7 +994,11 @@ def main():
 
     state = build_state(sync_alerts=args.sync_alerts)
     STATE_OUT.write_text(json.dumps(state, ensure_ascii=False, indent=1))
-    table = render_table(state)
+    try:
+        table = render_table(state)
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] render_table failed ({type(e).__name__}: {str(e)[:120]}); state 已寫入，plan.md 本次不更新", file=sys.stderr)
+        table = ""
     if args.render_plan:
         render_plan(table)
     if args.json:
