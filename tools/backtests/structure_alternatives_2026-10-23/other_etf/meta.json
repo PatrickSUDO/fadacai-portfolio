@@ -1,0 +1,371 @@
+{
+ "VOO": {
+  "expense": 0.03,
+  "yield_info": 0.0106,
+  "ttm_div": 7.427999999999999,
+  "last_px": 702.2999877929688,
+  "ttm_yield": 0.010576676817755693,
+  "name": "Vanguard S&P 500 ETF",
+  "aum": 1729312194560
+ },
+ "SPY": {
+  "expense": 0.0945,
+  "yield_info": 0.0099,
+  "ttm_div": 7.583,
+  "last_px": 763.9600219726562,
+  "ttm_yield": 0.009925912065947623,
+  "name": "State Street SPDR S&P 500 ETF Trust",
+  "aum": 809216114688
+ },
+ "QQQ": {
+  "expense": 0.18,
+  "yield_info": 0.0042,
+  "ttm_div": 3.0909999999999997,
+  "last_px": 704.469970703125,
+  "ttm_yield": 0.004387695896980394,
+  "name": "Invesco QQQ Trust",
+  "aum": 498945982464
+ },
+ "QQQM": {
+  "expense": 0.15,
+  "yield_info": 0.0043,
+  "ttm_div": 1.316,
+  "last_px": 290.1300048828125,
+  "ttm_yield": 0.004535897624692594,
+  "name": "Invesco NASDAQ 100 ETF",
+  "aum": 109808730112
+ },
+ "VUG": {
+  "expense": 0.03,
+  "yield_info": 0.0038,
+  "ttm_div": 0.345834,
+  "last_px": 87.16999816894531,
+  "ttm_yield": 0.003967351236256017,
+  "name": "Vanguard Morningstar Growth ETF",
+  "aum": 392072069120
+ },
+ "IWF": {
+  "expense": 0.18,
+  "yield_info": 0.0034,
+  "ttm_div": 0.432,
+  "last_px": 120.08999633789062,
+  "ttm_yield": 0.003597302133181063,
+  "name": "iShares Russell 1000 Growth ETF",
+  "aum": 127738003456
+ },
+ "SCHG": {
+  "expense": 0.04,
+  "yield_info": 0.0039,
+  "ttm_div": 0.139,
+  "last_px": 34.939998626708984,
+  "ttm_yield": 0.003978248582235062,
+  "name": "Schwab U.S. Large-Cap Growth ETF",
+  "aum": 63851294720
+ },
+ "MGK": {
+  "expense": 0.05,
+  "yield_info": 0.0033000002,
+  "ttm_div": 0.2268,
+  "last_px": 89.05999755859375,
+  "ttm_yield": 0.0025465978690464852,
+  "name": "Vanguard Morningstar Mega Cap Growth ETF",
+  "aum": 35095474176
+ },
+ "IWY": {
+  "expense": 0.2,
+  "yield_info": 0.0033000002,
+  "ttm_div": 0.9700000000000001,
+  "last_px": 282.3699951171875,
+  "ttm_yield": 0.00343520918218466,
+  "name": "iShares Russell Top 200 Growth ETF",
+  "aum": 16417813504
+ },
+ "SPMO": {
+  "expense": 0.13,
+  "yield_info": 0.0073,
+  "ttm_div": 1.1,
+  "last_px": 138.82000732421875,
+  "ttm_yield": 0.007923929851342779,
+  "name": "Invesco S&P 500 Momentum ETF",
+  "aum": 23015297024
+ },
+ "MTUM": {
+  "expense": 0.15,
+  "yield_info": 0.0058,
+  "ttm_div": 1.853,
+  "last_px": 288.57000732421875,
+  "ttm_yield": 0.0064213187544403675,
+  "name": "iShares MSCI USA Momentum Factor ETF",
+  "aum": 20429352960
+ },
+ "XMMO": {
+  "expense": 0.34,
+  "yield_info": 0.0067000003,
+  "ttm_div": 0.983,
+  "last_px": 135.22999572753906,
+  "ttm_yield": 0.0072690973235002175,
+  "name": "Invesco S&P MidCap Momentum ETF",
+  "aum": 6995473920
+ },
+ "QMOM": {
+  "expense": 0.28,
+  "yield_info": 0.0049,
+  "ttm_div": 0.354,
+  "last_px": 70.81099700927734,
+  "ttm_yield": 0.0049992234956615636,
+  "name": "Alpha Architect U.S. Quantitative Momentum ETF",
+  "aum": 419061408
+ },
+ "QUAL": {
+  "expense": 0.15,
+  "yield_info": 0.0085,
+  "ttm_div": 1.8899999999999997,
+  "last_px": 224.5800018310547,
+  "ttm_yield": 0.0084157092554563,
+  "name": "iShares MSCI USA Quality Factor ETF",
+  "aum": 47676018688
+ },
+ "COWZ": {
+  "expense": 0.49,
+  "yield_info": 0.020399999,
+  "ttm_div": 1.3599999999999999,
+  "last_px": 71.77999877929688,
+  "ttm_yield": 0.01894678215559203,
+  "name": "Pacer US Cash Cows 100 ETF",
+  "aum": 18588141568
+ },
+ "RSP": {
+  "expense": 0.2,
+  "yield_info": 0.0153,
+  "ttm_div": 3.181,
+  "last_px": 218.22000122070312,
+  "ttm_yield": 0.014577032271129003,
+  "name": "Invesco S&P 500 Equal Weight ETF",
+  "aum": 96059047936
+ },
+ "SPLV": {
+  "expense": 0.25,
+  "yield_info": 0.0233,
+  "ttm_div": 1.6549999999999998,
+  "last_px": 76.16999816894531,
+  "ttm_yield": 0.02172771484553806,
+  "name": "Invesco S&P 500 Low Volatility ETF",
+  "aum": 6920017408
+ },
+ "USMV": {
+  "expense": 0.15,
+  "yield_info": 0.0145000005,
+  "ttm_div": 1.411,
+  "last_px": 103.51000213623047,
+  "ttm_yield": 0.013631532903873096,
+  "name": "iShares MSCI USA Min Vol Factor ETF",
+  "aum": 23164264448
+ },
+ "XLK": {
+  "expense": 0.08,
+  "yield_info": 0.0043,
+  "ttm_div": 0.836,
+  "last_px": 182.33999633789062,
+  "ttm_yield": 0.004584841596962769,
+  "name": "State Street Technology Select Sector SPDR ETF",
+  "aum": 127297691648
+ },
+ "VGT": {
+  "expense": 0.09,
+  "yield_info": 0.0038,
+  "ttm_div": 0.47262499999999996,
+  "last_px": 118.5999984741211,
+  "ttm_yield": 0.003985033778083296,
+  "name": "Vanguard Information Technology Index Fund ETF Shares",
+  "aum": 177927127040
+ },
+ "SMH": {
+  "expense": 0.35,
+  "yield_info": 0.0018000001,
+  "ttm_div": 1.105,
+  "last_px": 523.3499755859375,
+  "ttm_yield": 0.0021113978246829054,
+  "name": "VanEck Semiconductor ETF",
+  "aum": 74879844352
+ },
+ "SOXX": {
+  "expense": 0.33,
+  "yield_info": 0.0022,
+  "ttm_div": 1.252,
+  "last_px": 475.69000244140625,
+  "ttm_yield": 0.002631966182964328,
+  "name": "iShares Semiconductor ETF",
+  "aum": 48434552832
+ },
+ "IGV": {
+  "expense": 0.38,
+  "yield_info": 0.0002,
+  "ttm_div": 0.017,
+  "last_px": 108.72000122070312,
+  "ttm_yield": 0.0001563649724901103,
+  "name": "iShares Expanded Tech-Software Sector ETF",
+  "aum": 13912004608
+ },
+ "AIQ": {
+  "expense": 0.68,
+  "yield_info": 0.0007,
+  "ttm_div": 0.045,
+  "last_px": 62.06999969482422,
+  "ttm_yield": 0.0007249879204325561,
+  "name": "Global X Artificial Intelligence & Technology ETF",
+  "aum": 10326885376
+ },
+ "BOTZ": {
+  "expense": 0.68,
+  "yield_info": 0.005,
+  "ttm_div": 0.176,
+  "last_px": 32.68000030517578,
+  "ttm_yield": 0.005385556865252707,
+  "name": "Global X Robotics & Artificial Intelligence ETF",
+  "aum": 3334113536
+ },
+ "FDN": {
+  "expense": 0.49,
+  "yield_info": 0.0,
+  "ttm_div": 0.0,
+  "last_px": 281.32000732421875,
+  "ttm_yield": 0.0,
+  "name": "First Trust Dow Jones Internet Index Fund",
+  "aum": 5234000896
+ },
+ "SKYY": {
+  "expense": 0.6,
+  "yield_info": 0.0,
+  "ttm_div": 0.0,
+  "last_px": 164.32000732421875,
+  "ttm_yield": 0.0,
+  "name": "First Trust Cloud Computing ETF",
+  "aum": 3327039232
+ },
+ "CIBR": {
+  "expense": 0.58,
+  "yield_info": 0.0038,
+  "ttm_div": 0.393,
+  "last_px": 102.80999755859375,
+  "ttm_yield": 0.0038225854423935804,
+  "name": "First Trust NASDAQ Cybersecurity ETF",
+  "aum": 17322008576
+ },
+ "WCLD": {
+  "expense": 0.45,
+  "yield_info": 0.0,
+  "ttm_div": 0.0,
+  "last_px": 45.279998779296875,
+  "ttm_yield": 0.0,
+  "name": "WisdomTree Cloud Computing Fund",
+  "aum": 282130432
+ },
+ "PAVE": {
+  "expense": 0.47,
+  "yield_info": 0.0082,
+  "ttm_div": 0.431,
+  "last_px": 52.06999969482422,
+  "ttm_yield": 0.008277319042174713,
+  "name": "Global X U.S. Infrastructure Development ETF",
+  "aum": 13355843584
+ },
+ "GRID": {
+  "expense": 0.56,
+  "yield_info": 0.0087,
+  "ttm_div": 1.547,
+  "last_px": 163.19000244140625,
+  "ttm_yield": 0.009479747391727958,
+  "name": "First Trust NASDAQ Clean Edge Smart Grid Infrastructure Index Fund",
+  "aum": 11866589184
+ },
+ "URA": {
+  "expense": 0.69,
+  "yield_info": 0.0521,
+  "ttm_div": 2.084,
+  "last_px": 34.09000015258789,
+  "ttm_yield": 0.061132296587619595,
+  "name": "Global X Uranium ETF",
+  "aum": 5591713280
+ },
+ "NLR": {
+  "expense": 0.52,
+  "yield_info": 0.0306,
+  "ttm_div": 3.166,
+  "last_px": 90.83999633789062,
+  "ttm_yield": 0.03485248929583474,
+  "name": "VanEck Uranium and Nuclear ETF",
+  "aum": 3546939392
+ },
+ "ITA": {
+  "expense": 0.37,
+  "yield_info": 0.0027,
+  "ttm_div": 0.5660000000000001,
+  "last_px": 204.47999572753906,
+  "ttm_yield": 0.00276799692794483,
+  "name": "iShares U.S. Aerospace & Defense ETF",
+  "aum": 12136253440
+ },
+ "XLE": {
+  "expense": 0.08,
+  "yield_info": 0.0248,
+  "ttm_div": 1.5230000000000001,
+  "last_px": 67.56999969482422,
+  "ttm_yield": 0.022539588676609986,
+  "name": "State Street Energy Select Sector SPDR ETF",
+  "aum": 39130157056
+ },
+ "GLD": {
+  "expense": 0.4,
+  "yield_info": 0.0,
+  "ttm_div": 0.0,
+  "last_px": 369.0,
+  "ttm_yield": 0.0,
+  "name": "SPDR Gold Shares",
+  "aum": 141702414336
+ },
+ "JEPQ": {
+  "expense": 0.35,
+  "yield_info": 0.1105,
+  "ttm_div": 6.885999999999999,
+  "last_px": 58.41999816894531,
+  "ttm_yield": 0.11787059595733493,
+  "name": "JPMorgan Nasdaq Equity Premium Income ETF",
+  "aum": 44315615232
+ },
+ "JEPI": {
+  "expense": 0.35,
+  "yield_info": 0.081599995,
+  "ttm_div": 4.563,
+  "last_px": 57.290000915527344,
+  "ttm_yield": 0.07964740665178253,
+  "name": "JPMorgan Equity Premium Income ETF",
+  "aum": 45266845696
+ },
+ "QYLD": {
+  "expense": 0.6,
+  "yield_info": 0.0571,
+  "ttm_div": 2.143,
+  "last_px": 18.065000534057617,
+  "ttm_yield": 0.11862717612212859,
+  "name": "Global X NASDAQ 100 Covered Call ETF",
+  "aum": 8478908928
+ },
+ "BUFR": {
+  "expense": 0.95,
+  "yield_info": 0.0,
+  "ttm_div": 0.0,
+  "last_px": 37.599998474121094,
+  "ttm_yield": 0.0,
+  "name": "FT Vest Laddered Buffer ETF",
+  "aum": 10742445056
+ },
+ "ARKK": {
+  "expense": 0.75,
+  "yield_info": 0.0,
+  "ttm_div": 0.0,
+  "last_px": 81.86000061035156,
+  "ttm_yield": 0.0,
+  "name": "ARK Innovation ETF",
+  "aum": 7916893184
+ }
+}
