@@ -13,6 +13,7 @@ Usage:
 
 誠實標示：
 - MDD 基於離散標記（低估真實 MDD，盤中低點與缺日不在內）
+- 年化波動只用相鄰 ≤3 日的標記段（2026-10-23 修：長空窗攤進分母曾把 17.3% 算成實際 33–39% 的一半）
 - 標記不足一年時 CAGR/Sharpe 為年化外推，僅供方向參考
 - 「組合市值」類標記（不含現金）同檔找得到現金才併入，否則剔除
 """
@@ -33,6 +34,21 @@ MARKS_FILE = ROOT / "research" / "equity-marks.json"
 LEDGER_FILE = ROOT / "research" / "trade-ledger.jsonl"
 OUT_FILE = ROOT / "briefing-out" / "cache" / "account-metrics.json"
 MACRO_FILE = ROOT / "briefing-out" / "cache" / "macro-snapshot.json"
+
+# 波動估計參數：相鄰標記最多隔幾個日曆日才算連續段（3 = 容許週末 Fri→Mon）；至少幾個交易日才報波動
+VOL_MAX_GAP_DAYS = 3
+VOL_MIN_TRADING_DAYS = 10
+
+
+def _weekdays_between(d0: date, d1: date) -> int:
+    """(d0, d1] 之間的平日數，當作交易日數近似（標記只落在交易日，假日誤差可忽略）。"""
+    n, d = 0, d0
+    while d < d1:
+        d = date.fromordinal(d.toordinal() + 1)
+        if d.weekday() < 5:
+            n += 1
+    return n
+
 
 # 已知髒標記（掃描時自動剔除，附理由）
 EXCLUDE = {
@@ -141,24 +157,32 @@ def equity_metrics(series):
             mdd, mdd_from, mdd_to = dd, peak_d, dt
     current_dd = vals[-1] / peak - 1  # 供 R15 回檔熔斷（−10% 閘）判定
 
-    # 不規則間隔 Sharpe：區間 log return 攤到日，日波動加權估計
-    lrs, gaps = [], []
+    # 波動估計（2026-10-23 修）：只用相鄰 ≤ VOL_MAX_GAP_DAYS 個日曆日的標記段（含週末 Fri→Mon），
+    # 以交易日數攤分再乘 252 年化。長空窗不進估計——舊版把 1/1 手動錨 → 6/1 首個刮取標記之間
+    # 151 天的單一段攤進分母，等於把五個月空窗當零波動，年化波動算成 17.3%，重算為 33–39%，
+    # 且與同期 β_SPY 2.6 在數學上互斥（隱含相關 >1）。Sharpe 改用 CAGR（整段幾何年化）減 rf。
+    seg = []  # (log return, 交易日數)
     for i in range(1, len(series)):
         gap = (dates[i] - dates[i - 1]).days
-        if gap <= 0:
+        if gap <= 0 or gap > VOL_MAX_GAP_DAYS:
             continue
-        lrs.append(math.log(vals[i] / vals[i - 1]))
-        gaps.append(gap)
-    total_days = sum(gaps)
-    mean_d = sum(lrs) / total_days
-    var_d = sum((lr - mean_d * g) ** 2 / g for lr, g in zip(lrs, gaps)) / total_days
-    vol_ann = math.sqrt(var_d) * math.sqrt(252)
+        td = _weekdays_between(dates[i - 1], dates[i])
+        if td <= 0:
+            continue
+        seg.append((math.log(vals[i] / vals[i - 1]), td))
+    total_td = sum(td for _, td in seg)
     rf = 0.04
     try:
         rf = json.loads(MACRO_FILE.read_text())["series"]["fed_funds"]["value"] / 100
     except Exception:
         pass
-    sharpe = ((math.exp(mean_d * 252) - 1) - rf) / vol_ann if vol_ann else None
+    if total_td >= VOL_MIN_TRADING_DAYS:
+        mean_td = sum(lr for lr, _ in seg) / total_td
+        var_d = sum((lr - mean_td * td) ** 2 / td for lr, td in seg) / total_td
+        vol_ann = math.sqrt(var_d * 252)
+        sharpe = (cagr - rf) / vol_ann if vol_ann else None
+    else:
+        vol_ann, sharpe = None, None
 
     return {
         "window": {"from": series[0][0], "to": series[-1][0], "days": days,
@@ -172,9 +196,11 @@ def equity_metrics(series):
         "current_drawdown_pct": round(current_dd * 100, 2),
         "peak_value": peak, "peak_date": peak_d.isoformat(),
         "circuit_breaker_active": current_dd <= -0.10,
-        "vol_ann_pct": round(vol_ann * 100, 2),
+        "vol_ann_pct": round(vol_ann * 100, 2) if vol_ann is not None else None,
         "sharpe": round(sharpe, 2) if sharpe is not None else None,
         "rf_used_pct": round(rf * 100, 2),
+        "vol_method": {"max_gap_days": VOL_MAX_GAP_DAYS, "segments_used": len(seg),
+                       "trading_days_used": total_td, "sharpe_numerator": "cagr - rf"},
     }
 
 
@@ -235,6 +261,7 @@ def cmd_report(live: float | None, pf_from: str):
            "caveats": [
                "MDD 基於離散標記，低估真實 MDD（盤中/缺日不在內）",
                "淨值紀錄自 2026-06-01 起；年化數字為短窗外推，僅供方向參考",
+               f"年化波動只用相鄰 ≤{VOL_MAX_GAP_DAYS} 日的標記段估計（長空窗不進分母）；Sharpe = (CAGR − rf) ÷ 年化波動",
                "profit factor 為 FIFO 已實現（含選擇權、含費用），未配對賣出已剔除",
            ]}
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +277,10 @@ def cmd_report(live: float | None, pf_from: str):
     print(f"MDD       {eq['mdd_pct']:.2f}%   （{eq['mdd_from']} 峰 → {eq['mdd_to']} 谷）")
     cb = "🔴 熔斷生效（R15）" if eq["circuit_breaker_active"] else "正常"
     print(f"當前回撤  {eq['current_drawdown_pct']:.2f}%（峰 {eq['peak_date']} ${eq['peak_value']:,.0f}）→ {cb}")
-    print(f"Sharpe    {eq['sharpe']}      （年化波動 {eq['vol_ann_pct']:.1f}%，rf {eq['rf_used_pct']}%）")
+    vm = eq.get("vol_method", {})
+    vol_txt = f"{eq['vol_ann_pct']:.1f}%" if eq.get("vol_ann_pct") is not None else "n/a（連續標記段不足）"
+    print(f"Sharpe    {eq['sharpe']}      （年化波動 {vol_txt}，rf {eq['rf_used_pct']}%；"
+          f"{vm.get('segments_used', 0)} 段 / {vm.get('trading_days_used', 0)} 交易日，空窗 >{vm.get('max_gap_days', '?')} 日不計）")
     print(f"ProfitFactor {pf['profit_factor']}（{pf['from']} 起：+${pf['gross_profit']:,.0f} / −${pf['gross_loss']:,.0f}，"
           f"勝率 {pf['win_rate_pct']}%（{pf['closed_wins']}W/{pf['closed_losses']}L），未配對剔除 {pf['unmatched_sells_skipped']} 筆）")
     return 0
