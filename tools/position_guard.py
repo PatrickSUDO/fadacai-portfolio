@@ -12,6 +12,7 @@
   R30 加碼候選（買強：未實現>0 + revision up>down + 價>SMA50 + 權重<6%）
   R25 修訂 sleeve 帶 4–8% / ETF 自峰 −10% 減至 2% / 帳戶自 sleeve 建立後峰 −10% 賣半 / R8 梯級
   桶別缺口（roster.json 沒登記的持倉）  旗標一致性（旗標/警報/thesis 三方）
+  C7  內嵌槓桿 embedded_leverage = 曝險 ÷ 淨值 ≤ 1.00（2026-10-23 用戶；槓桿 ETF×倍數 + 選擇權 delta 名目 + 賣 put 履約名目）
 
 資料源：Firstrade live 持倉（trade_ledger.fetch_positions，失敗退回交易帳 FIFO）、
 research/trade-ledger.jsonl、research/roster.json、research/order-registry.json、
@@ -58,6 +59,16 @@ EARN_WINDOW_DAYS = 2
 RUNNER_FLOOR_PCT = 30       # C2（2026-09-14）：R8+R23 合計最多賣 70%，30% runner 對兩者合計生效
 IDLE_TRIGGER, IDLE_BUFFER_PCT, IDLE_RESERVE_USD = 10_000, 0.03, 8_000   # R24 閒置現金；緩衝 = max(3%, $8k)（2026-09-16 留手動掛單額）
 STOP_PRICE_TYPES = {"3", "4"}  # Firstrade price_type：3=stop、4=stop-limit（R16 樂透停損單）
+# C7 內嵌槓桿量測（2026-10-23 用戶，源自 research/structure-alternatives-evaluation-2026-10-23.md）：
+#   embedded_leverage = 曝險 ÷ 淨值 ≤ EMB_LEV_CAP。曝險 = 現股市值 + 槓桿 ETF 市值×|倍數| + 多方 call（LEAPS）與 debit 價差的 delta 等值名目
+#   + 賣 put 履約名目（不論是否為 bull put spread 的腿——指派風險是整個履約）。SGOV/BIL 算 0、VOO 等停泊 ETF 算 1。
+#   保守口徑：單獨的 covered call 短腿與單獨買 put 不減曝險（只有與同到期多方腿配對的價差才淨算）。
+#   超過上限 → 缺口進 Key Alerts：不新增曝險、先減槓桿 ETF / 選擇權名目。倍數表：roster.json leveraged_etf_multipliers 覆寫下表。
+EMB_LEV_CAP = 1.00
+EMB_LEV_RF = 0.04
+LEV_ETF_MULT_DEFAULT = {"SOXL": 3, "SOXS": 3, "USD": 2, "SSG": 2, "TQQQ": 3, "SQQQ": 3, "QLD": 2, "QID": 2, "UPRO": 3, "SPXL": 3,
+                        "SPXU": 3, "SPXS": 3, "SSO": 2, "SDS": 2, "TECL": 3, "TECS": 3, "ROM": 2, "FNGU": 3, "FNGD": 3,
+                        "NVDL": 2, "NVDU": 2, "TSLL": 2, "MSTU": 2, "CONL": 2, "SMCX": 2, "AMDL": 2, "GGLL": 2, "BITX": 2}
 # R28（2026-09-14，CRDO 案）：a) R23 armed 且自峰 ≤ −15% 或 R23 減碼後 30 天內 → 禁向下加碼
 #                             b) R23 減碼過且已跌破成本 → 不享 runner 保底，須開旗標（deadline ≤ 15 交易日）
 #                             c) 認列桶單名累計虧損（已實現+未實現，自建倉）≥ 1.5% 帳戶 → forced 旗標
@@ -362,6 +373,171 @@ def alerts_for(alerts, sym):
 
 def pending_theses(theses, sym):
     return [t for t in theses.get("theses", []) if t.get("ticker") == sym and t.get("status") == "pending"]
+
+
+# ── C7 內嵌槓桿 ───────────────────────────────────────────────────────────────
+_OCC_RE = None
+
+
+def _parse_occ(sym):
+    """OCC 代號 → (root, expiry date, 'C'|'P', strike)；非選擇權回 None。"""
+    import re
+    global _OCC_RE
+    if _OCC_RE is None:
+        _OCC_RE = re.compile(r"^([A-Z]+)(\d{6})([CP])(\d{8})$")
+    m = _OCC_RE.match(sym or "")
+    if not m:
+        return None
+    root, ymd, cp, k = m.groups()
+    try:
+        exp = dt.date(2000 + int(ymd[:2]), int(ymd[2:4]), int(ymd[4:6]))
+    except ValueError:
+        return None
+    return root, exp, cp, int(k) / 1000.0
+
+
+def _norm_cdf(x):
+    import math
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs_price_delta(S, K, T, r, sigma, cp):
+    import math
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        intrinsic = max(0.0, S - K) if cp == "C" else max(0.0, K - S)
+        delta = (1.0 if S > K else 0.0) if cp == "C" else (-1.0 if S < K else 0.0)
+        return intrinsic, delta
+    d1 = (math.log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    if cp == "C":
+        return S * _norm_cdf(d1) - K * math.exp(-r * T) * _norm_cdf(d2), _norm_cdf(d1)
+    return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1), _norm_cdf(d1) - 1.0
+
+
+def _implied_delta(price, S, K, T, r, cp):
+    """由市價反推 IV 再算 delta；反推失敗 → 以 IV 45% 近似並標 approx。回 (delta, iv, approx)。"""
+    lo, hi = 0.02, 4.0
+    if price is None or price <= 0 or S <= 0:
+        return _bs_price_delta(S, K, T, r, 0.45, cp)[1], None, True
+    plo, phi = _bs_price_delta(S, K, T, r, lo, cp)[0], _bs_price_delta(S, K, T, r, hi, cp)[0]
+    if not (plo <= price <= phi):
+        return _bs_price_delta(S, K, T, r, 0.45, cp)[1], None, True
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if _bs_price_delta(S, K, T, r, mid, cp)[0] < price:
+            lo = mid
+        else:
+            hi = mid
+    iv = (lo + hi) / 2
+    return _bs_price_delta(S, K, T, r, iv, cp)[1], iv, False
+
+
+def embedded_leverage(live, eq, roster, mkt, total, cash_eq, today):
+    """C7 內嵌槓桿：曝險 ÷ 淨值。live 為 None（ledger-fifo）時只算現股並標 partial。"""
+    if not total:
+        return None
+    mult = dict(LEV_ETF_MULT_DEFAULT)
+    mult.update({k.upper(): abs(float(v)) for k, v in (roster.get("leveraged_etf_multipliers") or {}).items()})
+    comps, approx = [], []
+    stock_usd = lev_usd = 0.0
+    for sym, v in eq.items():
+        q = float(v.get("qty") or 0)
+        if q <= 0:
+            continue
+        mv = float(v.get("market_value") or ((v.get("last") or 0) * q))
+        if sym in cash_eq:
+            comps.append({"symbol": sym, "kind": "cash_equiv", "market_value": round(mv, 2), "multiplier": 0, "exposure": 0.0})
+            continue
+        k = mult.get(sym, 1.0)
+        exp_usd = mv * k
+        if k != 1.0:
+            lev_usd += exp_usd
+            comps.append({"symbol": sym, "kind": "leveraged_etf", "market_value": round(mv, 2), "multiplier": k, "exposure": round(exp_usd, 2)})
+        else:
+            stock_usd += exp_usd
+    opt_delta_usd = short_put_usd = 0.0
+    opts = (live or {}).get("options_by_underlying") or {}
+    if live is None:
+        approx.append("ledger-fifo 模式：選擇權部位不可見，只算現股")
+    for root, items in opts.items():
+        S = (eq.get(root) or {}).get("last") or (mkt.get(root) or {}).get("last")
+        if not S:
+            try:
+                import yfinance as yf
+                S = float(yf.Ticker(root).fast_info["last_price"])
+            except Exception:  # noqa: BLE001
+                S = None
+        legs = []
+        for it in items:
+            occ = _parse_occ(it.get("contract") or "")
+            if not occ:
+                continue
+            _, exp, cp, K = occ
+            q = float(it.get("qty") or 0)
+            if q == 0:
+                continue
+            T = max((exp - today).days, 0) / 365.0
+            px = abs(float(it.get("market_value") or 0)) / (abs(q) * 100) if q else None
+            if S:
+                delta, iv, ap = _implied_delta(px, S, K, T, EMB_LEV_RF, cp)
+            else:
+                delta, iv, ap = ((1.0 if cp == "C" else -1.0), None, True)
+                approx.append(f"{root}: 無標的價，delta 以 ±1 保守計")
+            if ap and S:
+                approx.append(f"{it.get('contract')}: IV 反推失敗，以 45% 近似")
+            legs.append({"contract": it["contract"], "exp": exp, "cp": cp, "K": K, "qty": q, "delta": delta, "iv": iv})
+        # 配對：同到期的多方 call 與空方 call（debit 價差）淨算；同到期多方 put 與空方 put 亦淨算 delta（bear put spread）
+        used = set()
+        for i, a in enumerate(legs):
+            if a["qty"] <= 0 or i in used:
+                continue
+            partner = None
+            for j, b in enumerate(legs):
+                if j in used or j == i or b["qty"] >= 0 or b["cp"] != a["cp"] or b["exp"] != a["exp"]:
+                    continue
+                if (a["cp"] == "C" and b["K"] > a["K"]) or (a["cp"] == "P" and b["K"] < a["K"]):
+                    partner = j
+                    break
+            n_ctr = a["qty"]
+            if partner is not None:
+                b = legs[partner]
+                paired = min(n_ctr, abs(b["qty"]))
+                net_delta = a["delta"] + b["delta"]
+                exp_usd = abs(net_delta) * paired * 100 * (S or a["K"])
+                opt_delta_usd += exp_usd
+                comps.append({"symbol": root, "kind": "debit_spread", "legs": [a["contract"], b["contract"]], "contracts": paired,
+                              "net_delta": round(net_delta, 3), "exposure": round(exp_usd, 2)})
+                used.add(partner)
+                n_ctr -= paired
+            if n_ctr > 0 and a["cp"] == "C":
+                exp_usd = a["delta"] * n_ctr * 100 * (S or a["K"])
+                opt_delta_usd += exp_usd
+                comps.append({"symbol": root, "kind": "long_call", "legs": [a["contract"]], "contracts": n_ctr,
+                              "delta": round(a["delta"], 3), "iv": round(a["iv"], 3) if a["iv"] else None, "exposure": round(exp_usd, 2)})
+            elif n_ctr > 0:
+                comps.append({"symbol": root, "kind": "long_put", "legs": [a["contract"]], "contracts": n_ctr,
+                              "delta": round(a["delta"], 3), "exposure": 0.0, "note": "單獨買 put 不減曝險（保守）"})
+            used.add(i)
+        for j, b in enumerate(legs):
+            if j in used or b["qty"] >= 0:
+                continue
+            if b["cp"] == "P":
+                exp_usd = b["K"] * 100 * abs(b["qty"])
+                short_put_usd += exp_usd
+                comps.append({"symbol": root, "kind": "short_put", "legs": [b["contract"]], "contracts": abs(b["qty"]),
+                              "strike": b["K"], "exposure": round(exp_usd, 2), "note": "履約名目全算（指派風險）"})
+            else:
+                comps.append({"symbol": root, "kind": "covered_call", "legs": [b["contract"]], "contracts": abs(b["qty"]),
+                              "delta": round(b["delta"], 3), "exposure": 0.0, "note": "covered call 短腿不減曝險（保守）"})
+    exposure = stock_usd + lev_usd + opt_delta_usd + short_put_usd
+    ratio = exposure / total
+    return {"ratio": round(ratio, 3), "cap": EMB_LEV_CAP, "breach": ratio > EMB_LEV_CAP + 1e-9,
+            "exposure_usd": round(exposure, 2), "net_liq_usd": round(total, 2),
+            "stock_usd": round(stock_usd, 2), "leveraged_etf_usd": round(lev_usd, 2),
+            "options_delta_usd": round(opt_delta_usd, 2), "short_put_notional_usd": round(short_put_usd, 2),
+            "components": [c for c in comps if c.get("kind") != "cash_equiv" or c.get("market_value")],
+            "approximations": sorted(set(approx)),
+            "definition": "曝險 = 現股市值 + 槓桿ETF市值×|倍數| + 多方call/debit價差 delta 名目 + 賣put履約名目；SGOV/BIL=0、停泊ETF=1；÷ 淨值 ≤ 1.00（C7，2026-10-23）"}
 
 
 def build_state(*, sync_alerts=False):
@@ -851,7 +1027,17 @@ def build_state(*, sync_alerts=False):
         gate = sector_gate.get(c.get("sector_etf") or "SPY") or {}
         c["r31_extended"] = bool(gate.get("extended"))
 
+    # ── C7 內嵌槓桿（2026-10-23 用戶）：曝險 ÷ 淨值 > 1.00 → 缺口；不新增曝險、先減槓桿 ETF / 選擇權名目
+    emb = embedded_leverage(live, eq, roster, mkt, total, cash_eq, today)
+    if emb and emb["breach"]:
+        gaps.append(f"C7 內嵌槓桿 {emb['ratio']:.2f} > {emb['cap']:.2f}（曝險 ${emb['exposure_usd']:,.0f} / 淨值 ${emb['net_liq_usd']:,.0f}："
+                    f"現股 ${emb['stock_usd']:,.0f}、槓桿 ETF ${emb['leveraged_etf_usd']:,.0f}、選擇權 delta ${emb['options_delta_usd']:,.0f}、賣 put 名目 ${emb['short_put_notional_usd']:,.0f}）"
+                    f"→ 不新增曝險；先減槓桿 ETF / 選擇權名目至 ≤ {emb['cap']:.2f}")
+    if cash is not None and cash < 0:
+        gaps.append(f"C7 現金為負 ${cash:,.0f} = 已在融資 → 立即補回（賣停泊 VOO/SGOV 或減碼）")
+
     state = {"asof": today.isoformat(), "source": source, "total_account_value": total, "cash": cash,
+             "embedded_leverage": emb,
              "pending_buy_notional": round(pend_buy, 2), "idle_cash": round(idle, 2) if idle is not None else None,
              "parked_cash_equiv": parked, "cash_equivalents": sorted(cash_eq),
              "n_positions": n, "max_positions": max_pos, "positions": rows, "gaps": gaps,
@@ -928,7 +1114,10 @@ def render_table(state):
     lines = [
         f"> 生成：{state['asof']}（來源 {state['source']}）｜{state['n_positions']} 檔 / 上限 {state['max_positions']}"
         + (f"｜總值 ${state['total_account_value']:,.0f}｜現金 ${state['cash']:,.0f}" if state.get("total_account_value") else "")
-        + (f"（+停泊 SGOV ${state['parked_cash_equiv']:,.0f}，R24 視同現金）" if state.get("parked_cash_equiv") else ""),
+        + (f"（+停泊 SGOV ${state['parked_cash_equiv']:,.0f}，R24 視同現金）" if state.get("parked_cash_equiv") else "")
+        + ((lambda e: f"｜內嵌槓桿 {e['ratio']:.2f}/{e['cap']:.2f}{'🚫' if e['breach'] else ''}"
+                      + (f"（槓桿ETF ${e['leveraged_etf_usd']:,.0f}、選擇權 ${e['options_delta_usd'] + e['short_put_notional_usd']:,.0f}）" if (e['leveraged_etf_usd'] or e['options_delta_usd'] or e['short_put_notional_usd']) else ""))(state["embedded_leverage"])
+           if state.get("embedded_leverage") else ""),
         "",
         "| 標的 | 桶 | 股數 | 成本 | 現價 | 權重 | 未實現 | 持有天 | 自峰 | R23 | 已賣% | 在掛賣單 | 旗標 | 財報 |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|---|",
