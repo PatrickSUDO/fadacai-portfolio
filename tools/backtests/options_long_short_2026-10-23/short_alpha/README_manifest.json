@@ -1,0 +1,11 @@
+{
+ "scripts": ["universe.py", "download.py", "test1_account_sells.py", "test2_base_rates.py", "significance.py"],
+ "data": "prices_adjclose.csv (yfinance auto_adjust=True, 114 tickers, 2014-01-02..2026-10-22, 0 failed)",
+ "outputs": ["test1_events.csv", "test1_stats.json", "test1_tables.md", "test2_events.csv", "test2_stats.json", "test2_tables.md", "test2_subsets.json", "significance.json", "download_meta.json"],
+ "conventions": {
+  "test1_entry": "adjusted close on sell date (next trading day if not a trading day); exit close +k trading days",
+  "test2_entry": "signal on close t; entry close t+1; exit close t+1+k; first-occurrence = no same signal in prior 60 trading days",
+  "sharpe": "pair-short P&L per event, mean/std * sqrt(252/k); events overlap in time -> rough",
+  "benchmark_map": "SEMI_AI (trade_ledger.py) + extra semis -> SMH; software set -> IGV; else SPY (test1 uses SMH/SPY only per task)"
+ }
+}

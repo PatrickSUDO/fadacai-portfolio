@@ -1,0 +1,75 @@
+{
+ "components": [
+  "NVDA",
+  "TSM",
+  "AVGO",
+  "AMD",
+  "ASML",
+  "TXN",
+  "QCOM",
+  "AMAT",
+  "LRCX",
+  "MU",
+  "KLAC",
+  "INTC",
+  "ADI",
+  "MRVL",
+  "NXPI",
+  "MCHP",
+  "ON",
+  "MPWR",
+  "SNPS",
+  "CDNS",
+  "TER",
+  "STM",
+  "SWKS",
+  "QRVO",
+  "ENTG"
+ ],
+ "failed": [],
+ "picks_last6": {
+  "2026-05-29": [
+   "ENTG",
+   "ASML",
+   "TSM",
+   "SNPS",
+   "ADI"
+  ],
+  "2026-06-30": [
+   "SNPS",
+   "NVDA",
+   "AVGO",
+   "SWKS",
+   "ADI"
+  ],
+  "2026-07-31": [
+   "NXPI",
+   "MCHP",
+   "SNPS",
+   "ON",
+   "QCOM"
+  ],
+  "2026-08-31": [
+   "ON",
+   "NXPI",
+   "STM",
+   "QCOM",
+   "AVGO"
+  ],
+  "2026-09-30": [
+   "KLAC",
+   "STM",
+   "AMAT",
+   "ON",
+   "LRCX"
+  ],
+  "2026-10-22": [
+   "AMAT",
+   "KLAC",
+   "LRCX",
+   "ON",
+   "AVGO"
+  ]
+ },
+ "beta_median": 1.4065973964905976
+}
