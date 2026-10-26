@@ -7,7 +7,7 @@
   >10% 單倉硬線 / 檔數上限         財報 ±48h 窗（R9/R18）
   C2  R8+R23 合計 30% runner 保底  C3 R14 窗內 R23 不 arm（2026-09-14）
   R16 樂透桶停損單缺口            R24 閒置現金 > $10k
-  R28 a) R23 觸線區/減碼後 30 天禁加碼  b) 減碼後跌破成本 → 旗標  c) 單名累計虧損 ≥1.5% 帳戶 → forced 旗標
+  R28 a) R23 觸線區（armed 且自峰 ≤ −8%）/減碼後 30 天禁加碼  b) 減碼後跌破成本 → 旗標  c) 單名累計虧損 ≥1.5% 帳戶 → forced 旗標
   R29 a) 認列桶殘倉 <1.5% 不配名額（殘倉=減碼過；R14 窗內未減碼的 starter 豁免，2026-10-14）  b) gate ≤ min(財報, 15 交易日)  c) 最弱兩檔（換手對象）
   R30 加碼候選（買強：未實現>0 + revision up>down + 價>SMA50 + 權重<6%）
   R25 修訂 sleeve 帶 4–8% / ETF 自峰 −10% 減至 2% / 帳戶自 sleeve 建立後峰 −10% 賣半 / R8 梯級
@@ -69,10 +69,12 @@ EMB_LEV_RF = 0.04
 LEV_ETF_MULT_DEFAULT = {"SOXL": 3, "SOXS": 3, "USD": 2, "SSG": 2, "TQQQ": 3, "SQQQ": 3, "QLD": 2, "QID": 2, "UPRO": 3, "SPXL": 3,
                         "SPXU": 3, "SPXS": 3, "SSO": 2, "SDS": 2, "TECL": 3, "TECS": 3, "ROM": 2, "FNGU": 3, "FNGD": 3,
                         "NVDL": 2, "NVDU": 2, "TSLL": 2, "MSTU": 2, "CONL": 2, "SMCX": 2, "AMDL": 2, "GGLL": 2, "BITX": 2}
-# R28（2026-09-14，CRDO 案）：a) R23 armed 且自峰 ≤ −15% 或 R23 減碼後 30 天內 → 禁向下加碼
+# R28（2026-09-14，CRDO 案）：a) R23 armed 且自峰 ≤ −8%（2026-10-27 用戶：原 −15%）或 R23 減碼後 30 天內 → 禁向下加碼
+#   −15% → −8%：R30 回檔分支在自峰 −8%～−15% 這段仍可買（AMD 10/12 @598 = −7.9%、ANET 10/14 @197 = −8.5%），十天後 R23 在 −20% 賣掉同一批；
+#   R23 一旦 armed、線在說「準備賣」的區間就不准同時在買
 #                             b) R23 減碼過且已跌破成本 → 不享 runner 保底，須開旗標（deadline ≤ 15 交易日）
 #                             c) 認列桶單名累計虧損（已實現+未實現，自建倉）≥ 1.5% 帳戶 → forced 旗標
-R28_BUYLOCK_DD, R28_BUYLOCK_DAYS = -15.0, 30
+R28_BUYLOCK_DD, R28_BUYLOCK_DAYS = -8.0, 30
 R28_FLAG_MAX_CAL_DAYS = 21          # ≈ 15 個交易日
 R28_LOSS_BUDGET_PCT = 1.5
 # R29（2026-09-14，用戶：波段桶機動性要高）：a) 認列桶殘倉 <1.5% 不配名額 → 10 交易日內補到 ≥2% 或清
@@ -660,7 +662,7 @@ def build_state(*, sync_alerts=False):
         buy_lock = None
         trim_recent = bool(def_trim_dt and (today - dt.date.fromisoformat(def_trim_dt)).days <= R28_BUYLOCK_DAYS)
         if bucket == "認列" and armed and dd is not None and dd <= R28_BUYLOCK_DD:
-            buy_lock = f"R23 armed 且自峰 {dd:+.0f}% ≤ −15%"
+            buy_lock = f"R23 armed 且自峰 {dd:+.0f}% ≤ {R28_BUYLOCK_DD:+.0f}%"
         elif bucket == "認列" and trim_recent:
             # R28a 提前解鎖（2026-09-15，AMD 案）：價已收回 R23 減碼價之上且 30d revision up>down = whipsaw 已確認，
             # 繼續鎖只會重演「只低接不追強」；解鎖後交 R30 判定（仍需價 > SMA50）
@@ -795,7 +797,8 @@ def build_state(*, sync_alerts=False):
                                    "bb_squeeze": bool(mf.get("bb_squeeze")),
                                    "rev_up_30d": up, "rev_down_30d": down, "last": round(last, 2), "sma20": round(mf["sma20"], 2),
                                    "sma50": round(mf["sma50"], 2), "high20": round(mf["high20"], 2), "room_usd": round(room, 0),
-                                   "structure": "回檔 SMA20 限價 GTC（10 日）或收盤突破 20 日高隔日接；單次 ≤$3k"})
+                                   "below_sma20": bool(last < mf["sma20"]),   # 2026-10-27：回檔分支只在 SMA20 之上掛單等；已跌破不接刀（auto_exec 判）
+                                   "structure": "價在 SMA20 上 → 回檔 SMA20 限價 GTC（10 日）；收盤突破 20 日高隔日接；已跌破 SMA20 不接刀；單次 ≤$3k"})
         # 影子：深洗盤買點（2026-09-16 用戶「買在高點殺在低點卻沒逢低抄底」）——自 60 日高 ≤ −30% 且 30d revision up>down
         # 且收盤站回 10 日高（止穩），記 cf-washout-buy（correct_if over）；20 天內同標的不重複。只記錄不下單：
         # 7/25 檢討「下跌中深檔買梯」−$5.7k vs ICHR 型錯砍 −32%，兩個方向都有代價，先累樣本再談規則。
@@ -1145,7 +1148,7 @@ def render_table(state):
                   + "；候補排名 " + "、".join(f"{x['symbol']} {x['score']}" for x in rt.get("bench_ranked", []))]
     if state.get("add_candidates"):
         lines += ["", "**R30 加碼候選（買強）：** " + "；".join(
-            f"{c['symbol']}[{c.get('strength','')}斜率{c.get('ema50_slope5_pct') if c.get('ema50_slope5_pct') is not None else '—'}%{'·擠壓' if c.get('bb_squeeze') else ''}] +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
+            f"{c['symbol']}[{c.get('strength','')}斜率{c.get('ema50_slope5_pct') if c.get('ema50_slope5_pct') is not None else '—'}%{'·擠壓' if c.get('bb_squeeze') else ''}{'·SMA20 下不接刀' if c.get('below_sma20') else ''}] +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
     else:
         lines += ["", "R30 加碼候選：無（條件＝未實現>0、30d revision up>down、價>SMA50、權重<6%、非 R28a 鎖、非財報窗）"]
     sl = state.get("sleeve") or {}

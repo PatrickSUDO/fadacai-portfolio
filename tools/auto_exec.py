@@ -8,11 +8,16 @@ briefing T6.5 只准執行本檔列出的 plan，不再自行判定機械觸發�
 v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝險類，單次 ≤$3k）：
   A. R23 自峰回撤線：position-state r23_armed + 前一收盤 ≤ 峰 × (1−20%/30%) → 減 1/3
      v2（2026-09-29）：觸發收盤當日基準（SMH/SPY）≤ −2% = washout 日 → 不開火，等下一個非 washout 收盤仍破線才賣
+     v3 兩段式（2026-10-27 用戶「減少無謂的操作」）：−20% 線觸發不再隔日貼盤賣 → ①掛反彈限價 GTC（max(10 日收盤均, 收×1.005)，
+     registry rule_ref `R23-bounce`，每晚與新 10 日均差 >2% 才撤換）②掛失守線警報 `SYM-R23-exit-close`（close_confirm，
+     10 日收盤低 −3%）→ 收盤跌破才由 B 段先撤反彈單再貼盤賣（rule `R23-failsafe`）；反彈單成交/消失 → 自動撤警報。
+     −30% 線仍即時貼盤賣（未成交反彈單撤掉、股數併入）。案例：10/23 AMD 8@516 / ANET 26@172 賣在線上三日內反彈 +3–4%
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
   C. 選擇權管理線：id 含 bcs-exit / option 的 price_below → 收盤 < level → 平倉指令（day，ET 7–16）
   D. R24 現金停泊：閒置 = 現金 − 在掛買單 − max(3% 總值, $8k) 緩衝 > $10k → 買基準 ETF VOO 至閒置 ≤ $5k（R33，2026-10-20；SGOV 只當緩衝）（$8k 是留給手動掛單的錢，2026-09-16）
   E. R8 梯級 GTC 缺口：position-state gaps 中 kind 含 R8 → 掛下一級賣單（限價=級距價）
   F. R30 加碼候選（2026-09-14 買強）：guard add_candidates → 回檔 SMA20 限價 GTC 10 日，單次 ≤$3k；條件消失 → 撤單
+     2026-10-27 用戶：回檔分支只在前收仍 > SMA20 時掛；已跌破 SMA20 = 下跌不是回檔，不接刀（影子 cf-r30-below-sma20）
   G. R25 修訂 sleeve：guard sleeve.actions（ETF 自峰 −10% / 合計 >8% / 帳戶自 sleeve 建立後峰 −10% 賣半）→ 賣單，所得進 SGOV
 不覆蓋（仍由模型/用戶）：新倉、加碼、選擇權開倉、任何需要 thesis 判斷的動作。
 
@@ -105,6 +110,32 @@ def intraday_last(symbols: list[str]) -> dict:
 
 
 WASHOUT_BENCH_DROP = -0.02   # R23 v2（2026-09-29 /trade-review）：基準當日 ≤ −2% 的收盤不開火，等下一個非 washout 收盤再確認
+R23_FAILSAFE_BUF = 0.03      # R23 v3：失守線 = min(10 日收盤低, 觸發收盤) × (1 − 3%)。觸發日多半就是 10 日低，不加緩衝等於單段
+R23_BOUNCE_REFRESH = 0.02    # R23 v3：反彈單限價與新 10 日均差 >2% 才撤換（SMA10 向下收斂到價位時自然成交）
+
+
+def ten_day_levels(symbols: list[str]) -> dict:
+    """R23 v3 兩段式用：10 日收盤均（反彈目標）與 10 日收盤低（失守線基準）。盤中跑時丟掉今天未完成 K 棒。失敗 → {}。"""
+    out = {}
+    if not symbols:
+        return out
+    try:
+        import yfinance as yf
+        px = yf.download(sorted(set(symbols)), period="30d", auto_adjust=True, progress=False)["Close"]
+        if not hasattr(px, "columns"):
+            return out
+        px = px.dropna(how="all")
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        if len(px) > 1 and px.index[-1].date() == now_et.date() and now_et.hour < 16:
+            px = px.iloc[:-1]
+        for s in symbols:
+            if s in px:
+                c = px[s].dropna().tail(10)
+                if len(c) >= 5:
+                    out[s] = {"sma10": float(c.mean()), "low10": float(c.min()), "n": int(len(c))}
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def _shadow_record(today, sym, kind, price, size, note):
@@ -213,6 +244,15 @@ def main(argv):
         skipped.append({"symbol": sym, "rule": rule, "why": why})
 
     # ── A. R23 ─────────────────────────────────────────────────────────────
+    # v3 兩段式（2026-10-27 用戶「減少無謂的操作」，見檔頭）
+    r23_syms = [s for s, p in positions.items() if p.get("bucket") == "認列" and p.get("r23_armed")]
+    open_bounce = {}   # sym → (oid, order)：在掛的反彈單
+    for oid, o in (reg.get("orders") or {}).items():
+        if o.get("rule_ref") == "R23-bounce" and o.get("transaction") == "S" \
+                and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+            open_bounce[o.get("symbol")] = (oid, o)
+    lv = ten_day_levels(sorted(set(r23_syms) | set(open_bounce)))
+    bounce_planned = set()
     for sym, p in positions.items():
         if p.get("bucket") != "認列" or not p.get("r23_armed"):
             continue
@@ -244,11 +284,72 @@ def main(argv):
             qty = int(left)
         if qty < 1:
             skip(sym, "R23", "1/3 不足 1 股"); continue
+        wash_note = (f"；{b} 當日 {bm:+.1%}（非 washout）" if bm is not None else "；基準價缺，未做 washout 判定")
+        bounce = open_bounce.get(sym)
+        l10 = lv.get(sym) or {}
+        if stage == 30:
+            # 第二段 = 真的破了：不等反彈，貼盤賣；未成交的反彈單一起撤、股數併入（仍受 C2 保底）
+            extra = 0
+            if bounce:
+                plan.append({"rule": "R23-bounce-cancel", "symbol": sym, "action": "CANCEL", "qty": bounce[1].get("shares"), "order": {"id": bounce[0]},
+                             "basis": f"−30% 線成立 → 撤未成交反彈單 {bounce[0]}（{bounce[1].get('shares')}@{bounce[1].get('limit_price')}），股數併入本段貼盤賣", "after": []})
+                extra = int(float(bounce[1].get("shares") or 0))
+            qty = qty + extra if left is None else min(qty + extra, int(left))
+            plan.append({"rule": "R23-30", "symbol": sym, "action": "SELL", "qty": qty,
+                         "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
+                         "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−30%)（{dd:+.1%}）；armed；第二段貼盤賣 1/3" + (f"＋反彈單 {extra} 股" if extra else "") + wash_note,
+                         "after": ["snapshot-orders", "register-order --rule R23", "trade_ledger flag/resolve-flag trimmed", "thesis 留痕（+30d 驗）"]})
+            continue
+        if bounce:
+            skip(sym, "R23", f"兩段式進行中：反彈單 {bounce[0]}（{bounce[1].get('shares')}@{bounce[1].get('limit_price')}）在掛、失守線警報 {sym}-R23-exit-close 看守 → 不重複賣"); continue
+        sma10, low10 = l10.get("sma10"), l10.get("low10")
+        if not (sma10 and low10):
+            # 抓不到 10 日資料 → 退回 v2 單段貼盤（fail-open：線的保護優先），basis 註明
+            plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
+                         "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
+                         "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3（⚠️ 10 日資料缺，退回單段貼盤）" + wash_note,
+                         "after": ["snapshot-orders", "register-order --rule R23", "trade_ledger flag/resolve-flag trimmed", "thesis 留痕（+30d 驗）"]})
+            continue
+        bounce_limit = round(max(sma10, c * 1.005), 2)
+        failsafe = round(min(low10, c) * (1 - R23_FAILSAFE_BUF), 2)
+        bounce_planned.add(sym)
         plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
-                     "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
-                     "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3"
-                              + (f"；{b} 當日 {bm:+.1%}（非 washout）" if bm is not None else "；基準價缺，未做 washout 判定"),
-                     "after": ["snapshot-orders", "register-order --rule R23", "trade_ledger flag/resolve-flag trimmed", "thesis 留痕（+30d 驗）"]})
+                     "order": {"type": "limit", "limit": bounce_limit, "duration": "gt90", "stage": "bounce"},
+                     "failsafe": {"level": failsafe, "alert_id": f"{sym}-R23-exit-close", "qty": qty},
+                     "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3 走兩段式：反彈限價 {bounce_limit}"
+                              f"（10 日均 {sma10:.2f}）GTC；失守線 {failsafe}（10 日收盤低 {low10:.2f} −{R23_FAILSAFE_BUF:.0%}）收盤跌破才貼盤賣" + wash_note,
+                     "after": ["snapshot-orders", "register-order --rule R23-bounce", "price_alerts add *-R23-exit-close close_confirm",
+                               "trade_ledger flag bounce_pending（成交才算 trimmed）", "thesis 留痕（+30d 驗）"]})
+    # 反彈單每晚校正：與新 10 日均差 >2% → 撤換（SMA10 收斂到價位附近就自然成交，不會卡住）；不重登影子/警報
+    for sym, (oid, o) in open_bounce.items():
+        sma10, c = (lv.get(sym) or {}).get("sma10"), close_of(sym)
+        if not (sma10 and c) or sym not in positions:
+            continue
+        new_limit = round(max(sma10, c * 1.005), 2)
+        old_limit = float(o.get("limit_price") or 0)
+        if old_limit and abs(old_limit - new_limit) / new_limit > R23_BOUNCE_REFRESH:
+            held = int(float(positions[sym].get("qty", 0) or 0))
+            q = min(int(float(o.get("shares") or 0)), held)
+            if q < 1:
+                continue
+            plan.append({"rule": "R23-bounce-cancel", "symbol": sym, "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
+                         "basis": f"反彈單 {oid} 限價 {old_limit} 與新 10 日均 {sma10:.2f} 差 >{R23_BOUNCE_REFRESH:.0%} → 撤換為 {new_limit}", "after": []})
+            plan.append({"rule": "R23-20", "symbol": sym, "action": "SELL", "qty": q, "refresh": True,
+                         "order": {"type": "limit", "limit": new_limit, "duration": "gt90", "stage": "bounce"},
+                         "basis": f"反彈單校正：新限價 {new_limit}（10 日均 {sma10:.2f}；原 {old_limit}）；失守線警報 {sym}-R23-exit-close 不動",
+                         "after": ["register-order --rule R23-bounce"]})
+    # 反彈單已成交 / 被撤 / 到期 → 失守線警報跟著撤（成交 = 減碼完成；消失且仍破線 = 明晚重掛整套）
+    for a in alerts:
+        aid, sym = a.get("id") or "", a.get("symbol")
+        if not aid.endswith("-R23-exit-close") or a.get("status") == "removed":
+            continue
+        if sym in open_bounce or sym in bounce_planned:
+            continue
+        filled = [oid for oid, o in (reg.get("orders") or {}).items()
+                  if o.get("symbol") == sym and o.get("rule_ref") == "R23-bounce" and "FILLED" in str(o.get("state", ""))]
+        plan.append({"rule": "R23-alert-cleanup", "symbol": sym, "action": "REMOVE_ALERT", "qty": None, "alert_id": aid,
+                     "basis": (f"反彈單已成交 {filled[-1]} → 減碼完成，撤失守線警報 {aid}" if filled else f"無在掛反彈單（已撤/到期/清倉）→ 撤失守線警報 {aid}；仍破線則今晚重掛整套"),
+                     "after": []})
 
     # ── B. 用戶裁決收盤線 / C. 選擇權管理線 ─────────────────────────────────
     for a in alerts:
@@ -266,6 +367,9 @@ def main(argv):
             continue
         # 2026-10-20：失守線警報（mode=close_confirm，id *-exit-close）一律視為用戶收盤線；舊式靠 note 關鍵字的也保留
         if a.get("mode") == "close_confirm" or ("收盤" in note and ("trim" in aid or "derating" in aid or "減" in note)):
+            # R23 v3 失守線（`SYM-R23-exit-close`）走同一條路，但規則歸因 R23、只撤自己的反彈單（R8 梯級留著）
+            is_r23 = aid.endswith("-R23-exit-close")
+            rule_name = "R23-failsafe" if is_r23 else "user-close-line"
             if in_earnings_window(sym, earn, today):
                 skip(sym, "close-line", "財報 ±48h"); continue
             if sym in reversed_tks:
@@ -280,7 +384,9 @@ def main(argv):
                 if o.get("symbol") == sym and o.get("transaction") == "S" and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
                     if (o.get("rule_ref") or "").startswith("user-close-line"):
                         continue   # 已經是失守線賣單（例：手動補單 10/23 GLD/AVGO）→ 不撤；下面的 SELL 會被「已在券商同規則同向」去重
-                    plan.append({"rule": "user-close-line-cancel", "symbol": sym, "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
+                    if is_r23 and o.get("rule_ref") != "R23-bounce":
+                        continue   # R23 失守只撤自己的反彈單；R8 梯級 / 用戶單留著
+                    plan.append({"rule": f"{rule_name}-cancel", "symbol": sym, "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
                                  "basis": f"失守線 {aid} 成立 → 先撤同標的在掛賣單 {oid}（{o.get('shares')}@{o.get('limit_price')}），避免與貼盤賣單重複成交", "after": []})
             held = int(float(p.get("qty", 0) or 0))
             keep = re.search(r"保留\s*(\d+)\s*股", note)
@@ -288,10 +394,10 @@ def main(argv):
             qty = max(0, min(qty, held - floor_keep))
             if qty <= 0:
                 skip(sym, "close-line", f"持有 {held} 股 ≤ 保留 {floor_keep} 股（反彈單已成交或已減完）→ 不賣，警報可撤"); continue
-            plan.append({"rule": "user-close-line", "symbol": sym, "action": "SELL", "qty": qty, "alert_id": aid,
+            plan.append({"rule": rule_name, "symbol": sym, "action": "SELL", "qty": qty, "alert_id": aid,
                          "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
-                         "basis": f"前收 {c:.2f} < 裁決線 {lvl}（{aid}）", "note": note[:160],
-                         "after": ["snapshot-orders", "register-order --rule user-close-line", "resolve-flag trimmed", "remove/keep alert per note"]})
+                         "basis": f"前收 {c:.2f} < {'R23 失守線' if is_r23 else '裁決線'} {lvl}（{aid}）", "note": note[:160],
+                         "after": ["snapshot-orders", f"register-order --rule {rule_name}", "resolve-flag trimmed", "remove/keep alert per note"]})
 
     # ── D. R24 現金停泊 ───────────────────────────────────────────────────
     cash = float(st.get("cash") or 0)
@@ -363,7 +469,10 @@ def main(argv):
             limit = round(prev * 1.002, 2)
             qty = math.floor(min(c["room_usd"], 3_000) * 0.5 / limit)
         else:
-            limit = min(c["sma20"], c["last"] * 0.995) if c["last"] > c["sma20"] else round(c["last"] * 0.995, 2)
+            # 2026-10-27 用戶：回檔分支只在前收仍在 SMA20 之上時掛單等回檔；已跌破 SMA20 = 下跌不是回檔，不接刀。
+            # 十月五筆回檔買（AMD/ANET/CLS/DDOG/TWLO）全在跌破 SMA20 後貼市價買、位置在 20 日高 −8%～−15%，AMD/ANET 十天後被 R23 賣在更低。
+            below20 = prev <= c["sma20"]          # 判定放在在掛/冷卻檢查之後（只有真的會掛的那張才登影子）
+            limit = min(c["sma20"], prev * 0.995)
             qty = math.floor(min(c["room_usd"], 3_000) / limit)
         if qty < 1:
             skip(sym, "R30", "額度不足 1 股"); continue
@@ -378,6 +487,10 @@ def main(argv):
                        and (o.get("updated") or o.get("rule_registered_at") or o.get("first_seen") or "")[:10] >= (today - timedelta(days=14)).isoformat()]
         if recent_fill:
             skip(sym, "R30", f"14 日內已有買進成交 {recent_fill}，冷卻中（一次一梯，不疊）"); continue
+        if not breakout and below20:
+            _shadow_record(today, sym, "cf-r30-below-sma20", float(prev), min(c["room_usd"], 3_000),
+                           f"R30 回檔分支：前收 {prev:.2f} ≤ SMA20 {c['sma20']}，不接刀（30d 價更低 = 不買對）")
+            skip(sym, "R30", f"回檔分支：前收 {prev:.2f} 已在 SMA20 {c['sma20']} 之下 → 不接刀，站回 SMA20 上再掛（影子 cf-r30-below-sma20）"); continue
         plan.append({"rule": "R30-add", "symbol": sym, "action": "BUY", "qty": qty,
                      "order": ({"type": "limit", "limit": limit, "duration": "day", "branch": "breakout"} if breakout
                                else {"type": "limit", "limit": round(limit, 2), "duration": "gtc", "expires_days": 10, "branch": "pullback"}),
@@ -436,7 +549,7 @@ def main(argv):
     # ── H. 陳舊自動賣單：R23 / user-close-line / R25 的在掛賣單若非今日掛且仍未成交 → 撤（隔晚依新收盤重算重掛）──
     for oid, o in (reg.get("orders") or {}).items():
         rr = o.get("rule_ref") or ""
-        if ((o.get("transaction") == "S" and rr.split("-")[0] in ("R23", "user", "R25")) or (o.get("transaction") == "B" and rr == "R24")) \
+        if ((o.get("transaction") == "S" and rr.split("-")[0] in ("R23", "user", "R25") and rr != "R23-bounce") or (o.get("transaction") == "B" and rr == "R24")) \
                 and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")) \
                 and (o.get("rule_registered_at") or o.get("first_seen") or "") < (today - timedelta(days=1)).isoformat():
             plan.append({"rule": f"{rr}-cancel", "symbol": o["symbol"], "action": "CANCEL", "qty": o.get("shares"),
@@ -445,7 +558,7 @@ def main(argv):
     # ── 去重 / 優先序（衝突 C2 型）：同一標的同向只出一張單。用戶裁決收盤線 > R23（9/2 裁決：MYRG 以 $274 線取代 R23），
     #    R23-30 > R23-20；合併時在 basis 註明被吸收的規則，避免兩條規則各賣一次把認列桶賣穿 30% runner。
     merged, seen = [], {}
-    prio = {"user-close-line": 3, "R23-30": 2, "R23-20": 1}
+    prio = {"user-close-line": 3, "R23-failsafe": 3, "R23-30": 2, "R23-20": 1}
     for p in plan:
         # 分批梯（*-ladder）是刻意的第二張單，不與第一批合併
         key = (p["symbol"], p["action"], "ladder" if str(p.get("rule", "")).endswith("-ladder") else "")
@@ -460,8 +573,9 @@ def main(argv):
 
     # ── 已在券商的同規則同向單 → 移到 skipped（晚間 pass 掛過的單，早上 briefing 讀 plan 不得重下）──
     open_by_key = {}
+    cancel_ids = {(p.get("order") or {}).get("id") for p in plan if p.get("action") == "CANCEL"}   # 本輪要撤的單不算「已在掛」（反彈單撤換 / 失守線先撤反彈單）
     for oid, o in (reg.get("orders") or {}).items():
-        if str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
+        if oid not in cancel_ids and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")):
             open_by_key.setdefault((o.get("symbol"), o.get("transaction"), (o.get("rule_ref") or "").split("-")[0]), []).append(oid)
     kept = []
     for p in plan:
@@ -570,7 +684,7 @@ def main(argv):
         with open(ROOT / "research" / "auto-exec-log.jsonl", "a") as fh:
             for e in executed:
                 fh.write(json.dumps({"date": today.isoformat(), **e}, ensure_ascii=False) + "\n")
-        return 0 if all(e.get("status") in ("placed", "cancelled", "cancel_failed", "skipped") for e in executed) else 4
+        return 0 if all(e.get("status") in ("placed", "cancelled", "cancel_failed", "skipped", "alert_removed") for e in executed) else 4
     return 0
 
 
@@ -588,8 +702,9 @@ def _ft_cancel(order_id):
     return tl._ft_call(f"print(m.cancel_order({order_id!r}))")
 
 
-def _note_defensive_trim(sym, order_id, rule, today):
-    """在該標的的 open 旗標 history 追加 action=trimmed（無旗標則建一個 r23-auto，deadline +21d）。"""
+def _note_defensive_trim(sym, order_id, rule, today, action="trimmed"):
+    """在該標的的 open 旗標 history 追加 action=trimmed（無旗標則建一個 r23-auto，deadline +21d）。
+    R23 v3 反彈單只記 action=bounce_pending：guard 的峰值重置 / R28a 買方鎖只認 trimmed 與實際成交，掛單不算減碼。"""
     import subprocess
     try:
         d = _load(FLAGS, {"flags": []})
@@ -601,7 +716,7 @@ def _note_defensive_trim(sym, order_id, rule, today):
             d = _load(FLAGS, {"flags": []})
             f = next((x for x in d["flags"] if x.get("ticker") == sym and x.get("status") in ("open", "forced")), None)
         if f is not None:
-            f.setdefault("history", []).append({"date": today.isoformat(), "event": "auto_exec_trim", "action": "trimmed",
+            f.setdefault("history", []).append({"date": today.isoformat(), "event": "auto_exec_trim" if action == "trimmed" else "auto_exec_bounce", "action": action,
                                                 "note": f"{rule} {order_id}（day/gt90 限價，成交以 trade-ledger 為準）"})
             FLAGS.write_text(json.dumps(d, ensure_ascii=False, indent=2))
     except Exception:  # noqa: BLE001
@@ -627,6 +742,10 @@ def execute_plan(plan, reg, today):
                 rec.update(status="cancelled" if ok else "cancel_failed", broker=r)
                 if ok:
                     cancelled_now.add(p["order"]["id"])
+            elif act == "REMOVE_ALERT" and p.get("alert_id"):
+                r = subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "remove", "--id", p["alert_id"]],
+                                   capture_output=True, text=True, timeout=30)
+                rec.update(status="alert_removed" if r.returncode == 0 else "error", alert_id=p["alert_id"], out=((r.stdout or "") + (r.stderr or ""))[-120:].strip())
             elif act in ("BUY", "SELL") and (p.get("order") or {}).get("type") == "limit" and p.get("qty"):
                 side = "S" if act == "SELL" else "B"
                 # 去重兩層：①同規則同向在掛；②今天已掛過任何同標的同向單（不看 rule_ref——9/16 三個 pass 疊了三套 GLD/XLE，
@@ -646,27 +765,37 @@ def execute_plan(plan, reg, today):
                 oid = res.get("order_id") if isinstance(res, dict) else None
                 if not oid:
                     rec.update(status="error", broker=r); results.append(rec); continue
+                is_bounce = (p.get("order") or {}).get("stage") == "bounce"
                 rec.update(status="placed", order_id=oid, state=res.get("state"), duration=dur)
+                if is_bounce:
+                    rec.update(stage="bounce", failsafe=(p.get("failsafe") or {}).get("level"), refresh=bool(p.get("refresh")))
                 results.append(rec)  # 單已在券商——先記 placed，後處理任何錯誤都不能把它變成 error
                 base_rule = (rule or "").split("-")[0] if rule not in ("user-close-line", "options-mgmt") else rule
                 # 立刻登記到 registry（含 first_seen=今天），讓下一個 pass 的去重看得到；其餘後處理各自 try
                 reg.setdefault("orders", {})[oid] = {"symbol": sym, "transaction": side, "shares": p["qty"], "limit_price": p["order"]["limit"],
-                                                     "state": "ORDER-REQUESTED", "first_seen": today.isoformat(), "rule_ref": base_rule,
+                                                     "state": "ORDER-REQUESTED", "first_seen": today.isoformat(), "rule_ref": ("R23-bounce" if is_bounce else base_rule),
                                                      "sec_type": 1, "rule_registered_at": today.isoformat()}
                 try:
                     REGISTRY.write_text(json.dumps(reg, ensure_ascii=False, indent=1))
                 except Exception as e:  # noqa: BLE001
                     rec["post_error"] = f"registry write: {e}"
-                for step in ("trim_note", "alert", "shadow"):
+                for step in ("trim_note", "alert", "failsafe", "shadow"):
                     try:
                         if step == "trim_note" and base_rule in ("R23", "user-close-line"):
-                            _note_defensive_trim(sym, oid, rule, today)
+                            if not p.get("refresh"):
+                                _note_defensive_trim(sym, oid, rule, today, action=("bounce_pending" if is_bounce else "trimmed"))
+                        elif step == "failsafe" and p.get("failsafe") and not p.get("refresh"):
+                            fs = p["failsafe"]
+                            subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "add", "--symbol", sym, "--below", str(fs["level"]),
+                                            "--mode", "close_confirm", "--id", fs["alert_id"], "--expires", (today + timedelta(days=60)).isoformat(),
+                                            "--note", f"→ 動作：收盤 < {fs['level']} 失守 → 賣 {sym} {fs['qty']} 股（R23 兩段式失守線 = 10 日收盤低 −3%；auto_exec 先撤反彈單 {oid} 再貼盤賣）。這不是買進訊號、不是加碼點"],
+                                           capture_output=True, text=True, timeout=30)
                         elif step == "alert" and p.get("alert_id"):
                             subprocess.run([sys.executable, str(ROOT / "tools" / "price_alerts.py"), "remove", "--id", p["alert_id"]],
                                            capture_output=True, text=True, timeout=30)
                         elif step == "shadow":
                             kind = {"R30": "cf-r30-add", "R23": "cf-r23-exec", "user": "cf-r23-exec", "R25": "cf-r25-sleeve"}.get(base_rule.split("-")[0])
-                            if kind:
+                            if kind and not p.get("refresh"):
                                 subprocess.run([sys.executable, str(ROOT / "tools" / "shadow_signals.py"), "record", "--kind", kind, "--ticker", sym,
                                                 "--price", str(p["order"]["limit"]), "--size", str(round(p["qty"] * p["order"]["limit"], 2)),
                                                 "--correct-if", "over" if act == "BUY" else "under", "--note", f"auto_exec {rule} {oid}"],

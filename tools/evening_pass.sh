@@ -79,7 +79,7 @@ if d.get("mode") == "aborted":
     sys.exit(0)
 ex = d.get("executed") or []
 placed = [e for e in ex if e.get("status") == "placed"]
-cancelled = [e for e in ex if e.get("status") == "cancelled"]
+cancelled = [e for e in ex if e.get("status") in ("cancelled", "alert_removed")]
 errors = [e for e in ex if e.get("status") == "error"]
 manual = [p for p in d.get("plan", []) if p.get("action") == "CLOSE_SPREAD"]
 if not (placed or cancelled or errors or manual):
@@ -93,10 +93,18 @@ act_zh = {"BUY": "買", "SELL": "賣"}
 when = "收盤前" if pas == "preclose" else "收盤後"
 lines = [f"{when}自動下單（{d.get('asof')}）"]
 for e in placed:
+    if e.get("stage") == "bounce":
+        # R23 v3 兩段式（2026-10-27）：這張是反彈限價單，不是貼盤賣；失守線由 close_confirm 警報看守
+        verb = "已校正" if e.get("refresh") else "已掛"
+        lines.append(f"{verb} {e['symbol']} {e.get('qty')} 股反彈限價 @{e.get('limit')}（跌破自峰回撤線，兩段式：反彈到 10 日線才賣；收盤跌破 {e.get('failsafe')} 失守線才貼盤賣）。單號 {e.get('order_id')}")
+        continue
     kind = "今天收盤前成交" if e.get("duration") == "day" else "明天開盤生效"
     lines.append(f"已{act_zh.get(e['action'], e['action'])} {e['symbol']} {e.get('qty')} 股 @{e.get('limit')}，{why(e['rule'])}，{kind}。單號 {e.get('order_id')}")
 for e in cancelled:
-    lines.append(f"已撤 {e['symbol']} 的舊單，{why(e['rule'])}條件已變。")
+    if e.get("status") == "alert_removed":
+        lines.append(f"已撤 {e['symbol']} 的失守線警報（反彈單已成交或已不在掛）。")
+    else:
+        lines.append(f"已撤 {e['symbol']} 的舊單，{why(e['rule'])}條件已變。")
 for e in errors:
     lines.append(f"失敗：{e['symbol']} {act_zh.get(e['action'], e['action'])} {e.get('qty')} 股（{why(e['rule'])}）沒送出。原因：{(e.get('error') or str(e.get('broker') or ''))[:80]}。我會修，修好補下。")
 for p in manual:
