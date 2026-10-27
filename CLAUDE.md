@@ -273,7 +273,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
 - `✅ 今日 journal 已存在` → 略過偵測
 
 ## Investment Style
-- 主軸：AI/半導體、高成長科技（無板塊上限；**單一個股 >10% = 硬線，強制減至 ≤10%**，2026-09-02 統一語意）
+- 主軸：AI/半導體、高成長科技（無板塊上限；**單一個股 >10% = 硬線，強制減至 ≤10%**，2026-09-02 統一語意；基準停泊 ETF VOO 豁免，2026-10-27 用戶裁決）
 - 避險：基建、航太、貴金屬、核能（小比例平衡）
 - Strategies: LEAPS (stock replacement, deep ITM delta 0.80-0.88), Bull Put Spread, Bull Call Spread, Covered Calls, PMCC
 - Risk: 單一持倉 > 10% flagged as over-concentrated

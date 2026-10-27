@@ -638,7 +638,9 @@ def build_state(*, sync_alerts=False):
             gaps.append(f"{sym}: 無桶別（roster.json 未登記）→ R8/R23 無法判定")
         elif not roster.get("bucket_confirmed", {}).get(sym, True):
             gaps.append(f"{sym}: 桶別待用戶確認（{bucket}）")
-        if weight is not None and weight > cap_pct:
+        # 2026-10-27 用戶裁決（VOO 11.5% 案）：基準停泊 ETF 不受 10% 單倉硬線——停泊規模由閒置現金決定、不是部位判斷，
+        # 減它只會跟 R24「閒置錢停 VOO」打架。R36 替代格（bench-slot）仍受硬線（它替代的是個股名額）。
+        if weight is not None and weight > cap_pct and bucket != "parking(ETF)":
             gaps.append(f"{sym}: 單倉 {weight:.1f}% > {cap_pct:g}% 硬線 → 強制減至 ≤{cap_pct:g}%")
         if bucket == "認列" and runner_floor_hit:
             if sells:
