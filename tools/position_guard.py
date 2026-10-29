@@ -229,6 +229,15 @@ def buys_after(fills, sym, since_date):
     return [f for f in fills if f["symbol"] == sym and f["side"] == "BOUGHT" and since_date and f["date"] > since_date]
 
 
+def bypass_marked(sym, date_str, tag="R28 bypass"):
+    """journal 當日檔已有同列「⚠️ R28 bypass」＋ 標的名 → 用戶已留痕的規則外買進，不再每日重報缺口（2026-10-29 PWR 案）"""
+    try:
+        txt = (ROOT / "journal" / f"{date_str}.md").read_text()
+    except OSError:
+        return False
+    return any(tag in ln and sym in ln for ln in txt.splitlines())
+
+
 def open_buy_orders(registry, sym):
     orders = registry.get("orders", registry)
     return [oid for oid, o in orders.items()
@@ -687,6 +696,7 @@ def build_state(*, sync_alerts=False):
             if bo:
                 gaps.append(f"{sym}: R28a 禁向下加碼（{buy_lock}）但有在掛買單 {bo} → 撤單")
             recent = buys_after(fills, sym, def_trim_dt) if trim_recent else []
+            recent = [b for b in recent if not bypass_marked(sym, b["date"])]
             if recent:
                 gaps.append(f"{sym}: R28a 違規——R23 減碼後又買 {sum(float(b['qty']) for b in recent):g} 股（{[b['date'] for b in recent]}）→ journal 標 ⚠️ R28 bypass")
         realized, ledger_qty, ledger_avg = realized_since(fills, sym, since)
