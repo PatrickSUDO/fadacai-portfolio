@@ -915,6 +915,10 @@ def build_state(*, sync_alerts=False):
         # R29d 換入門檻：候補須在 SMA50 與 EMA200 之上（與 R30 同濾網），在線下的名字不進換手比較
         if not (mb.get("sma50") and mb.get("last") and mb["last"] > mb["sma50"] and (not mb.get("ema200") or mb["last"] > mb["ema200"])):
             continue
+        # 2026-10-29 /trade-review：候補 30 日修正必須 up > down 才有資格進換手比較（H12：方向由 revision 定，技術面只排序）。
+        # 10/21 PAYC、10/28–29 ZS 三次「到期」全是 0↑:0↓ 的名字靠 RS90 + 斜率項拿 68–75 分，三次都只能寫旗標不換 = 零資訊量的缺口。
+        if not ((up_ or 0) > (down_ or 0)):
+            continue
         hurdle = R29D_GAP * (2 if b in exits_60d else 1)
         bench_scores.append((s, b, hurdle, up_, down_))
     rotation = {"asof": today.isoformat(), "weakest": None, "top_bench": None, "gap": None, "streak": rot.get("streak", 0), "last_swap": rot.get("last_swap"), "due": False}
