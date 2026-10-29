@@ -42,6 +42,9 @@ tg() { printf '%s\n' "$1" | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 ||
 notify_report() {   # $1 = report md path
   local md="$1" stem lint_line url=""
   stem="$(basename "$md" .md)"
+  # 同一份報告只推一次（2026-10-29：無人值守時 session 內模型跑 --notify-only、runner 收尾又推一次 → Telegram 重複兩則）
+  local mark="$LOG_DIR/cache/trade-review-notified-${stem}"
+  if [[ -f "$mark" && "$mark" -nt "$md" ]]; then log "already notified for ${stem}，跳過重複推送"; return 0; fi
   if python3 "$SCRIPT_DIR/review_lint.py" "$md" >> "$LOG" 2>&1; then lint_line="產出檢查：通過"; else lint_line="⚠️ 產出檢查未通過（缺段或收尾沒做，看 briefing-out/trade-review-runner.log）"; fi
   # generate_html 預設 push 到 reports repo（Netlify）；exit 2 = HTML 有但 push 失敗
   python3 "$SCRIPT_DIR/generate_html.py" trade-review "$md" >> "$LOG" 2>&1
@@ -69,6 +72,7 @@ if url:
     body += f"\n\n🔗 完整報告：{url}"
 print(body[:3000])
 PY
+  mkdir -p "$LOG_DIR/cache"; touch "$mark"
 }
 
 if [[ -n "$NOTIFY_ONLY" && "$NOTIFY_ONLY" != "pending" ]]; then

@@ -39,6 +39,9 @@ tg() { printf '%s\n' "$1" | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 ||
 notify_report() {   # $1 = report md path
   local md="$1" stem url=""
   stem="$(basename "$md" .md)"
+  # 同一份報告只推一次（2026-10-29：無人值守時 session 內模型跑 --notify-only、runner 收尾又推一次 → Telegram 重複兩則）
+  local mark="$LOG_DIR/cache/portfolio-review-notified-${stem}"
+  if [[ -f "$mark" && "$mark" -nt "$md" ]]; then log "already notified for ${stem}，跳過重複推送"; return 0; fi
   python3 "$SCRIPT_DIR/generate_html.py" portfolio-review "$md" >> "$LOG" 2>&1
   local rc=$?
   if [[ $rc -eq 0 && -n "${REPORT_SITE_URL:-}" && -n "${REPORT_SITE_TOKEN:-}" ]]; then
@@ -63,6 +66,7 @@ if url:
     body += f"\n\n🔗 完整報告：{url}"
 print(body[:3000])
 PY
+  mkdir -p "$LOG_DIR/cache"; touch "$mark"
 }
 
 if [[ -n "$NOTIFY_ONLY" && "$NOTIFY_ONLY" != "pending" ]]; then
