@@ -8,8 +8,9 @@ briefing T6.5 只准執行本檔列出的 plan，不再自行判定機械觸發�
 v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝險類，單次 ≤$3k）：
   A. R23 自峰回撤線：position-state r23_armed + 前一收盤 ≤ 峰 × (1−20%/30%) → 減 1/3
      v2（2026-09-29）：觸發收盤當日基準（SMH/SPY）≤ −2% = washout 日 → 不開火，等下一個非 washout 收盤仍破線才賣
-     v3 兩段式（2026-10-27 用戶「減少無謂的操作」）：−20% 線觸發不再隔日貼盤賣 → ①掛反彈限價 GTC（max(10 日收盤均, 收×1.005)，
-     registry rule_ref `R23-bounce`，每晚與新 10 日均差 >2% 才撤換）②掛失守線警報 `SYM-R23-exit-close`（close_confirm，
+     v3 兩段式（2026-10-27 用戶「減少無謂的操作」）：−20% 線觸發不再隔日貼盤賣 → ①掛反彈限價 GTC（max(5 日收盤均, 收×1.005)，
+     registry rule_ref `R23-bounce`，每晚與新 5 日均差 >2% 才撤換；2026-10-29 用戶裁決由 10 日改 5 日——10/20 砍單批 SMA10/20 錨
+     距價 +6~16%、0/6 成交，失守錨距價 −1~3%、4/5 三日內觸發 = 保證失守先到）②掛失守線警報 `SYM-R23-exit-close`（close_confirm，
      10 日收盤低 −3%）→ 收盤跌破才由 B 段先撤反彈單再貼盤賣（rule `R23-failsafe`）；反彈單成交/消失 → 自動撤警報。
      −30% 線仍即時貼盤賣（未成交反彈單撤掉、股數併入）。案例：10/23 AMD 8@516 / ANET 26@172 賣在線上三日內反彈 +3–4%
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
@@ -111,11 +112,12 @@ def intraday_last(symbols: list[str]) -> dict:
 
 WASHOUT_BENCH_DROP = -0.02   # R23 v2（2026-09-29 /trade-review）：基準當日 ≤ −2% 的收盤不開火，等下一個非 washout 收盤再確認
 R23_FAILSAFE_BUF = 0.03      # R23 v3：失守線 = min(10 日收盤低, 觸發收盤) × (1 − 3%)。觸發日多半就是 10 日低，不加緩衝等於單段
-R23_BOUNCE_REFRESH = 0.02    # R23 v3：反彈單限價與新 10 日均差 >2% 才撤換（SMA10 向下收斂到價位時自然成交）
+R23_BOUNCE_REFRESH = 0.02    # R23 v3：反彈單限價與新 5 日均差 >2% 才撤換（SMA5 向下收斂到價位時自然成交）
+R23_BOUNCE_SMA = 5           # 反彈錨天數（2026-10-29 用戶裁決 10 → 5；失守錨仍用 10 日收盤低）
 
 
 def ten_day_levels(symbols: list[str]) -> dict:
-    """R23 v3 兩段式用：10 日收盤均（反彈目標）與 10 日收盤低（失守線基準）。盤中跑時丟掉今天未完成 K 棒。失敗 → {}。"""
+    """R23 v3 兩段式用：5 日收盤均（反彈目標，R23_BOUNCE_SMA）與 10 日收盤低（失守線基準）。盤中跑時丟掉今天未完成 K 棒。失敗 → {}。"""
     out = {}
     if not symbols:
         return out
@@ -132,7 +134,8 @@ def ten_day_levels(symbols: list[str]) -> dict:
             if s in px:
                 c = px[s].dropna().tail(10)
                 if len(c) >= 5:
-                    out[s] = {"sma10": float(c.mean()), "low10": float(c.min()), "n": int(len(c))}
+                    out[s] = {"sma10": float(c.mean()), "sma5": float(c.tail(R23_BOUNCE_SMA).mean()),
+                              "low10": float(c.min()), "n": int(len(c))}
     except Exception:  # noqa: BLE001
         pass
     return out
@@ -302,30 +305,30 @@ def main(argv):
             continue
         if bounce:
             skip(sym, "R23", f"兩段式進行中：反彈單 {bounce[0]}（{bounce[1].get('shares')}@{bounce[1].get('limit_price')}）在掛、失守線警報 {sym}-R23-exit-close 看守 → 不重複賣"); continue
-        sma10, low10 = l10.get("sma10"), l10.get("low10")
-        if not (sma10 and low10):
+        sma5, low10 = l10.get("sma5"), l10.get("low10")
+        if not (sma5 and low10):
             # 抓不到 10 日資料 → 退回 v2 單段貼盤（fail-open：線的保護優先），basis 註明
             plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
                          "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
                          "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3（⚠️ 10 日資料缺，退回單段貼盤）" + wash_note,
                          "after": ["snapshot-orders", "register-order --rule R23", "trade_ledger flag/resolve-flag trimmed", "thesis 留痕（+30d 驗）"]})
             continue
-        bounce_limit = round(max(sma10, c * 1.005), 2)
+        bounce_limit = round(max(sma5, c * 1.005), 2)
         failsafe = round(min(low10, c) * (1 - R23_FAILSAFE_BUF), 2)
         bounce_planned.add(sym)
         plan.append({"rule": f"R23-{stage}", "symbol": sym, "action": "SELL", "qty": qty,
                      "order": {"type": "limit", "limit": bounce_limit, "duration": "gt90", "stage": "bounce"},
                      "failsafe": {"level": failsafe, "alert_id": f"{sym}-R23-exit-close", "qty": qty},
                      "basis": f"前收 {c:.2f} ≤ 峰 {peak:.2f} × (1−{stage}%)（{dd:+.1%}）；armed；減 1/3 走兩段式：反彈限價 {bounce_limit}"
-                              f"（10 日均 {sma10:.2f}）GTC；失守線 {failsafe}（10 日收盤低 {low10:.2f} −{R23_FAILSAFE_BUF:.0%}）收盤跌破才貼盤賣" + wash_note,
+                              f"（5 日均 {sma5:.2f}）GTC；失守線 {failsafe}（10 日收盤低 {low10:.2f} −{R23_FAILSAFE_BUF:.0%}）收盤跌破才貼盤賣" + wash_note,
                      "after": ["snapshot-orders", "register-order --rule R23-bounce", "price_alerts add *-R23-exit-close close_confirm",
                                "trade_ledger flag bounce_pending（成交才算 trimmed）", "thesis 留痕（+30d 驗）"]})
-    # 反彈單每晚校正：與新 10 日均差 >2% → 撤換（SMA10 收斂到價位附近就自然成交，不會卡住）；不重登影子/警報
+    # 反彈單每晚校正：與新 5 日均差 >2% → 撤換（SMA5 收斂到價位附近就自然成交，不會卡住）；不重登影子/警報
     for sym, (oid, o) in open_bounce.items():
-        sma10, c = (lv.get(sym) or {}).get("sma10"), close_of(sym)
-        if not (sma10 and c) or sym not in positions:
+        sma5, c = (lv.get(sym) or {}).get("sma5"), close_of(sym)
+        if not (sma5 and c) or sym not in positions:
             continue
-        new_limit = round(max(sma10, c * 1.005), 2)
+        new_limit = round(max(sma5, c * 1.005), 2)
         old_limit = float(o.get("limit_price") or 0)
         if old_limit and abs(old_limit - new_limit) / new_limit > R23_BOUNCE_REFRESH:
             held = int(float(positions[sym].get("qty", 0) or 0))
@@ -333,10 +336,10 @@ def main(argv):
             if q < 1:
                 continue
             plan.append({"rule": "R23-bounce-cancel", "symbol": sym, "action": "CANCEL", "qty": o.get("shares"), "order": {"id": oid},
-                         "basis": f"反彈單 {oid} 限價 {old_limit} 與新 10 日均 {sma10:.2f} 差 >{R23_BOUNCE_REFRESH:.0%} → 撤換為 {new_limit}", "after": []})
+                         "basis": f"反彈單 {oid} 限價 {old_limit} 與新 5 日均 {sma5:.2f} 差 >{R23_BOUNCE_REFRESH:.0%} → 撤換為 {new_limit}", "after": []})
             plan.append({"rule": "R23-20", "symbol": sym, "action": "SELL", "qty": q, "refresh": True,
                          "order": {"type": "limit", "limit": new_limit, "duration": "gt90", "stage": "bounce"},
-                         "basis": f"反彈單校正：新限價 {new_limit}（10 日均 {sma10:.2f}；原 {old_limit}）；失守線警報 {sym}-R23-exit-close 不動",
+                         "basis": f"反彈單校正：新限價 {new_limit}（5 日均 {sma5:.2f}；原 {old_limit}）；失守線警報 {sym}-R23-exit-close 不動",
                          "after": ["register-order --rule R23-bounce"]})
     # 反彈單已成交 / 被撤 / 到期 → 失守線警報跟著撤（成交 = 減碼完成；消失且仍破線 = 明晚重掛整套）
     for a in alerts:
