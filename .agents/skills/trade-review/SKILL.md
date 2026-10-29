@@ -325,7 +325,7 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 
 ## 無人值守（2026-09-29）
 
-launchd `com.fadacai.trade-review` 每日 09:30 本地執行 `tools/trade_review_runner.sh`：`review_due.py` 說到期才跑 `claude -p "/trade-review" --model fable`（3600s 上限），之後 `review_lint` → `generate_html trade-review`（推報告站）→ Telegram。登入失效 / 逾時 / 無報告檔 → Telegram 警告並退出。報告檔名以**本地日期**為準（`briefing-out/trade-review-YYYY-MM-DD.md`）；找不到當日檔會退回最新一份（2 小時內）。
+launchd `com.fadacai.trade-review` 每 15 分鐘叫 `tools/trade_review_runner.sh`，腳本以美東時間自判 **平日 16:45–17:45 ET** 起跑、當日 marker 一天一次（2026-10-29 修：原 09:30 本地在 Mac 換時區後落在睡眠時段，launchd 不跑）：`review_due.py` 說到期才跑 `claude -p "/trade-review" --model fable`（3600s 上限），之後 `review_lint` → `generate_html trade-review`（推報告站）→ Telegram。登入失效 / 逾時 / 無報告檔 → Telegram 警告並退出。報告檔名以**美東日期**為準（`briefing-out/trade-review-YYYY-MM-DD.md`）；找不到當日檔會退回最新一份（2 小時內）。
 
 ## 已知限制（每期都要讀，避免過度推論）
 

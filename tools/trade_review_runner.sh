@@ -7,7 +7,10 @@
 #   → 報告轉 HTML 推報告站 → Telegram 一則（第 6 節 本期結論 + 網頁連結）
 # 失敗（登入失效 / 逾時 / 沒產出）也推 Telegram——這是兩週一次的工作，靜默失敗的代價是整期規則沒被計分。
 #
-# launchd：com.fadacai.trade-review（每日 09:30 本地 = 21:30 ET 前一日收盤後）；不到期直接退出，零成本。
+# 時間以美東為準（memory: feedback-schedule-us-eastern-time；2026-10-29 修）：原本 StartCalendarInterval 09:30 本地，
+#   Mac 換到 CET 後 = 04:30 ET，機器在睡（keep_awake_us 只保 ET 09:15–19:05），launchd 沒跑、第 15 天仍無報告。
+#   改成 launchd 每 15 分鐘叫一次，本腳本自判 ET 平日 16:45–17:45 起跑（收盤後、evening pass 16:20 已結束、Mac 仍醒）
+#   + 當日 marker（一天只試一次，失敗隔天重試）；不到期直接退出，零成本。
 # 手動：bash tools/trade_review_runner.sh --force   （忽略到期判定）
 #       bash tools/trade_review_runner.sh --notify-only <report.md>   （只做 HTML + Telegram，報告已在）
 set -uo pipefail
@@ -72,8 +75,15 @@ if [[ -n "$NOTIFY_ONLY" && "$NOTIFY_ONLY" != "pending" ]]; then
   log "notify-only: $NOTIFY_ONLY"; notify_report "$NOTIFY_ONLY"; exit 0
 fi
 
-# ── 到期判定（日期取檔名 research/last-trade-review.txt，不取 mtime）──
+# ── 時窗 + 到期判定（日期取檔名 research/last-trade-review.txt，不取 mtime）──
+ET_DATE="$(date +%F)"
 if [[ "$FORCE" != "true" ]]; then
+  ET_HM=$(date +%H%M); ET_DOW=$(date +%u)
+  (( ET_DOW >= 6 )) && exit 0
+  (( 10#$ET_HM < 1645 || 10#$ET_HM > 1745 )) && exit 0
+  MARK="$LOG_DIR/cache/trade-review-attempt-${ET_DATE}"
+  [[ -f "$MARK" ]] && exit 0
+  mkdir -p "$LOG_DIR/cache"
   DUE=$(python3 - <<'PY'
 import json, subprocess, sys
 out = subprocess.run([sys.executable, "tools/review_due.py", "--json"], capture_output=True, text=True).stdout
@@ -89,9 +99,10 @@ PY
     due*|red*|unknown*) log "trade-review $DUE → run" ;;
     *) exit 0 ;;   # 不到期，靜默
   esac
+  touch "$MARK"
 fi
 
-TODAY="$(date +%F)"
+TODAY="$ET_DATE"
 REPORT="$LOG_DIR/trade-review-${TODAY}.md"
 CLAUDE_TIMEOUT="${TRADE_REVIEW_TIMEOUT:-3600}"
 log "Running: claude -p \"/trade-review\" --model fable (timeout ${CLAUDE_TIMEOUT}s)"
