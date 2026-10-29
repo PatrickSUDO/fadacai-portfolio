@@ -198,6 +198,15 @@ tbody tr:last-child td { border-bottom: none; }
 /* ── Up / Down ── */
 .up   { color: var(--up); font-weight: 550; }
 .down { color: var(--down); font-weight: 550; }
+/* 命中率條（2026-10-29 用戶「影子訊號很難讀」）：表頭含「命中」的欄，k/n 或 NN% 自動畫條 */
+.hitbar { display:inline-block; width:56px; height:8px; border-radius:4px; background:var(--surface2);
+          vertical-align:middle; margin-right:6px; overflow:hidden; }
+.hitbar > span { display:block; height:100%; border-radius:4px; }
+.hb-good > span { background:var(--up); }
+.hb-mid  > span { background:var(--accent); }
+.hb-bad  > span { background:var(--down); }
+.hitpct { opacity:.65; font-size:.85em; margin-left:3px; white-space:nowrap; }
+td .hitcell { white-space:nowrap; }
 .warn { color: var(--warn); }
 
 /* ── Meta bar ── */
@@ -371,6 +380,61 @@ def wrap_tables(html: str) -> str:
     return re.sub(r"<table>", '<div class="table-wrap"><table>', html).replace(
         "</table>", "</table></div>"
     )
+
+
+_KN_RE = re.compile(r"(?<![\d/.])(\d{1,3})\s*/\s*(\d{1,3})(?![\d/])")
+_PCT_RE = re.compile(r"(?<![\d.+\-−])(\d{1,3}(?:\.\d+)?)%")
+
+
+def _bar(ratio: float) -> str:
+    ratio = max(0.0, min(1.0, ratio))
+    cls = "hb-good" if ratio >= 0.6 else ("hb-bad" if ratio < 0.4 else "hb-mid")
+    return f'<span class="hitbar {cls}"><span style="width:{ratio * 100:.0f}%"></span></span>'
+
+
+def _hit_cell(inner: str) -> str:
+    if "hitbar" in inner:
+        return inner
+    def kn(m):
+        k, n = int(m.group(1)), int(m.group(2))
+        if n == 0 or k > n:
+            return m.group(0)
+        return f'<span class="hitcell">{_bar(k / n)}{m.group(0)}<span class="hitpct">{k / n:.0%}</span></span>'
+    out, cnt = _KN_RE.subn(kn, inner)
+    if cnt:
+        return out
+    m = _PCT_RE.search(inner)
+    if m and float(m.group(1)) <= 100:
+        return inner[:m.start()] + f'<span class="hitcell">{_bar(float(m.group(1)) / 100)}{m.group(0)}</span>' + inner[m.end():]
+    return inner
+
+
+def hit_bars(html: str) -> str:
+    """表頭含「命中」的欄：k/n 或無正負號的 NN% 畫成命中率條（綠 ≥60%、紅 <40%、其餘強調色）。
+    其他欄不動，所以報酬率的 ±% 仍走 colorize_pct。"""
+    def per_table(tm):
+        tbl = tm.group(0)
+        head = re.search(r"<thead>(.*?)</thead>", tbl, re.S)
+        if not head:
+            return tbl
+        ths = [re.sub(r"<[^>]+>", "", h) for h in re.findall(r"<th[^>]*>(.*?)</th>", head.group(1), re.S)]
+        cols = {i for i, h in enumerate(ths) if "命中" in h}
+        if not cols:
+            return tbl
+        def per_row(rm):
+            cells = list(re.finditer(r"<td([^>]*)>(.*?)</td>", rm.group(0), re.S))
+            row = rm.group(0)
+            for i in sorted(cols, reverse=True):
+                if i < len(cells):
+                    c = cells[i]
+                    row = row[:c.start()] + f"<td{c.group(1)}>{_hit_cell(c.group(2))}</td>" + row[c.end():]
+            return row
+        body = re.search(r"<tbody>(.*?)</tbody>", tbl, re.S)
+        if not body:
+            return tbl
+        new_body = re.sub(r"<tr>.*?</tr>", per_row, body.group(1), flags=re.S)
+        return tbl[:body.start(1)] + new_body + tbl[body.end(1):]
+    return re.sub(r"<table>.*?</table>", per_table, html, flags=re.S)
 
 
 def colorize_pct(html: str) -> str:
@@ -554,6 +618,7 @@ def main() -> int:
 
     # Convert
     toc_html, body_html = md_to_html(md_text)
+    body_html = hit_bars(body_html)
     body_html = wrap_tables(body_html)
     body_html = colorize_pct(body_html)
 
