@@ -67,7 +67,7 @@ model: sonnet
 # → 重開 Claude Code session 即恢復
 
 # fmp-mcp（Docker 容器，非 stdio，不由 Claude Code 管）：
-docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml restart
+docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml restart
 
 # fmp-mcp 旁路驗證（不需 /mcp reconnect，直接測 helper）：
 python3 /Users/supatrick/laptop/project/fadacai-portfolio/tools/fmp_query.py getCompanyProfile --args '{"symbol":"AAPL"}'

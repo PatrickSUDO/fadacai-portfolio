@@ -343,7 +343,7 @@ Agent(subagent_type: "probability-honesty-checker", prompt: "...")
   ```bash
   python3 tools/fmp_query.py <toolName> [--args '<json>']
   ```
-  例：`python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`（無參數工具省略 --args）。結果直接是 JSON。FMP 容器：`docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d`
+  例：`python3 tools/fmp_query.py getStockPeers --args '{"symbol":"NVDA"}'`（無參數工具省略 --args）。結果直接是 JSON。FMP 容器：`docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml up -d`
 - **FMP 免費層實測清單（2026-07-28 全面掃描）**：✅ 可用 — `getTreasuryRates`（全曲線）、`getHistoricalIndustryPE`/`getIndustryPESnapshot`（行業 PE 日頻，`fetch_leading.py` 半導體估值溫度計用）、`getSectorPESnapshot`、`getSectorPerformanceSnapshot`、`getAftermarketQuote`（盤前盤後報價）、`getShareFloat`、`getDividendsCalendar`、`getIndexQuote`（^VIX 可、^VIX3M 402）、加上原有 peers/movers/profile/earnings-calendar。❌ 402 — transcripts、COT、Senate/House trades、stock news、press releases、analyst estimates、grades、price targets、financial scores、economic calendar、SP500 constituents、insider stats（**第 9.5 節 逐字稿改走 SEC 8-K exhibit**）
 
 ## Research Boundaries

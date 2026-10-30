@@ -192,7 +192,7 @@ def main() -> None:
     except requests.exceptions.ConnectionError:
         print(
             f"❌ 無法連線 {base_url}（FMP 容器未啟動？）\n"
-            "   → 啟動：docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml up -d",
+            "   → 啟動：docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml up -d",
             file=sys.stderr,
         )
         sys.exit(2)

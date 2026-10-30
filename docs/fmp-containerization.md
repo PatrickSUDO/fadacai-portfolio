@@ -6,7 +6,7 @@
 
 | 元件 | 位置 |
 |------|------|
-| Source + Dockerfile | `/Users/supatrick/laptop/mcp-servers/fmp-mcp/` |
+| Source + Dockerfile | `/Users/supatrick/laptop/project/mcp-servers/fmp-mcp/` |
 | compose.yaml | 同上 |
 | .env（token）| 同上，gitignored |
 | Claude Code 設定 | `.mcp.json → {"type":"http","url":"http://localhost:8081/mcp"}` — **不動** |
@@ -27,24 +27,24 @@ FMP 是 stateful HTTP server（每個 `initialize` 建立一個 session）。Cla
 
 ### 確認狀態
 ```bash
-docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml ps
+docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml ps
 curl http://localhost:8081/healthcheck
 ```
 
 ### 重啟容器（session 卡死或 wedged）
 ```bash
-docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml restart
+docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml restart
 # 再 /mcp → reconnect fmp-mcp 讓 Claude Code client 拿新 session
 ```
 
 ### 查看 log
 ```bash
-docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml logs --tail 50
+docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml logs --tail 50
 ```
 
 ### 重建映像（更新程式碼後）
 ```bash
-cd /Users/supatrick/laptop/mcp-servers/fmp-mcp
+cd /Users/supatrick/laptop/project/mcp-servers/fmp-mcp
 git pull    # 或 git fetch + 手動 merge
 docker compose up -d --build
 ```
@@ -65,14 +65,14 @@ python3 tools/fmp_query.py getMostActiveStocks
 - Docker daemon 未啟動 → `open -a Docker` 等 20s
 - FMP 無回應 → `docker compose restart` + 記 log
 
-watchdog log：`/Users/supatrick/laptop/mcp-servers/fmp-mcp/watchdog.log`（自動輪替 1MB）
+watchdog log：`/Users/supatrick/laptop/project/mcp-servers/fmp-mcp/watchdog.log`（自動輪替 1MB）
 
 ```bash
 # 手動測 watchdog
 bash /Users/supatrick/laptop/project/fadacai-portfolio/tools/mcp_watchdog.sh
 
 # 查看 watchdog log
-tail -30 /Users/supatrick/laptop/mcp-servers/fmp-mcp/watchdog.log
+tail -30 /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/watchdog.log
 ```
 
 ## 重要前提
@@ -86,7 +86,7 @@ Settings → General → ☑️ Start Docker Desktop when you sign in
 
 ```bash
 # 1. 停止容器並停 watchdog
-docker compose -f /Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml down
+docker compose -f /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml down
 launchctl bootout gui/$(id -u)/com.fadacai.mcp-watchdog
 
 # 2. 還原舊 plist
@@ -101,7 +101,7 @@ curl http://localhost:8081/healthcheck
 
 ## Token 管理
 
-`FMP_ACCESS_TOKEN` 存在 `/Users/supatrick/laptop/mcp-servers/fmp-mcp/.env`（gitignored）。
+`FMP_ACCESS_TOKEN` 存在 `/Users/supatrick/laptop/project/mcp-servers/fmp-mcp/.env`（gitignored）。
 
 舊 plist 有 token 明文 → 已歸檔為 `.bak`。若需更換 token：
 1. 編輯 `.env`

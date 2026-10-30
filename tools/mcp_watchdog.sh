@@ -9,10 +9,10 @@
 #   3. If healthy → silent exit (no log spam on good runs)
 #   4. If unhealthy → docker compose restart + log
 #
-# Log: /Users/supatrick/laptop/mcp-servers/fmp-mcp/watchdog.log (auto-rotated at 1MB)
+# Log: /Users/supatrick/laptop/project/mcp-servers/fmp-mcp/watchdog.log (auto-rotated at 1MB)
 
-COMPOSE_FILE="/Users/supatrick/laptop/mcp-servers/fmp-mcp/compose.yaml"
-LOG="/Users/supatrick/laptop/mcp-servers/fmp-mcp/watchdog.log"
+COMPOSE_FILE="/Users/supatrick/laptop/project/mcp-servers/fmp-mcp/compose.yaml"
+LOG="/Users/supatrick/laptop/project/mcp-servers/fmp-mcp/watchdog.log"
 FMP_HEALTH="http://localhost:8081/healthcheck"
 ROTATE_BYTES=1048576  # 1 MB
 

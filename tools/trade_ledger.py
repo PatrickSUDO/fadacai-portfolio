@@ -53,7 +53,7 @@ DEFAULT_LEDGER = ROOT / "research" / "trade-ledger.jsonl"
 DEFAULT_REGISTRY = ROOT / "research" / "order-registry.json"
 DEFAULT_FLAGS = ROOT / "research" / "position-flags.json"
 PRICE_CACHE = ROOT / "briefing-out" / "cache" / "eod-prices.json"
-FT_SERVER_DIR = Path("/Users/supatrick/laptop/mcp-servers/firstrade-server")
+FT_SERVER_DIR = Path("/Users/supatrick/laptop/project/mcp-servers/firstrade-server")
 
 VALID_ORIGINS = {"system", "user", "unknown"}
 VALID_CONF = {"high", "low"}
