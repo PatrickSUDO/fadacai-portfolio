@@ -40,6 +40,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1209,6 +1210,187 @@ def cmd_snapshot_orders(args):
            "snapshot_days_recorded": len(reg["snapshots"])})
 
 
+# ── 同日拆單殘影去重（2026-10-30）────────────────────────────────────────────
+# 當日拉的歷史沒有 exec_time，券商把一張單的分筆各列一列（CLS 10/12 1+7、DDOG 10/19 8+2+1、
+# VOO 10/23 13@698.80+8@698.785）；隔日再拉，同一張單變成一列有 exec_time 的彙總（8、11、
+# 21@698.794）。cmd_ingest 的五欄 key 要求股數相等，分筆對不上彙總 → 兩組同時入帳，重放股數
+# 比 live 多（DDOG 60 vs 49、CLS 42 vs 34），FIFO 已實現與 profit factor 跟著灌水。
+# 規則（刻意收窄）：同一（日期, 代號, 方向, 是否選擇權）內**同時**有無 exec_time 與有 exec_time
+# 的列，且某幾列無 exec_time 的股數合計 == 某一列有 exec_time 的股數、成交額加權均價在半分錢內
+# → 同一組成交，只留有 exec_time 的那組；反向（當日拉到彙總、隔日拉到分筆）同理只留有時間的。
+# 其餘混合組（GLD 10/23 分筆 1+4+5+7=17 vs 彙總 18：兩筆同價 1 股分筆在 fill_id 撞 id 只剩一列）
+# 列入 uncertain 不動，要移除走 `dedup-partials --drop-ids … --reason …`。全是有 exec_time 的多列
+# （ODFL 2/9 10+10 不同秒）或全無 exec_time 的多列一律不碰——那是真的兩筆。
+_ORIGIN_SOURCE_RANK = {"manual": 5, "order_id": 4, "no_resting_order": 3, "journal": 2,
+                       "ladder_price": 1, "none": 0}
+_PARTIAL_PRICE_TOL = 0.0051       # 彙總列均價：券商多半四捨五入到分，VOO 10/23 給 8 位小數
+_ORIGIN_KEYS = ("origin", "origin_confidence", "origin_evidence", "origin_source", "model", "effort")
+_CARRY_IF_MISSING = ("order_id", "exec_via", "thesis_id", "bucket", "note")
+EXIT_UNCERTAIN = 2
+
+
+def _origin_rank(rec):
+    return _ORIGIN_SOURCE_RANK.get(rec.get("origin_source") or "none", 0)
+
+
+def _wavg_price(rows):
+    q = sum(float(r["qty"]) for r in rows)
+    return sum(float(r["qty"]) * float(r["price"]) for r in rows) / q if q else 0.0
+
+
+def _subsets_matching(rows, target_qty, target_price):
+    """股數合計 == target 且加權均價在容差內的子集合；先試整組，再試真子集（列數 >12 只試整組）。"""
+    def ok(sub_):
+        return (abs(sum(float(r["qty"]) for r in sub_) - target_qty) < 1e-6
+                and abs(_wavg_price(sub_) - target_price) <= _PARTIAL_PRICE_TOL)
+    if rows and ok(rows):
+        return [tuple(rows)]
+    if len(rows) > 12:
+        return []
+    n, hits = len(rows), []
+    for mask in range(1, (1 << n) - 1):
+        sub_ = [rows[i] for i in range(n) if mask >> i & 1]
+        if ok(sub_):
+            hits.append(tuple(sub_))
+    return hits
+
+
+def _held_before(fills, symbol, day):
+    """帳本重放該代號在 day 之前的現股股數（分割調整）。帳本自 2023-07 起算，更早建的倉會低估。"""
+    q = 0.0
+    for f in fills:
+        if f["symbol"] != symbol or f.get("is_option") or f["date"] >= day:
+            continue
+        n = float(f["qty"])
+        for eff, ratio in SPLITS.get(symbol.upper(), []):
+            if f["date"] < eff <= day:
+                n *= ratio
+        q += n if f["side"] == "BOUGHT" else -n
+    return round(q, 4)
+
+
+def _absorb(survivor, parts, how):
+    """把被合併列的身分帶到存活列：origin 只在分筆更具體時覆蓋，缺的 order_id/exec_via 等補上，
+    全部列進 merged_from 留痕（ingest 的 keep 名單含 merged_from，重拉不會洗掉）。"""
+    best = max(parts, key=_origin_rank)
+    if _origin_rank(best) > _origin_rank(survivor):
+        old = survivor.get("origin_evidence")
+        for k in _ORIGIN_KEYS:
+            if k in best:
+                survivor[k] = best[k]
+        survivor["origin_evidence"] = (f"{best.get('origin_evidence')}（自分筆 {best['id']} 帶入"
+                                       + (f"；彙總列原證據：{old}" if old else "") + "）")
+    for k in _CARRY_IF_MISSING:
+        if survivor.get(k) in (None, "", "unknown"):
+            for p_ in parts:
+                if p_.get(k) not in (None, "", "unknown"):
+                    survivor[k] = p_[k]
+                    break
+    survivor.setdefault("merged_from", [])
+    for p_ in parts:
+        survivor["merged_from"].append({
+            "id": p_["id"], "qty": p_["qty"], "price": p_["price"], "exec_time": p_.get("exec_time") or "",
+            "origin_source": p_.get("origin_source"), "origin_evidence": p_.get("origin_evidence"), "how": how})
+
+
+def _row_brief(r):
+    return {"id": r["id"], "qty": r["qty"], "price": r["price"], "exec_time": r.get("exec_time") or ""}
+
+
+def _group_summary(key, survivors, dropped, how):
+    return {"date": key[0], "symbol": key[1], "side": key[2], "how": how,
+            "kept": [_row_brief(s) for s in survivors], "dropped": [_row_brief(d) for d in dropped],
+            "dropped_qty": sum(float(d["qty"]) for d in dropped)}
+
+
+def dedup_partials(fills, drop_ids=None, reason=None):
+    """純函式，不寫檔。回 (kept, merged_groups, uncertain_groups, manual_drops, errors)。"""
+    drop_ids = list(drop_ids or [])
+    groups = defaultdict(lambda: {"timed": [], "timeless": []})
+    for f in fills:
+        key = (f["date"], f["symbol"], f["side"], bool(f.get("is_option")))
+        groups[key]["timed" if f.get("exec_time") else "timeless"].append(f)
+    drop, merged, uncertain, manual, errors = {}, [], [], [], []
+    for key, g in sorted(groups.items()):
+        if not (g["timed"] and g["timeless"]):
+            continue
+        timed = sorted(g["timed"], key=lambda r: (r["exec_time"], -float(r["qty"])))
+        free = sorted(g["timeless"], key=lambda r: -float(r["qty"]))
+        # A) 無 exec_time 分筆合計 == 有 exec_time 彙總 → 留彙總。先算完所有配對再動手：
+        #    任一彙總列有 >1 種分筆子集合能湊出來（2+3 與 5 都對 5）→ 整組歧義，一列都不動。
+        plan_a = [(t, _subsets_matching(free, float(t["qty"]), float(t["price"]))) for t in timed]
+        ambiguous = any(len(c) > 1 for _, c in plan_a)
+        if not ambiguous:
+            for t, cands in plan_a:
+                if len(cands) != 1 or any(p_ not in free for p_ in cands[0]):
+                    continue                          # 對不上，或分筆已被前一列吃掉
+                parts = list(cands[0])
+                _absorb(t, parts, "partials→consolidated")
+                for p_ in parts:
+                    drop[p_["id"]] = t["id"]
+                    free.remove(p_)
+                merged.append(_group_summary(key, [t], parts, "partials→consolidated"))
+            # B) 無 exec_time 彙總 == 有 exec_time 分筆合計 → 留分筆；同樣要求唯一：
+            #    其餘無 exec_time 的列若也能湊出同一目標，視為歧義不動。
+            for l in list(free):
+                cands = _subsets_matching(timed, float(l["qty"]), float(l["price"]))
+                others = [r for r in free if r is not l]
+                if len(cands) != 1 or _subsets_matching(others, float(l["qty"]), float(l["price"])):
+                    continue
+                parts = list(cands[0])
+                for t in parts:
+                    _absorb(t, [l], "consolidated→partials")
+                drop[l["id"]] = ",".join(t["id"] for t in parts)
+                free.remove(l)
+                merged.append(_group_summary(key, parts, [l], "consolidated→partials"))
+        if not free:
+            continue
+        # C) 剩下的混合組：列出來不動（含手動 --drop-ids 要用的證據）
+        held = None if key[3] else _held_before(fills, key[1], key[0])
+        free_qty = sum(float(r["qty"]) for r in free)
+        timed_qty = sum(float(r["qty"]) for r in timed)
+        entry = {"date": key[0], "symbol": key[1], "side": key[2],
+                 "timeless": [_row_brief(r) for r in free], "timed": [_row_brief(r) for r in timed],
+                 "timeless_qty": free_qty, "timed_qty": timed_qty, "held_before": held}
+        if key[2] == "SOLD" and held is not None and held + 1e-6 < free_qty + timed_qty:
+            entry["hint"] = (f"賣超：同日所有列合計 {free_qty + timed_qty:g} > 事前持股 {held:g}，"
+                             f"無 exec_time 分筆（合計 {free_qty:g}）只能是當日拉取殘影 → "
+                             f"--drop-ids {','.join(r['id'] for r in free)} --reason …")
+        elif ambiguous:
+            entry["hint"] = "歧義：同一彙總列可由多種分筆子集合湊出，整組不動；對照 journal 當日成交數後用 --drop-ids 處理"
+        else:
+            entry["hint"] = ("分筆合計 ≠ 彙總（同價同股數分筆會撞 fill_id 少一列），無法機械判定；"
+                             "對照 journal 當日成交數後用 --drop-ids 處理")
+        pending_manual = [d for d in drop_ids if d in {r["id"] for r in free}]
+        for did in pending_manual:
+            if not reason:
+                errors.append("--drop-ids 需附 --reason")
+                break
+            row = next(r for r in free if r["id"] == did)
+            survivor = min(timed, key=lambda t: abs(float(t["price"]) - float(row["price"])))
+            _absorb(survivor, [row], f"manual: {reason}")
+            drop[did] = survivor["id"]
+            free.remove(row)
+            manual.append({**_group_summary(key, [survivor], [row], "manual"), "reason": reason})
+        if free:
+            entry["timeless"] = [_row_brief(r) for r in free]
+            uncertain.append(entry)
+    for did in drop_ids:
+        if did not in drop:
+            errors.append(f"{did}: 不在任何混合組的無 exec_time 列中（已被合併、不存在、或有 exec_time）— 拒絕移除")
+    kept = [f for f in fills if f["id"] not in drop]
+    return kept, merged, uncertain, manual, errors
+
+
+def _backup_ledger(path, asof=None):
+    src = Path(path)
+    bak = Path(f"{src}.bak-{_today(asof).strftime('%Y%m%d')}")
+    if bak.exists():
+        bak = Path(f"{src}.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    shutil.copy2(src, bak)
+    return bak
+
+
 def cmd_ingest(args):
     window = args.date_range
     if args.history_file:
@@ -1248,18 +1430,46 @@ def cmd_ingest(args):
         if old_id in existing:
             keep = {k: existing[old_id][k] for k in
                     ("origin", "origin_confidence", "origin_evidence", "origin_source",
-                     "thesis_id", "bucket", "note", "order_id", "exec_via", "model", "effort")
+                     "thesis_id", "bucket", "note", "order_id", "exec_via", "model", "effort",
+                     "merged_from")
                     if k in existing[old_id]}
             rec.update(keep)
         else:
             added += 1
         existing[old_id] = rec
-    save_fills(list(existing.values()), args.ledger)
+    # 2026-10-30: 當日拉的分筆 + 隔日拉的彙總（股數不等、五欄 key 配不上）→ 同組只留彙總；
+    # 對不上的混合組列在 partials_uncertain，不動（見 dedup_partials）。
+    final, p_merged, p_uncertain, _, _ = dedup_partials(list(existing.values()))
+    save_fills(final, args.ledger)
     _emit({"fetched": len(incoming), "new": added, "merged_exec_time": merged,
-           "ledger_total": len(existing),
+           "merged_partials": len(p_merged),
+           "partials_dropped": [d["id"] for g in p_merged for d in g["dropped"]],
+           "partials_uncertain": p_uncertain,
+           "ledger_total": len(final),
            "range": window,
            "earliest": min((f["date"] for f in existing.values()), default=None),
            "latest": max((f["date"] for f in existing.values()), default=None)})
+
+
+def cmd_dedup_partials(args):
+    fills = load_fills(args.ledger)
+    drop_ids = [x.strip() for x in (args.drop_ids or "").split(",") if x.strip()]
+    if drop_ids and not args.reason:
+        _emit({"error": "--drop-ids 需附 --reason", "cmd": "dedup-partials"})
+        return EXIT_GENERIC
+    kept, merged, uncertain, manual, errors = dedup_partials(fills, drop_ids=drop_ids, reason=args.reason)
+    out = {"dry_run": bool(args.dry_run), "ledger_before": len(fills), "ledger_after": len(kept),
+           "removed": len(fills) - len(kept), "merged_groups": merged, "manual_drops": manual,
+           "uncertain_groups": uncertain, "errors": errors, "written": False}
+    if errors:
+        _emit(out)
+        return EXIT_GENERIC
+    if not args.dry_run and len(kept) != len(fills):
+        out["backup"] = str(_backup_ledger(args.ledger, args.asof))
+        save_fills(kept, args.ledger)
+        out["written"] = True
+    _emit(out)
+    return EXIT_UNCERTAIN if uncertain else EXIT_OK
 
 
 def cmd_backfill_origin(args):
@@ -1701,6 +1911,14 @@ def _build_parser():
     i.add_argument("--to", dest="date_to", default=None, help="YYYY-MM-DD")
     i.add_argument("--history-file", default=None, help="use a pre-dumped history JSON instead")
 
+    dp = sub.add_parser("dedup-partials",
+                        help="合併同日拉取的拆單殘影（無 exec_time 分筆合計 == 有 exec_time 彙總）；"
+                             "ingest 每次自動跑，這裡可重跑、dry-run、或對 uncertain 組手動移除。exit 2 = 仍有 uncertain")
+    dp.add_argument("--dry-run", action="store_true", help="只列出，不寫檔")
+    dp.add_argument("--drop-ids", default=None,
+                    help="逗號分隔：uncertain 組內要移除的無 exec_time 分筆 id（需 --reason；寫檔前自動備份 .bak-YYYYMMDD）")
+    dp.add_argument("--reason", default=None, help="--drop-ids 的依據（journal 當日成交數 / 事前持股）")
+
     b = sub.add_parser("backfill-origin", help="run the origin priority chain over all fills")
     b.add_argument("--force", action="store_true", help="also overwrite manual annotations")
     b.add_argument("--since", default=None, help="extra coverage breakdown from this date")
@@ -1753,6 +1971,7 @@ def main(argv=None):
         handler = {
             "snapshot-orders": cmd_snapshot_orders,
             "ingest": cmd_ingest,
+            "dedup-partials": cmd_dedup_partials,
             "backfill-origin": cmd_backfill_origin,
             "score": cmd_score,
             "holding-alpha": cmd_holding_alpha,
