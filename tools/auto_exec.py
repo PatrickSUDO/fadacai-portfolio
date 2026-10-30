@@ -29,6 +29,8 @@ v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝�
   ⑦無槓桿硬線（C7，2026-10-13 用戶）：在掛買單合計 + 當日新買單 ≤ 現金 + T+1 SGOV 賣；超出 → 砍新買單、撤系統在掛買單（大者先），用戶單列 🎯；輸出 `leverage_gate`
 ⑤跨日反轉：讀 briefing-out/cache/crossday-flags.json（crossday_check 若有輸出）→ 命中 ticker 的 A/B 延一日
 
+R23 影子模式（2026-10-30 用戶裁決，R23_MODE="shadow"）：A/B 段 R23 項目照算但 action=SHADOW，--execute 只登 cf-r23-shadow 不下單；
+  guard 同步移除 R23 警報。復活條件見 RULES-LEDGER R23 列。
 --execute（v2，2026-09-15 起）：需 AUTO_EXEC_LIVE=1；evening_pass.sh 收盤後跑，現股 BUY/SELL 限價以 gt90 掛（次一交易日生效）、CANCEL 直撤；
 複式單仍 Telegram 手掛。結果寫回 plan JSON `executed` + research/auto-exec-log.jsonl；briefing T6.5 讀到 executed 就只回報不重下。
 Usage:
@@ -114,6 +116,10 @@ WASHOUT_BENCH_DROP = -0.02   # R23 v2（2026-09-29 /trade-review）：基準當�
 R23_FAILSAFE_BUF = 0.03      # R23 v3：失守線 = min(10 日收盤低, 觸發收盤) × (1 − 3%)。觸發日多半就是 10 日低，不加緩衝等於單段
 R23_BOUNCE_REFRESH = 0.02    # R23 v3：反彈單限價與新 5 日均差 >2% 才撤換（SMA5 向下收斂到價位時自然成交）
 R23_BOUNCE_SMA = 5           # 反彈錨天數（2026-10-29 用戶裁決 10 → 5；失守錨仍用 10 日收盤低）
+R23_MODE = "shadow"          # 2026-10-30 用戶裁決（核心／衛星提案 P2）：R23 全部項目改影子——plan 照算、不下單、不掛警報，
+                             # 每次觸發登 shadow `cf-r23-shadow`（correct_if under：賣掉後跑輸基準 = 線對）。證據：前瞻 0 命中 4 失效、
+                             # 回測 −10/−15/−20/−30 四門檻無一改善 MDD（research/core-satellite-proposal-2026-10-30.md 3.2）。
+                             # 復活條件寫在 RULES-LEDGER R23 列；改回 "live" 即恢復下單，其餘程式不動。
 
 
 def ten_day_levels(symbols: list[str]) -> dict:
@@ -656,6 +662,13 @@ def main(argv):
     lev["headroom_after"] = round(headroom + sum(c["usd"] for c in lev["cancel_resting"]), 2)
     lev["rule"] = "在掛買單合計 + 當日新買單 ≤ 現金 + T+1 到位 SGOV 賣；永不借券商的錢"
 
+    # R23 影子模式：所有 R23-* 項目（含兩段式撤單/警報清理/失守線）轉 SHADOW——execute 只登影子不碰券商
+    if R23_MODE == "shadow":
+        for p_ in plan:
+            if str(p_.get("rule", "")).startswith("R23"):
+                p_["shadow_of"] = p_.get("action"); p_["action"] = "SHADOW"
+                p_["basis"] = "🟣 R23 影子（2026-10-30 起不下單，只登 cf-r23-shadow）｜" + str(p_.get("basis", ""))
+                p_["after"] = ["shadow record --kind cf-r23-shadow"]
     out = {"asof": today.isoformat(), "close_asof": closes.get("asof"), "pass": "preclose" if preclose else "close",
            "buffer": BUF, "mode": "dry-run" if not execute else "execute",
            "execute_unlock": EXECUTE_UNLOCK.isoformat(), "px_note": px_note,
@@ -687,7 +700,7 @@ def main(argv):
         with open(ROOT / "research" / "auto-exec-log.jsonl", "a") as fh:
             for e in executed:
                 fh.write(json.dumps({"date": today.isoformat(), **e}, ensure_ascii=False) + "\n")
-        return 0 if all(e.get("status") in ("placed", "cancelled", "cancel_failed", "skipped", "alert_removed") for e in executed) else 4
+        return 0 if all(e.get("status") in ("placed", "cancelled", "cancel_failed", "skipped", "alert_removed", "shadow_recorded", "shadow_noop") for e in executed) else 4
     return 0
 
 
@@ -738,6 +751,16 @@ def execute_plan(plan, reg, today):
         rule, sym, act = p.get("rule"), p.get("symbol"), p.get("action")
         rec = {"rule": rule, "symbol": sym, "action": act, "qty": p.get("qty"), "limit": (p.get("order") or {}).get("limit")}
         try:
+            if act == "SHADOW":
+                # R23 影子：不下單、不撤單、不動警報；只登一筆（同日同標的去重），讓 /trade-review 機械計分
+                if p.get("shadow_of") in ("SELL", "BUY") and p.get("qty"):
+                    px_ = (p.get("order") or {}).get("limit") or 0
+                    _shadow_record(today, sym, "cf-r23-shadow", float(px_), round(float(p["qty"]) * float(px_), 2),
+                                   f"auto_exec {rule} would {p['shadow_of']} {p['qty']}: {str(p.get('basis', ''))[:140]}")
+                    rec.update(status="shadow_recorded", shadow_of=p.get("shadow_of"))
+                else:
+                    rec.update(status="shadow_noop", shadow_of=p.get("shadow_of"))
+                results.append(rec); continue
             if act == "CANCEL":
                 r = _ft_cancel(p["order"]["id"])
                 # 9/28 LITE：單已成交，券商回 400，log 仍記 cancelled → 對照時看起來像撤了一張成交單

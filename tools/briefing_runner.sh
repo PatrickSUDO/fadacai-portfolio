@@ -133,10 +133,15 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" run 
   || log "label_events failed (non-fatal)"
 step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/label_events.py" score >> "$LOG_DIR/launchd.log" 2>&1 || true
 
-log "Refreshing X source signals (X API v2, pay-per-use, cost-capped)..."
-step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
-  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
-  || log "twitter refresh failed (non-fatal, briefing continues without source signals)"
+# 2026-10-30 用戶裁決（訊號層凍結、X API 停）：預設跳過；要跑設 X_FETCH_ENABLED=1
+if [[ "${X_FETCH_ENABLED:-0}" == "1" ]]; then
+  log "Refreshing X source signals (X API v2, pay-per-use, cost-capped)..."
+  step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fetch_twitter.py" \
+    >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "twitter refresh failed (non-fatal, briefing continues without source signals)"
+else
+  log "X source fetch skipped (disabled 2026-10-30; X_FETCH_ENABLED=1 to run)"
+fi
 
 # SA 自訂 screener 成員每週一自動刷新（2026-10-07：VICR 9/19–22 進榜時我們的成員還停在 9/4 手貼版）。需 .env SA_COOKIE，
 # 失效時腳本自己印 ⚠️ 並退回舊成員；非致命。產出 briefing-out/cache/sa-screener-delta.json（新進/掉榜）供 briefing Key Alerts 讀。
@@ -199,6 +204,11 @@ python3 "$SCRIPT_DIR/position_guard.py" --sync-alerts \
 
 # T6.5 機械單清單（v1 dry-run）：以前一收盤判定，寫 briefing-out/cache/auto-exec-plan.json；
 # briefing T6.5 只准執行此清單，不自行判定機械觸發。--execute 解鎖前不送單。
+# 月度格子（2026-10-30 用戶裁決，核心／衛星提案 P4 輕版）：每月第一個交易日一則 Telegram，其餘日子無輸出
+log "Monthly grid (first trading day of month → Telegram)..."
+step python3 "$SCRIPT_DIR/monthly_grid.py" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "monthly_grid failed (non-fatal)"
+
 log "auto_exec dry-run (T6.5 mechanical plan)..."
 step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/auto_exec.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \

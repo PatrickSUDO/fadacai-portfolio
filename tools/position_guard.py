@@ -53,6 +53,8 @@ PLAN_END = "<!-- POSITION-STATE:END -->"
 
 R23_ARM = 0.20
 R23_LINES = (20, 30)
+R23_MODE = "shadow"         # 2026-10-30 用戶裁決：R23 改影子（auto_exec 不下單）。guard 仍算 armed/線（供 R28a 買方鎖與陳列），
+                            # 但不掛 R23 警報、不報「缺警報／無旗標」缺口；r23_state 前綴「影子｜」。復活：兩檔同時改回 "live"。
 R8_TIERS = ((30, 15), (60, 15), (100, 20))  # (+% 未實現, 該級賣出 % of 原始股數)
 R14_DAYS = 30
 EARN_WINDOW_DAYS = 2
@@ -625,6 +627,8 @@ def build_state(*, sync_alerts=False):
         r23_state = None
         if armed and dd is not None:
             r23_state = "TRIGGER −30% 兩段" if dd <= -30 else ("TRIGGER −20% 一段" if dd <= -20 else f"監控中（−20% 線 ${peak*0.8:.0f}）")
+            if R23_MODE == "shadow":
+                r23_state = "影子｜" + r23_state
         elif bucket == "認列" and r14_locked and peak and cost and peak >= cost * (1 + R23_ARM):
             r23_state = "R14 鎖（未 arm）"
         sells = open_sell_orders(registry, sym)
@@ -721,7 +725,7 @@ def build_state(*, sync_alerts=False):
                     dl = f.get("deadline")
                     if dl and (dt.date.fromisoformat(dl) - today).days > R28_FLAG_MAX_CAL_DAYS and not any(a.get("type") == "price_below" for a in al):
                         gaps.append(f"{sym}: 旗標 {f['id']} deadline {dl} 超過 15 交易日且無價格線（{why[0][:20]}…）→ 縮 deadline 或掛收盤線")
-        if armed:
+        if armed and R23_MODE != "shadow":
             # 已破的線交給旗標，不要求警報存在（sync 會主動移除）
             want = {f"{sym}-R23-peakdd{p}" for p in R23_LINES if dd is None or dd > -p}
             have = {a["id"] for a in al if a.get("type") == "peak_dd"}
@@ -1077,6 +1081,17 @@ def _sync_r23_alerts(alerts, rows, today):
     """armed → 確保 20/30 兩支 peak_dd 警報存在（since = r23_since）；未 armed/出場 → 移除 R23 警報。"""
     from price_alerts import save_alerts  # noqa: WPS433
     changed = []
+    if R23_MODE == "shadow":
+        # 影子模式：R23 不再下單，close_confirm 警報只會變成殭屍訊息 → 全部移除、不新掛（2026-10-30）
+        keep = []
+        for a in alerts.get("alerts", []):
+            if a.get("type") == "peak_dd" or "-R23-" in str(a.get("id", "")):
+                changed.append(f"removed {a['id']}（R23 影子模式）"); continue
+            keep.append(a)
+        alerts["alerts"] = keep
+        if changed:
+            save_alerts(alerts)
+        return changed
     held = {r["symbol"] for r in rows}
     keep = []
     for a in alerts.get("alerts", []):

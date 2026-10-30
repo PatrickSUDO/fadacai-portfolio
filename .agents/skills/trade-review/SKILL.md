@@ -72,7 +72,7 @@ python3 tools/trade_ledger.py beta-capture --window 180 --bench SMH
 
 ### 2d. 帳戶級四指標（每期必跑，2026-07-29 起）
 
-**實作成本（2026-10-20 用戶「組合跟操作感覺比 SMH/QQQ 還糟」）**：每期加算「當期持倉名單等權買抱同期報酬 − 帳戶同期報酬」，並列 SMH/QQQ/SPY 同期。這個差距就是現金停泊、賣贏家、買新名字的總成本；選股好不好看前者，操作好不好看差距。工具 `python3 tools/impl_cost.py --since <期初> --acct-start <期初淨值> --acct-now <期末淨值>`（同時印期內賣出 vs 抱到今天、依標的/依月）。第 0 節必列一行（有倖存者偏差，持倉名單取期初而非期末）。
+**實作成本（2026-10-20 用戶「組合跟操作感覺比 SMH/QQQ 還糟」）**：每期加算「當期持倉名單等權買抱同期報酬 − 帳戶同期報酬」，並列 SMH/QQQ/SPY 同期。**名單取 `--since` 當日收盤實際持有的現股（含期內清倉者，無倖存者偏差；2026-10-30 修，舊版取期末仍持有名字 → +62% 是倖存者偏差）。** 工具印兩個數：實際權重買抱 − 帳戶 = **操作成本**（只拿掉期內操作）；實際權重 − 等權 = **權重判斷價值**。選股好不好看等權、壓重對不對看兩者差、操作好不好看前者。工具 `python3 tools/impl_cost.py --since <期初> --acct-start <期初淨值> --acct-now <期末淨值>`（同時印期內賣出 vs 抱到今天、依標的/依月）。第 0 節必列一行。長窗（≥3 個月）另跑 `tools/core_satellite_backtest.py`（月度再平衡版）。
 
 ```bash
 python3 tools/account_metrics.py scan && python3 tools/account_metrics.py report --live <Step 0b 即時帳戶總值>
