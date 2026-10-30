@@ -47,6 +47,8 @@ TARGETS = [
     "leading-indicators.json",
     "account-metrics.json",
     "rotation-corr.json",
+    "universe.json",        # 發現層宇宙（R34 前瞻 N1 隨機對照需要同日宇宙，2026-10-30）
+    "discovery.json",       # 當日新鮮訊號快照
 ]
 
 KEEP_DAILY_DAYS = 120     # every day inside this window

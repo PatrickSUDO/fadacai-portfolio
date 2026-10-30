@@ -31,7 +31,7 @@ def main():
     b = (a.bench or bench_for(a.ticker)).upper(); h = cfg["hurdle_12m_pct"].get(b, cfg["hurdle_12m_pct"]["VOO"]); m = cfg["margin_pp"]
     ok = a.ev >= h + m
     print(json.dumps({"ticker": a.ticker.upper(), "bench": b, "hurdle_12m_pct": h, "margin_pp": m, "required_ev_pct": h + m, "ev_pct": a.ev,
-                      "verdict": "PASS" if ok else "FAIL", "action": "可開新倉（仍受 R31/R34 sizing/C7）" if ok else "不開新倉；錢留在停泊 VOO（R33）。要曝險就買該基準 ETF"}, ensure_ascii=False))
+                      "verdict": "PASS" if ok else "FAIL", "action": "可開新倉（仍受 R31/H10 起手/C7）" if ok else "不開新倉；錢留在停泊 VOO（R33）。要曝險就買該基準 ETF"}, ensure_ascii=False))
     return 0 if ok else 2
 
 if __name__ == "__main__":

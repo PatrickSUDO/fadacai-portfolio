@@ -7,12 +7,18 @@ Why：2026 YTD 贏 SMH 的非半導體大型股 48 檔，**全部**在年內出�
 之後 63 日對 SPY 超額平均 −0.4%、勝率 43%）。**結論：這個訊號是「必要條件」不是「充分條件」——及早選到靠的是
 撒網小倉 + 確認加碼 + 快砍啞火，不是預測。** 本工具只做撒網：每日列新鮮訊號，寫發現帳，63 日後機械計分。
 
+2026-10-30 外部驗證（ranker F8 預註冊 null 驗證，2008–2017 大型股 2,843/3,085 事件）：訊號後 63 日對 SPY 平均 −0.04pp、命中 48%，
+**輸給同日隨機抽一檔**（+0.3pp、50.5%；20 組 seed 排第 20/16）；右尾不比隨機肥；訊號後均值回歸。→ **R34 sizing 路徑廢止，掃描只供 L2 名單，
+訊號不觸發任何單**（進場走 L1 規則 / R35 / H10 / R31 / C7）。唯一翻案門 = 前瞻發現帳 ≥300 筆計分 + 同日隨機 N1 對照；每筆同日補記
+30 日 revision 方向與 priced_in_pct（`enrich`），供「價格動了、盈餘預期有沒有跟上」的分組描述。詳 feedback/discovery-layer.md。
+
 Usage:
   python3 tools/discovery_scan.py scan [--refresh-universe] [--rs 15] [--top 45]
+  python3 tools/discovery_scan.py enrich [--max 40]   # 未補欄位的 open 筆：EODHD 補 rev30_up/down/dir + priced_in_pct（runner 每日）
   python3 tools/discovery_scan.py score        # 到期（≥63 交易日）訊號補 63 日對 SPY 超額
-  python3 tools/discovery_scan.py stats
+  python3 tools/discovery_scan.py stats        # 勝率/平均 + 依 rev30_dir 分組（描述性）
 輸出：briefing-out/cache/discovery.json（當日新鮮訊號，板塊各最多 3 檔）、research/discovery-signals.jsonl（發現帳）
-display-only：進 briefing Key Alerts 一行 + L2 候選；進場走 R34 sizing（starter 1%，+20 日仍過濾網且修正 up>down 才補；RS63 轉負砍）。
+display-only：進 briefing Key Alerts 一行 + L2 候選；**不單獨開倉**（2026-10-30）。
 """
 import argparse, json, warnings, collections, glob, re
 from datetime import date
@@ -83,12 +89,13 @@ def cmd_scan(a):
     # 發現帳（同日同標的去重）
     rows = [json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()] if LEDGER.exists() else []
     seen = {(r["date"], r["ticker"]) for r in rows}
-    new = [{"date": today, **{k: r[k] for k in ("ticker", "sector", "close", "rs63_pp", "ext_sma50_pct", "semi")}, "status": "open"} for r in fresh if (today, r["ticker"]) not in seen]
+    new = [{"date": today, **{k: r[k] for k in ("ticker", "sector", "close", "rs63_pp", "ext_sma50_pct", "semi")}, "status": "open",
+            "rev30_up": None, "rev30_down": None, "rev30_dir": None, "priced_in_pct": None, "enriched_at": None} for r in fresh if (today, r["ticker"]) not in seen]
     with LEDGER.open("a", encoding="utf-8") as fh:
         for r in new: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     active.sort(key=lambda r: -r["rs63_pp"])
     OUT.write_text(json.dumps({"asof": today, "universe": len(tk), "in_signal": allsig, "fresh": fresh, "shown": shown, "active_top": active[:15],
-                               "rule": "display-only（R34）：新鮮訊號 = 63 日對 SPY ≥ +15pp 且 收盤>SMA50>SMA200 且前 60 日未出現；精確率 ~28%，是撒網不是預測。進場走 R34 sizing"}, ensure_ascii=False, indent=1))
+                               "rule": "display-only（R34）：新鮮訊號 = 63 日對 SPY ≥ +15pp 且 收盤>SMA50>SMA200 且前 60 日未出現。2026-10-30 ranker F8 驗證：2008–2017 大型股對同日隨機抽無 edge（−0.04pp vs +0.3pp）→ 只供 L2 名單，不單獨開倉；進場走 L1 規則/R35/H10/R31/C7"}, ensure_ascii=False, indent=1))
     print(f"universe {len(tk)}｜在訊號中 {allsig}｜今日新鮮 {len(fresh)}（登帳 {len(new)}）")
     for r in shown: print(f"  {r['ticker']:<6}{str(r['sector']):<22} RS63 {r['rs63_pp']:+6.1f}pp  距 SMA50 {r['ext_sma50_pct']:+5.1f}%  YTD {r['ytd_pct']}  {r['note']}")
     print("  仍在訊號中（非新鮮，供參考）前 12：", ", ".join(f"{r['ticker']}({r['sector'][:4]} RS{r['rs63_pp']:+.0f} {r['days_in_signal']}d)" for r in active[:12]))
@@ -112,15 +119,48 @@ def cmd_score(a):
     LEDGER.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
     print("scored", sum(1 for r in due if r.get("status") == "scored")); return 0
 
+def cmd_enrich(a):
+    """為尚未補欄位的 open 訊號補 30 日 EPS 修正方向與 priced_in_pct（2026-10-30，前瞻「price in」分組的資料層）。"""
+    if not LEDGER.exists(): print("no ledger"); return 0
+    import os, time, sys
+    sys.path.insert(0, str(ROOT / "tools"))
+    import fetch_fundamentals as ff
+    ff.load_env(); token = os.environ.get("EODHD_API_TOKEN", "").strip()
+    if not token: print("⚠️ EODHD_API_TOKEN 未設，略過 enrich"); return 0
+    rows = [json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()]
+    todo = [r for r in rows if r.get("status") == "open" and not r.get("enriched_at")][: a.max]
+    if not todo: print("nothing to enrich"); return 0
+    done = 0
+    for r in todo:
+        try:
+            snap = ff.fetch_snapshot(f"{r['ticker']}.US", token)
+            fe = snap.get("forward_estimates") or {}
+            est = fe.get("curr_fy") or fe.get("next_fy") or {}
+            up, down = est.get("revisions_up_30d"), est.get("revisions_down_30d")
+            r["rev30_up"], r["rev30_down"] = up, down
+            r["rev30_dir"] = None if up is None or down is None else ("up" if up > down else "down" if down > up else "flat")
+            r["priced_in_pct"] = ff.compute_priced_in(r["ticker"], snap).get("priced_in_pct")
+            r["enriched_at"] = date.today().isoformat(); done += 1
+        except Exception as e:
+            r["enrich_error"] = str(e)[:120]
+        time.sleep(ff.TICKERS_DELAY)
+    LEDGER.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8")
+    print(f"enriched {done}/{len(todo)}"); return 0
+
 def cmd_stats(a):
     rows = [json.loads(l) for l in LEDGER.read_text().splitlines() if l.strip()] if LEDGER.exists() else []
     sc = [r for r in rows if r.get("status") == "scored"]
     print(f"發現帳 {len(rows)} 筆，已計分 {len(sc)}" + (f"：勝率 {np.mean([r['hit'] for r in sc]):.0%}，63 日超額平均 {np.mean([r['excess_63d_pp'] for r in sc]):+.1f}pp" if sc else ""))
+    print("  翻案門（2026-10-30）：≥300 筆計分且平均超額 > 同日隨機抽 N1 p90 才重開討論；分組只描述。")
+    for d in ("up", "down", "flat", None):
+        g = [r for r in sc if r.get("rev30_dir") == d]
+        if g: print(f"  rev30_dir={d}: n={len(g)} 勝率 {np.mean([r['hit'] for r in g]):.0%} 平均 {np.mean([r['excess_63d_pp'] for r in g]):+.1f}pp")
     return 0
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter); sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("scan"); s.add_argument("--refresh-universe", action="store_true"); s.add_argument("--rs", type=float, default=15); s.add_argument("--top", type=int, default=45); s.set_defaults(fn=cmd_scan)
+    e = sub.add_parser("enrich"); e.add_argument("--max", type=int, default=40); e.set_defaults(fn=cmd_enrich)
     sub.add_parser("score").set_defaults(fn=cmd_score); sub.add_parser("stats").set_defaults(fn=cmd_stats)
     a = ap.parse_args(); return a.fn(a)
 

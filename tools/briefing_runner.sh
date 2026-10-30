@@ -168,9 +168,11 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/smalln_shadow.py" sca
   || log "smalln_shadow scan failed (non-fatal)"
 
 # R34（2026-10-20）：發現層跨板塊新鮮訊號（display-only，63 日計分）；宇宙每週刷新
+# 2026-10-30 ranker F8 驗證後只供 L2 名單、不觸發進場；每筆同日 enrich 30 日 revision 方向 + priced_in_pct（前瞻翻案門的資料層）
 log "Discovery scan (R34, display-only)..."
 step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/discovery_scan.py" scan $([[ "$(date +%u)" == "1" ]] && echo --refresh-universe) \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" || log "discovery_scan failed (non-fatal)"
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/discovery_scan.py" enrich >> "$LOG_DIR/launchd.log" 2>&1 || log "discovery enrich failed (non-fatal)"
 step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/discovery_scan.py" score >> "$LOG_DIR/launchd.log" 2>&1 || true
 
 # Order snapshot must run daily and cannot be backfilled: Firstrade's order_status

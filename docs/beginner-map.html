@@ -1,0 +1,268 @@
+<title>fadacai 新手地圖</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one scrolling column, sticky chapter nav; every rule carries a "who decides" chip. */
+  :root{
+    --bg:#f3f5f8; --panel:#ffffff; --fg:#17212b; --fg-2:#4d5a67; --fg-3:#7d8893; --line:#d9dfe6; --line-2:#e9edf1;
+    --mech:#0f766e; --mech-bg:#e3f3f1;     /* 機械：程式自動做 */
+    --model:#9a6a12; --model-bg:#faefd6;   /* 模型判斷 */
+    --you:#3b4a5a; --you-bg:#e6eaef;       /* 你裁決 */
+    --hard:#b42318; --hard-bg:#fbe7e4;     /* 硬線 */
+    --serif:"Noto Serif TC","PingFang TC","Microsoft JhengHei",serif;
+    --sans:"Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#131a21; --panel:#1b242d; --fg:#e7ecf0; --fg-2:#b3bec8; --fg-3:#84919d; --line:#33404c; --line-2:#27323c;
+      --mech:#3ecfbf; --mech-bg:#113330; --model:#e3ad44; --model-bg:#3a2c10; --you:#a9b7c4; --you-bg:#27323c; --hard:#f07a69; --hard-bg:#3e1b17;
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#131a21; --panel:#1b242d; --fg:#e7ecf0; --fg-2:#b3bec8; --fg-3:#84919d; --line:#33404c; --line-2:#27323c;
+    --mech:#3ecfbf; --mech-bg:#113330; --model:#e3ad44; --model-bg:#3a2c10; --you:#a9b7c4; --you-bg:#27323c; --hard:#f07a69; --hard-bg:#3e1b17;
+    color-scheme:dark;
+  }
+  body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.7;
+       padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px;}
+  body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg);}
+  .wrap{max-width:860px;margin:0 auto;}
+  header.hero{padding:40px 0 20px;border-bottom:1px solid var(--line);}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);}
+  h1{font-family:var(--serif);font-size:clamp(28px,5vw,40px);line-height:1.2;margin:8px 0 12px;text-wrap:balance;}
+  .lede{font-size:18px;color:var(--fg-2);max-width:40em;margin:0;}
+  nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);
+          display:flex;gap:6px;overflow-x:auto;padding:10px 0;scrollbar-width:none;}
+  nav.toc::-webkit-scrollbar{display:none}
+  nav.toc a{flex:0 0 auto;font-size:13px;color:var(--fg-2);text-decoration:none;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);}
+  nav.toc a:hover,nav.toc a:focus-visible{border-color:var(--fg-2);color:var(--fg);outline:none}
+  section{padding:36px 0 8px;}
+  h2{font-family:var(--serif);font-size:24px;margin:0 0 6px;text-wrap:balance;}
+  h2 .n{font-family:var(--mono);font-size:13px;color:var(--fg-3);margin-right:10px;vertical-align:middle;font-weight:500}
+  h3{font-size:17px;margin:22px 0 8px;}
+  p{margin:8px 0;max-width:42em;}
+  .sub{color:var(--fg-2);margin-top:0}
+  .chip{display:inline-block;font-family:var(--mono);font-size:11.5px;line-height:1;padding:4px 7px;border-radius:4px;vertical-align:middle;margin-right:6px;white-space:nowrap;}
+  .chip.mech{color:var(--mech);background:var(--mech-bg)} .chip.model{color:var(--model);background:var(--model-bg)}
+  .chip.you{color:var(--you);background:var(--you-bg)} .chip.hard{color:var(--hard);background:var(--hard-bg)}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin:14px 0 0;font-size:14px;color:var(--fg-2)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  code,.id{font-family:var(--mono);font-size:.92em;color:var(--fg-2)}
+  .rules{list-style:none;padding:0;margin:10px 0;display:grid;gap:8px}
+  .rules li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:10px 12px;background:var(--panel);border:1px solid var(--line-2);border-radius:6px}
+  .rules li .chip{margin:3px 0 0}
+  .rules b{font-weight:600}
+  .buckets{display:grid;gap:12px;margin-top:14px}
+  .bar{display:flex;height:34px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+  .bar div{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;color:#fff;min-width:0}
+  .bar .b1{background:#1e5a8a;flex:33} .bar .b2{background:#0f766e;flex:52} .bar .b3{background:#5b6b7a;flex:12} .bar .b4{background:#9aa6b1;flex:5;color:var(--fg)}
+  .bucket-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .bucket{background:var(--panel);border:1px solid var(--line-2);border-radius:6px;padding:12px 14px;min-width:0}
+  .bucket h4{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  .bucket .meta{font-family:var(--mono);font-size:12px;color:var(--fg-3);margin-bottom:6px}
+  .bucket p{font-size:14.5px;margin:4px 0;color:var(--fg-2)}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin:16px 0 6px}
+  .flow .step{flex:1 1 120px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;position:relative}
+  .flow .step .k{font-family:var(--mono);font-size:11px;color:var(--fg-3);letter-spacing:.06em}
+  .flow .step .t{font-weight:600;margin:2px 0 2px}
+  .flow .step .d{font-size:13px;color:var(--fg-2);line-height:1.5}
+  .flow .arrow{flex:0 0 auto;align-self:center;color:var(--fg-3);font-size:18px}
+  .timeline{list-style:none;padding:0;margin:14px 0;border-left:2px solid var(--line);}
+  .timeline li{position:relative;padding:4px 0 14px 18px}
+  .timeline li::before{content:"";position:absolute;left:-7px;top:12px;width:12px;height:12px;border-radius:50%;background:var(--panel);border:2px solid var(--mech)}
+  .timeline .when{font-family:var(--mono);font-size:13px;color:var(--fg-3);display:block}
+  .timeline .what{font-weight:600}
+  .timeline p{font-size:14.5px;color:var(--fg-2);margin:2px 0 0}
+  .callout{background:var(--panel);border-left:4px solid var(--hard);padding:12px 16px;border-radius:0 6px 6px 0;margin:16px 0}
+  .callout.mech{border-left-color:var(--mech)}
+  .tablewrap{overflow-x:auto;margin:12px 0}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:14.5px;background:var(--panel)}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  th{font-size:12.5px;letter-spacing:.04em;color:var(--fg-3);font-weight:500;background:var(--bg)}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .neg{color:var(--hard)} .pos{color:var(--mech)}
+  .read{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+  .read .card{background:var(--panel);border:1px solid var(--line-2);border-radius:6px;padding:12px 14px;min-width:0}
+  .read .card .k{font-family:var(--mono);font-size:11.5px;color:var(--fg-3);letter-spacing:.06em}
+  .read .card p{font-size:14.5px;margin:4px 0;color:var(--fg-2)}
+  dl.gloss{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:6px 16px;margin:12px 0;font-size:14.5px}
+  dl.gloss dt{font-family:var(--mono);font-size:13px;color:var(--fg);white-space:nowrap}
+  dl.gloss dd{margin:0;color:var(--fg-2)}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--fg-3)}
+  @media (max-width:560px){ dl.gloss{grid-template-columns:1fr} dl.gloss dt{margin-top:6px} }
+  @media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+  html{scroll-behavior:smooth}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">fadacai · 2026-10-30 版 · 給第一次看的人</div>
+  <h1>這套系統在做什麼，一頁看懂</h1>
+  <p class="lede">用一組有編號、會被計分的規則，管理一個約 18 檔的美股組合。目標是長期贏過 SMH、QQQ、VOO 三個指數 ETF，但不靠比它們更集中。每條規則都登記在命中率帳本裡，每兩週檢討一次，錯兩次就要重審。</p>
+  <div class="legend">
+    <span><i class="chip mech">機械</i>程式每天自動做，不問人</span>
+    <span><i class="chip model">判斷</i>模型寫分析與建議，你可以否決</span>
+    <span><i class="chip you">你</i>只有你能改的事</span>
+    <span><i class="chip hard">硬線</i>永不違反</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="章節">
+  <a href="#money">1 錢放哪</a><a href="#life">2 一檔股票的一生</a><a href="#day">3 每天發生什麼</a><a href="#hard">4 硬線</a><a href="#learn">5 系統怎麼學</a><a href="#r34">6 今天結案的一題</a><a href="#read">7 怎麼讀</a><a href="#gloss">8 小字典</a>
+</nav>
+
+<section id="money">
+  <h2><span class="n">1</span>錢放在哪：四個桶</h2>
+  <p class="sub">依 2026-10-29 快照（總值約 $246,500、18 檔、內嵌槓桿 0.95）。比例四捨五入。</p>
+  <div class="buckets">
+    <div class="bar" role="img" aria-label="信念桶 33%、認列桶 52%、VOO 停泊 12%、現金 5%">
+      <div class="b1">信念 33%</div><div class="b2">認列 52%</div><div class="b3">VOO 12%</div><div class="b4">現金</div>
+    </div>
+    <div class="bucket-grid">
+      <div class="bucket"><h4><span class="dot" style="background:#1e5a8a"></span>信念桶</h4><div class="meta">MU · CRWD · PLTR · NVDA</div>
+        <p>看多年的故事，讓它跑，不停利。只在「故事破了」或單檔超過 10% 時才動。</p>
+        <p>每檔都要掛一個能被證偽的檢查點（<span class="id">R32</span>）；檢查點失敗，當天降成認列桶。</p></div>
+      <div class="bucket"><h4><span class="dot" style="background:#0f766e"></span>認列桶</h4><div class="meta">14 檔，例如 AMD、CRM、SNPS、DDOG</div>
+        <p>賺到就分批收。未實現 +30%／+60%／+100% 各賣一部分（<span class="id">R8</span> 梯級停利），永遠留 30% 讓它跑。</p>
+        <p>曾經賺到 +20% 之後，從高點回落 20% 先掛反彈限價、收盤再破線才賣；回落 30% 直接減（<span class="id">R23</span> 兩段式）。</p></div>
+      <div class="bucket"><h4><span class="dot" style="background:#5b6b7a"></span>停泊：VOO</h4><div class="meta">R33 · 不計 18 檔 · 10% 硬線豁免</div>
+        <p>還沒想好要買什麼的錢，放在大盤 ETF，不是放現金。2026 年賣出的錢如果一直留在基準，會多出約 $150k，這條規則就是這樣來的。</p>
+        <p>SGOV 只當 $8,000 的現金緩衝，留給手動掛單。</p></div>
+      <div class="bucket"><h4><span class="dot" style="background:#9aa6b1"></span>現金與槓桿</h4><div class="meta">C7 · 不開槓桿</div>
+        <p>融資帳戶買單成交現金不夠時券商會自動借錢、不問你。所以規則是：<b>在掛買單合計 + 當日新買單 ≤ 現金</b>。超出就先砍新單、再撤系統掛的單。</p>
+        <p>樂透桶與避險 sleeve 目前是空的。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="life">
+  <h2><span class="n">2</span>一檔股票的一生</h2>
+  <p class="sub">從被看到，到被賣掉，中間每一步是誰在決定。</p>
+  <div class="flow">
+    <div class="step"><div class="k">01</div><div class="t">發現</div><div class="d">每天掃約 480 檔大型股，列出「剛剛變強」的名字。只是名單。</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="k">02</div><div class="t">研究池 L2</div><div class="d">先問這個行業的餅有沒有在變大。在縮的行業不進。</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="k">03</div><div class="t">候補 L1</div><div class="d">要有硬證據：分析師上修多於下修，或財報超預期且上修指引。</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="k">04</div><div class="t">進場</div><div class="d">過四道門（下表）。第一筆最多 2%。</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="k">05</div><div class="t">持有／加碼</div><div class="d">只加贏家，在回檔時加，一次最多 $3,000。</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="k">06</div><div class="t">出場</div><div class="d">靠線不靠感覺：梯級停利、回撤線、10% 硬線、旗標期限。</div></div>
+  </div>
+
+  <h3>進場的四道門</h3>
+  <ul class="rules">
+    <li><i class="chip mech">機械</i><div><b>R35 要贏得過指數</b>：這檔未來 12 個月的期望報酬，必須比對應的指數 ETF（半導體對 SMH、軟體對 IGV、其餘 QQQ／VOO）高出至少 10 個百分點。贏不了就不買，錢留在 VOO。</div></li>
+    <li><i class="chip mech">機械</i><div><b>R31 不追高的板塊</b>：板塊 ETF 收盤比 50 日線高 5% 以上時，不追，只准在 20 日線掛回檔買單。證據：9 到 10 月在 SMH 延伸時買的五筆合計 −$1,999，在 SMH 低於 50 日線時買的兩筆 +$987。</div></li>
+    <li><i class="chip model">判斷</i><div><b>H10 第一筆最多 2%</b>：新名字起手不超過 2%（估值已經很貴的 1.5%），之後靠回檔或走強確認再補。這是偏好不是硬線，違反要在日誌標記並被計分。</div></li>
+    <li><i class="chip hard">硬線</i><div><b>C7 現金要夠</b>：掛出去的買單總額不能超過現金。超過的單會被程式撤掉。</div></li>
+  </ul>
+
+  <h3>持有時會發生的事</h3>
+  <ul class="rules">
+    <li><i class="chip mech">機械</i><div><b>R30 加碼只加贏家</b>：帳上賺錢、分析師上修多於下修、價格在 50 日線上、權重還沒到 6%（信念桶 8.5%）→ 在 20 日線掛回檔買單。14 天內同一檔只加一次。</div></li>
+    <li><i class="chip mech">機械</i><div><b>R8 梯級停利</b>（認列桶）：+30%、+60%、+100% 各賣 15%、15%、20%，之後每 +50 個百分點再賣 10%。保底 30% 永遠不因停利賣。</div></li>
+    <li><i class="chip mech">機械</i><div><b>R23 自峰回撤線</b>（認列桶）：曾經 +20% 以上的部位，從高點回落 20% 先掛反彈限價單加一條失守警報，收盤跌破才撤反彈單改賣；回落 30% 立即減。防守線一律收盤確認，盤中不發。</div></li>
+    <li><i class="chip you">你</i><div><b>R11 旗標紀律</b>：任何在簡報或日誌寫下「⚠️」的部位，必須登記一個 15 個交易日內的期限或一條價格線。延後要計次，第 3 次自動強制減 1/3。原因：TSLA 與 ON 的虧損都是「警告寫了、但沒有東西在數日子」造成的。</div></li>
+    <li><i class="chip mech">機械</i><div><b>R36 弱倉換指數</b>：90 天落後板塊 ETF 10 個百分點以上、分析師沒有上修、又跌破 50 日線 → 標為候選，期望報酬輸給基準太多就賣掉換等額的指數 ETF。</div></li>
+  </ul>
+</section>
+
+<section id="day">
+  <h2><span class="n">3</span>每天發生什麼</h2>
+  <p class="sub">全部以美東時間為準，不管你人在哪個時區。</p>
+  <ul class="timeline">
+    <li><span class="when">09:25–16:10，每 15 分鐘</span><span class="what">價格警報輪詢</span><p>需要你當下動手的才推 Telegram；觀察型的只記到檔案，早上簡報直接把結論查好；防守線只在收盤確認。</p></li>
+    <li><span class="when">11:00</span><span class="what">早晨簡報 <code>/briefing telegram</code></span><p>讀券商即時持倉、跑守門員 <code>position_guard</code>（10% 硬線、檔數、財報窗、旗標逾期、R23 線、現金閘），產出「今日待辦」。符合「量化條件已達成、不犯任何硬線、新增曝險 ≤ $3,000」的機械單<b>直接下</b>（<span class="id">T6.5</span>），並在訊息標 ✅；其餘列 🎯 等你。</p></li>
+    <li><span class="when">15:40–15:58</span><span class="what">收盤前 pass</span><p>判定收盤確認型的防守線。</p></li>
+    <li><span class="when">16:20</span><span class="what">晚間 pass <code>auto_exec --execute</code></span><p>執行 R23 線、SGOV 停泊、R30 回檔單、撤陳舊單；推一則 Telegram。早上的簡報只回報，不重下。</p></li>
+    <li><span class="when">每兩週 16:45</span><span class="what">交易檢討 <code>/trade-review</code></span><p>每筆成交歸因「系統決定／你自己決定」，算基準校正後的 α，更新命中率帳本，輸出「本期該改哪一條規則」。</p></li>
+    <li><span class="when">每月</span><span class="what">組合深報告 <code>/portfolio-review</code></span><p>跨組合綜合、板塊配置、選擇權、風險，推到報告站。</p></li>
+  </ul>
+</section>
+
+<section id="hard">
+  <h2><span class="n">4</span>只有三條硬線，其餘都是偏好</h2>
+  <ul class="rules">
+    <li><i class="chip hard">硬線</i><div><b>單一持倉 &gt; 10%</b> → 強制減到 10% 以下。信念桶不豁免；VOO 停泊豁免（停泊規模由閒錢決定，不是部位判斷）。</div></li>
+    <li><i class="chip hard">硬線</i><div><b>主動組合 ≤ 18 檔</b> → 超過就砍一進一，不淨增。VOO、SGOV 不計。</div></li>
+    <li><i class="chip hard">硬線</i><div><b>旗標期限 ≤ 15 個交易日，或附價格線</b> → 到期未決，第 3 次延後視同強制。</div></li>
+    <li><i class="chip hard">硬線</i><div><b>不開槓桿</b>（C7）：在掛買單 + 新買單 ≤ 現金 + 隔天到位的 SGOV 賣款。</div></li>
+  </ul>
+  <div class="callout mech">
+    <b>偏好可以違反，但要留痕。</b>違反 H10（起手 2%）、R1（弱訊號不減碼）之類的偏好不會被程式擋，但日誌必須標記，兩週後被計分；累積失效兩次，那條規則就進覆審。
+  </div>
+</section>
+
+<section id="learn">
+  <h2><span class="n">5</span>系統怎麼學：分數決定，不是模型決定</h2>
+  <ul class="rules">
+    <li><i class="chip mech">機械</i><div><b>命中率帳本</b>（<code>feedback/RULES-LEDGER.md</code>）：36 條規則各有命中、失效與「巧合機率」。失效 ≥2 次強制覆審。新模型不同意一條已驗證的規則，除非有新數據，否則模型輸。</div></li>
+    <li><i class="chip mech">機械</i><div><b>影子帳</b>：沒做的決定也計分。比選落選的、被閘門擋下的、超上限沒下的，全部登錄，30 天後機械驗價，餵回對應規則。</div></li>
+    <li><i class="chip mech">機械</i><div><b>EV 帳</b>：每次給出的機率分布與公允價都事前登錄，到期機械驗價，算校準誤差。禁止「略偏正」這種質性語言，禁止預設鐘形分布。</div></li>
+    <li><i class="chip model">判斷</i><div><b>規則判讀表</b>：已驗證（失效 0、巧合 ≤5%）→ 遵循；初步支持 → 遵循但附機率；未驗證（放超過 60 天沒命中）→ 可以質疑；無原始案例 → 只算偏好。</div></li>
+  </ul>
+</section>
+
+<section id="r34">
+  <h2><span class="n">6</span>今天結案的一題：發現層訊號 R34</h2>
+  <p class="sub">用 ranker 的歷史資料湖，對 portfolio 的「及早選到」訊號做了一次先寫規格、再看結果的驗證。</p>
+  <p><b>訊號是什麼：</b>一檔股票過去 63 個交易日的報酬比 SPY 高 15 個百分點以上，收盤在 50 日線上、50 日線在 200 日線上，而且前 60 個交易日沒有出現過這個狀態。意思是「剛剛變強」。</p>
+  <p><b>問的問題：</b>這樣選出來的名字，接下來 63 個交易日，有沒有比同一天從同一個宇宙隨機抓一檔好？</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>2008–2017，美股大型股</th><th>訊號選的名字</th><th>同一天隨機抓一檔</th></tr></thead>
+    <tbody>
+      <tr><td>事件數</td><td class="num">2,843 ／ 3,085（兩種宇宙）</td><td class="num">20 組隨機 seed</td></tr>
+      <tr><td>之後 63 日對 SPY 平均超額</td><td class="num neg">−0.04pp</td><td class="num pos">+0.30pp（p90 +0.50pp）</td></tr>
+      <tr><td>命中率（超額 &gt; 0）</td><td class="num neg">48%</td><td class="num pos">50.5%（p90 51.5%）</td></tr>
+      <tr><td>訊號在 20 組隨機裡的名次</td><td class="num neg">第 20 名 ／ 第 16 名</td><td class="num">—</td></tr>
+      <tr><td>右尾（p99）</td><td class="num">+33pp</td><td class="num">+38pp</td></tr>
+      <tr><td>抓到當年前十分之一贏家的比率</td><td class="num pos">66–88%</td><td class="num">39–68%（任意一檔）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><b>白話：</b>訊號確實比較會「抓到」最後的贏家，但它同樣抓到更多輸家，兩邊相抵等於零；大贏家的右尾也不比隨機肥。三個月急漲之後平均沒有續航，反而慢慢回吐。</p>
+  <div class="callout">
+    <b>所以今天改了什麼：</b>R34 不再是進場路徑（原本「起手 1% → 2% → 3%」廢止）。每日掃描留著，只當研究池名單的來源。要買，走上面的四道門。<br>
+    <b>留了一扇門：</b>每筆新訊號同一天補記「分析師 30 日內上修還是下修」與「估值反映了多少」，發現帳累積 300 筆之後，再對同日隨機抽一檔比一次。不到 300 筆不判。
+  </div>
+</section>
+
+<section id="read">
+  <h2><span class="n">7</span>第一次看的人怎麼讀</h2>
+  <div class="read">
+    <div class="card"><div class="k">每天 3 分鐘</div><p><code>briefing-out/telegram.txt</code>：今天發生什麼、哪些單已自動下（✅）、哪些等你（🎯）。</p></div>
+    <div class="card"><div class="k">每週 10 分鐘</div><p><code>plan.md</code>：持倉狀態表（自動生成，別手改）與唯一一張候補表。</p></div>
+    <div class="card"><div class="k">每兩週</div><p>交易檢討報告的「本期結論」段：這期哪條規則該改、為什麼。</p></div>
+    <div class="card"><div class="k">別手改</div><p><code>research/roster.json</code> 桶別（只在你要求時改）、<code>.agents/</code>（生成檔）、plan.md 的持倉表（生成區）。</p></div>
+  </div>
+</section>
+
+<section id="gloss">
+  <h2><span class="n">8</span>小字典</h2>
+  <dl class="gloss">
+    <dt>α（alpha）</dt><dd>扣掉大盤影響之後，自己賺到的那部分。半導體對 SMH 算，其餘對 SPY 算。</dd>
+    <dt>β（beta）</dt><dd>股票跟著大盤動的幅度。β 1.3 表示大盤漲 1%，它平均漲 1.3%。</dd>
+    <dt>revision 修正</dt><dd>分析師最近 30 天上修 EPS 預估的人數比下修多，叫 up&gt;down。這是系統判斷「強」的主要依據，不是股價。</dd>
+    <dt>EV 期望值</dt><dd>幾種情境的機率乘上各自的公允價，加起來和現價比。所有建議都要先算這個。</dd>
+    <dt>SMA50 / SMA200</dt><dd>50 日、200 日簡單移動平均。這裡只用來描述狀態，不當買賣訊號。</dd>
+    <dt>GTC</dt><dd>長效限價單，掛著直到成交或撤單。回檔買單、梯級停利單都是這種。</dd>
+    <dt>R8 / R23</dt><dd>認列桶的兩條機械賣線：梯級停利、自峰回撤。</dd>
+    <dt>L1 / L2</dt><dd>候補兩層：L1 可部署（有觸發價、有驗收點），L2 研究池。</dd>
+    <dt>priced in</dt><dd>市場前瞻本益比 ÷（目標 PEG × 共識成長）− 1。正值表示成長已反映在價格裡。目前只記錄不判斷。</dd>
+    <dt>影子帳</dt><dd>記下「想做但沒做」的決定，30 天後看做了會怎樣。免費的樣本。</dd>
+    <dt>巧合機率</dt><dd>一條規則的命中次數純靠運氣達成的機率。≤5% 才算已驗證。</dd>
+    <dt>T6.5</dt><dd>無人值守自動下單的條件集：量化觸發達成、不犯硬線、新增曝險 ≤ $3,000、沒有跨日反轉旗標。</dd>
+    <dt>SMH / QQQ / VOO / SGOV</dt><dd>半導體 ETF、納斯達克 100 ETF、標普 500 ETF、短期國債 ETF（當現金用）。</dd>
+    <dt>PMCC / LEAPS</dt><dd>長天期買權當股票替代（LEAPS），再賣短天期買權收租（PMCC）。目前的選擇權策略只做這類，財報前後 48 小時不做賣方。</dd>
+  </dl>
+</section>
+
+<footer>依 2026-10-30 的規則狀態整理。規則有變動時更新本頁；工程視角的規則地圖在 <code>docs/rules-map.html</code>，完整條文在 <code>CLAUDE.md</code> 與 <code>feedback/</code>。</footer>
+</div>
