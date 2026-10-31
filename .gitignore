@@ -43,3 +43,6 @@ tools/briefing_local_hooks.sh
 
 # backtest download cache (tools/backtests/)
 /tools/backtests/data/
+
+# 個人機器/網路/帳號細節，不進公開 repo
+/docs/private/
