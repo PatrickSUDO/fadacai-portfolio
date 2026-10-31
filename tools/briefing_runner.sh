@@ -167,6 +167,11 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/smalln_shadow.py" sca
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "smalln_shadow scan failed (non-fatal)"
 
+# 2026-10-31：SPX 短線回檔影子 cf-spx-dip（quantgt 多頭訊號同等觸發：SPY 收 5 日新低且距 10 日高 ≤ −2%；display-only，30d 絕對報酬計分）
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/spx_dip_shadow.py" scan \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "spx_dip_shadow scan failed (non-fatal)"
+
 # R34（2026-10-20）：發現層跨板塊新鮮訊號（display-only，63 日計分）；宇宙每週刷新
 # 2026-10-30 ranker F8 驗證後只供 L2 名單、不觸發進場；每筆同日 enrich 30 日 revision 方向 + priced_in_pct（前瞻翻案門的資料層）
 log "Discovery scan (R34, display-only)..."

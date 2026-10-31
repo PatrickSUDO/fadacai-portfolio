@@ -248,13 +248,14 @@ def cmd_score(args):
         b1 = _asof_close(series[bench], today.isoformat())
         if not (p0 and p1 and b0 and b1):
             continue
-        alpha = (p1 / p0 - 1) - (b1 / b0 - 1)
+        # 市場層級訊號（ticker 就是自己的基準，如 cf-spx-dip 的 SPY）→ 絕對報酬計分，不然 alpha 恆為 0
+        alpha = (p1 / p0 - 1) - ((b1 / b0 - 1) if sym != bench else 0.0)
         # a4-overvalued / earnings-window-blocked-add / cf-* with correct_if=under all claim
         # you should not be (more) long → right when the name underperforms. cf-* with
         # correct_if=over (held / blocked sell) → right when it outperforms.
         correct_if = r.get("correct_if", "under")
         scored.append({**{k: r.get(k) for k in ("date", "ticker", "signal", "divergence_pct")},
-                       "benchmark": bench, "correct_if": correct_if,
+                       "benchmark": bench if sym != bench else "abs", "correct_if": correct_if,
                        "price_then": p0, "price_now": p1,
                        "excess_alpha_pct": round(alpha * 100, 1),
                        "flag_correct": (alpha < 0) if correct_if == "under" else (alpha > 0),
@@ -323,7 +324,7 @@ def _build_parser():
     b.add_argument("--note", default="", help="why the add was wanted / which window blocked it")
 
     rc = sub.add_parser("record", help="generic counterfactual: a decision NOT taken, scored at +30d")
-    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-smalln-block（smalln_shadow.py 自動登，H13）| cf-r31-blocked（auto_exec 自動登，R31）| cf-manual")
+    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-smalln-block（smalln_shadow.py 自動登，H13）| cf-r31-blocked（auto_exec 自動登，R31）| cf-spx-dip（spx_dip_shadow.py 自動登，絕對報酬計分）| cf-manual")
     rc.add_argument("--ticker", required=True)
     rc.add_argument("--price", type=float, required=True, help="price when the decision was (not) made")
     rc.add_argument("--size", type=float, default=None, help="USD the action would have been")
