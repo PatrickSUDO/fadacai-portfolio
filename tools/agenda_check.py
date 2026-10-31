@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parent.parent
 CFG = ROOT / "research" / "source-config.json"
 OUT = ROOT / "briefing-out" / "cache" / "agenda-13f.json"
-UA = {"User-Agent": "fadacai-portfolio research (contact: patricksuph@gmail.com)"}
+UA = {"User-Agent": "fadacai-portfolio research (contact: 48519645+PatrickSUDO@users.noreply.github.com)"}
 TTL_DAYS, TOP_N = 7, 12
 
 

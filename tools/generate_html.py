@@ -660,9 +660,9 @@ def build_index(token_dir: Path) -> None:
 def push_to_repo(repo_path: Path, date_label: str, report_type: str) -> bool:
     try:
         env = {**os.environ, "GIT_AUTHOR_NAME": "PatrickSUDO",
-               "GIT_AUTHOR_EMAIL": "patricksuph@gmail.com",
+               "GIT_AUTHOR_EMAIL": "48519645+PatrickSUDO@users.noreply.github.com",
                "GIT_COMMITTER_NAME": "PatrickSUDO",
-               "GIT_COMMITTER_EMAIL": "patricksuph@gmail.com"}
+               "GIT_COMMITTER_EMAIL": "48519645+PatrickSUDO@users.noreply.github.com"}
         subprocess.run(["git", "-C", str(repo_path), "add", "-A"], check=True, env=env)
         result = subprocess.run(
             ["git", "-C", str(repo_path), "status", "--porcelain"],

@@ -142,7 +142,7 @@ log "report: $REPORT"
 # 產出留痕：規則帳本 / plan / skill 的改動由模型在 session 內 commit；沒 commit 的補一筆（非致命）
 if [[ -n "$(git status --porcelain)" ]]; then
   git add -A >> "$LOG" 2>&1
-  git -c user.name=PatrickSUDO -c user.email=patricksuph@gmail.com commit -q -m "chore(trade-review): ${TODAY} 自動檢討產出（runner 補 commit）" >> "$LOG" 2>&1 \
+  git -c user.name=PatrickSUDO -c user.email=48519645+PatrickSUDO@users.noreply.github.com commit -q -m "chore(trade-review): ${TODAY} 自動檢討產出（runner 補 commit）" >> "$LOG" 2>&1 \
     && git push -q >> "$LOG" 2>&1 || log "git commit/push failed (non-fatal)"
 fi
 

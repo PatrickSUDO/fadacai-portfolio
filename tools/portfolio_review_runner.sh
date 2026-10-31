@@ -139,7 +139,7 @@ log "report: $REPORT"
 
 if [[ -n "$(git status --porcelain)" ]]; then
   git add -A >> "$LOG" 2>&1
-  git -c user.name=PatrickSUDO -c user.email=patricksuph@gmail.com commit -q -m "chore(portfolio-review): ${ET_DATE} 自動全書檢視產出（runner 補 commit）" >> "$LOG" 2>&1 \
+  git -c user.name=PatrickSUDO -c user.email=48519645+PatrickSUDO@users.noreply.github.com commit -q -m "chore(portfolio-review): ${ET_DATE} 自動全書檢視產出（runner 補 commit）" >> "$LOG" 2>&1 \
     && git push -q >> "$LOG" 2>&1 || log "git commit/push failed (non-fatal)"
 fi
 
