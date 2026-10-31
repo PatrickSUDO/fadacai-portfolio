@@ -104,10 +104,12 @@ body {
   font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.0625rem);
   line-height: 1.75;
   padding: clamp(16px, 4vw, 40px) clamp(16px, 5vw, 32px);
-  max-width: 760px;
+  max-width: 980px;
   margin: 0 auto;
   font-feature-settings: "tnum";   /* tabular numbers for financial data */
 }
+.page { max-width: 760px; margin: 0 auto; }          /* 散文欄寬；表格可溢出到 980 */
+@media (min-width: 1060px) { .page .table-wrap { width: 980px; margin-left: -110px; } }
 
 /* ── Typography ── */
 h1 {
@@ -192,8 +194,25 @@ th {
   background: var(--surface);
   white-space: nowrap;
 }
-td { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.86rem; vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }
+tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface) 45%, transparent); }
+tbody tr:hover td { background: var(--surface2); }
+thead th { position: sticky; top: 0; z-index: 1; }
+td.nw, th.nw { white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td:first-child { font-weight: 600; color: var(--heading); }
+td.ticker { font-family: var(--mono); font-size: 0.84rem; letter-spacing: .02em; }
+td > code, .flag { font-family: var(--mono); font-size: 0.78em; }
+.flag { display:inline-block; background: var(--surface2); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+.flag .fdate { color: var(--text-muted); margin-left: 4px; font-family: var(--font); }
+.badge { display:inline-block; font-size: .72rem; font-weight: 600; border-radius: 999px; padding: 1px 8px;
+         line-height: 1.5; white-space: nowrap; border: 1px solid transparent; }
+.b-conv { color:#2d5f8a; background:#2d5f8a1a; border-color:#2d5f8a33; }
+.b-harv { color:var(--up); background:#57824f1a; border-color:#57824f33; }
+.b-park { color:var(--text-muted); background:var(--surface2); border-color:var(--border-strong); }
+.b-lotto { color:var(--warn); background:#a3812f1a; border-color:#a3812f33; }
+@media (prefers-color-scheme: dark) { .b-conv { color:#8fb8dc; } }
 
 /* ── Up / Down ── */
 .up   { color: var(--up); font-weight: 550; }
@@ -208,6 +227,23 @@ tbody tr:last-child td { border-bottom: none; }
 .hitpct { opacity:.65; font-size:.85em; margin-left:3px; white-space:nowrap; }
 td .hitcell { white-space:nowrap; }
 .warn { color: var(--warn); }
+
+/* ── Header / lead / kv strip / callout ── */
+.report-head { margin: 8px 0 20px; }
+.report-head h1 { margin: 0 0 10px; }
+.lead {
+  background: var(--surface); border-left: 4px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 14px 18px; margin: 0 0 18px; font-size: 1.02em; line-height: 1.8;
+}
+.lead p { margin: 0; }
+.kv-strip { display: flex; flex-direction: column; gap: 6px; margin: 0 0 24px; }
+.kv-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .82rem; }
+.kv-label { font-weight: 650; color: var(--heading); margin-right: 4px; white-space: nowrap; }
+.kv-item { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 9px; white-space: nowrap; color: var(--text); }
+.callout { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 20px 12px; margin: 8px 0 24px; }
+.callout h2 { border-bottom: none; margin-top: 14px; }
+.callout ul { margin-left: 18px; }
 
 /* ── Meta bar ── */
 .meta-bar {
@@ -234,23 +270,15 @@ footer {
 footer a { color: var(--text-muted); }
 footer a:hover { color: var(--accent); }
 
-/* ── TOC ── */
-.toc {
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: 16px 22px;
-  margin-bottom: 32px;
-  box-shadow: var(--shadow);
-}
-.toc ul { margin: 0 0 0 18px; }
-.toc li { margin: 4px 0; font-size: 0.86rem; }
-.toc a { color: var(--text-muted); text-decoration: none; }
-.toc a:hover { color: var(--accent); }
-.toc-header {
-  font-size: 0.72rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--text-muted); margin-bottom: 10px;
-}
+/* ── TOC：橫向 chip 導覽（只取 h2） ── */
+.toc { margin: 0 0 28px; }
+.toc ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.toc ul ul { display: none; }
+.toc li { margin: 0; font-size: 0.8rem; }
+.toc a { display: inline-block; color: var(--text-muted); text-decoration: none;
+         background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px; }
+.toc a:hover { color: var(--accent); border-color: var(--accent); }
+.toc-header { display: none; }
 
 /* ── Mobile ── */
 @media (max-width: 600px) {
@@ -275,11 +303,13 @@ PAGE_TEMPLATE = """\
 <style>{css}</style>
 </head>
 <body>
+<div class="page">
 <div class="meta-bar">
   <span class="tag">{report_type}</span>
   <span>{date_label}</span>
   <span style="margin-left:auto">fadacai-portfolio</span>
 </div>
+{head_html}
 {toc_html}
 {body_html}
 <footer>
@@ -287,6 +317,7 @@ PAGE_TEMPLATE = """\
   <span>生成時間：{generated_at}</span>
   <a href="../index.html">← 報告列表</a>
 </footer>
+</div>
 </body>
 </html>
 """
@@ -455,6 +486,91 @@ def colorize_pct(html: str) -> str:
     return "".join(result)
 
 
+
+# ── 版面後處理（2026-10-31 用戶「美化產出 html」） ─────────────────────────
+_BUCKET_CLS = {"信念": "b-conv", "認列": "b-harv", "停泊": "b-park", "sleeve": "b-park",
+               "現金": "b-park", "樂透": "b-lotto", "基準": "b-park"}
+_FLAG_RE = re.compile(r"([A-Z]{1,6}:[a-z0-9][a-z0-9-]*)(（[^）]*）)?")
+_NUM_RE = re.compile(r"^[+\-−$]?[\d,]+(\.\d+)?%?$")
+
+
+def split_head(body: str) -> tuple[str, str]:
+    """抽出第一個 <h1> 與緊接的首段（白話結論）→ 頁首卡；其餘回傳為 body。"""
+    m = re.match(r"\s*<h1[^>]*>.*?</h1>\s*", body, re.S)
+    if not m:
+        return "", body
+    h1 = m.group(0).strip()
+    rest = body[m.end():]
+    lead = ""
+    pm = re.match(r"\s*<p>(?!📊|🚦|🔁)(.*?)</p>\s*", rest, re.S)
+    if pm and "<br" not in pm.group(1):
+        lead = f'<div class="lead"><p>{pm.group(1)}</p></div>'
+        rest = rest[pm.end():]
+    return f'<div class="report-head">{h1}{lead}</div>', rest
+
+
+def kv_strips(html: str) -> str:
+    """以 📊/🚦/🔁 開頭、用「｜」分隔的段落 → 鍵值 chip 列。"""
+    def per_p(m):
+        inner = m.group(1)
+        lines = [l.strip() for l in re.split(r"<br\s*/?>\s*", inner) if l.strip()]
+        if not lines or not all(l[:1] in "📊🚦🔁📈📉🧭" for l in lines):
+            return m.group(0)
+        rows = []
+        for l in lines:
+            parts = [x.strip() for x in l.split("｜") if x.strip()]
+            label, items = parts[0], parts[1:]
+            if "：" in label:
+                label, first = label.split("：", 1)
+                items = [first] + items
+            rows.append('<div class="kv-row"><span class="kv-label">' + label + "</span>"
+                        + "".join(f'<span class="kv-item">{x}</span>' for x in items) + "</div>")
+        return '<div class="kv-strip">' + "".join(rows) + "</div>"
+    return re.sub(r"<p>(.*?)</p>", per_p, html, flags=re.S)
+
+
+def decorate_cells(html: str) -> str:
+    """表格儲存格：桶別→badge、旗標 id→mono 標籤、短文字/數字→不折行、數字靠右。"""
+    def per_td(m):
+        attrs, inner = m.group(1), m.group(2)
+        plain = re.sub(r"<[^>]+>", "", inner).strip()
+        cls = []
+        if plain in _BUCKET_CLS:
+            inner = f'<span class="badge {_BUCKET_CLS[plain]}">{plain}</span>'
+            cls.append("nw")
+        elif _FLAG_RE.search(plain) and "<a" not in inner:
+            inner = _FLAG_RE.sub(lambda f: f'<span class="flag">{f.group(1)}'
+                                 + (f'<span class="fdate">{f.group(2)}</span>' if f.group(2) else "")
+                                 + "</span>", inner)
+        elif _NUM_RE.match(plain):
+            cls += ["num", "nw"]
+        elif re.fullmatch(r"[A-Z]{1,6}(\.[A-Z]{1,2})?", plain):
+            cls += ["ticker", "nw"]
+        elif len(plain) <= 14:
+            cls.append("nw")
+        if cls:
+            attrs = re.sub(r'class="([^"]*)"', lambda c: f'class="{c.group(1)} {" ".join(cls)}"', attrs) \
+                if 'class="' in attrs else attrs + f' class="{" ".join(cls)}"'
+        return f"<td{attrs}>{inner}</td>"
+    return re.sub(r"<td([^>]*)>(.*?)</td>", per_td, html, flags=re.S)
+
+
+_CALLOUT_H2 = ("今日待辦", "明日待辦", "Quick Take", "本期結論", "先讀這段", "Key Alerts", "結論")
+
+
+def callout_sections(html: str) -> str:
+    """待辦／結論類 h2 連同內容包成卡片。"""
+    parts = re.split(r"(?=<h2)", html)
+    out = []
+    for part in parts:
+        hm = re.match(r"<h2[^>]*>(.*?)</h2>", part, re.S)
+        if hm and any(k in re.sub(r"<[^>]+>", "", hm.group(1)) for k in _CALLOUT_H2):
+            out.append(f'<div class="callout">{part}</div>')
+        else:
+            out.append(part)
+    return "".join(out)
+
+
 # ── Tier ranking (briefing only) ──────────────────────────────────────────────
 TIER_RANK: dict[str, int] = {"quick": 1, "telegram": 2, "full": 3, "deep": 4}
 
@@ -619,8 +735,12 @@ def main() -> int:
     # Convert
     toc_html, body_html = md_to_html(md_text)
     body_html = hit_bars(body_html)
+    body_html = decorate_cells(body_html)
     body_html = wrap_tables(body_html)
+    body_html = kv_strips(body_html)
     body_html = colorize_pct(body_html)
+    head_html, body_html = split_head(body_html)
+    body_html = callout_sections(body_html)
 
     toc_block = ""
     if toc_html.strip() and "<li>" in toc_html:
@@ -635,6 +755,7 @@ def main() -> int:
         css=CSS,
         report_type=label,
         date_label=date_label,
+        head_html=head_html,
         toc_html=toc_block,
         body_html=body_html,
         md_filename=f"{out_stem}.md",
