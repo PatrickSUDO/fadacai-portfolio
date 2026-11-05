@@ -35,6 +35,20 @@ fi
 MARK="$LOG_DIR/cache/evening-pass-${PASS}-${ET_DATE}.done"
 if [[ -f "$MARK" && "$FORCE_RUN" != "1" ]]; then exit 0; fi
 
+# ── 用戶跳過閘（2026-11-05，用戶「我不能在手機指導 mac 弄 launchctl」）：Telegram「⏸ 今天不要跑」按鈕
+#    （tools/tg_flag_decisions.py 的 ax 按鈕）寫 cache/auto-exec-skip-<美東日期>；檔案在 → 當天收盤前、收盤後兩輪都不跑。
+#    不寫 .done marker：用戶在時窗內按「恢復」（檔案被刪）下一個 tick 就照跑。只擋當天，隔天自動恢復。
+#    EVENING_PASS_FORCE=1 手動強跑不受此限。
+SKIP_FILE="$LOG_DIR/cache/auto-exec-skip-${ET_DATE}"
+if [[ -f "$SKIP_FILE" && "$FORCE_RUN" != "1" ]]; then
+  SKIP_LOGGED="$LOG_DIR/cache/evening-pass-${PASS}-${ET_DATE}.skipped"
+  if [[ ! -f "$SKIP_LOGGED" ]]; then
+    log "user skip（Telegram 按鈕，$SKIP_FILE）→ 今天不跑；時窗內按「恢復」可改回"
+    touch "$SKIP_LOGGED"
+  fi
+  exit 0
+fi
+
 # 交易日檢查（借 price_alerts 的日曆）
 if ! python3 - <<'PY'
 import sys; sys.path.insert(0, "tools")

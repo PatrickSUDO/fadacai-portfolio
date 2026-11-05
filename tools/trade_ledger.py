@@ -1031,6 +1031,11 @@ def defer_flag(data, *, flag_id_, to, reason, asof=None):
     f = next((x for x in data["flags"] if x["id"] == flag_id_ and x["status"] == "open"), None)
     if f is None:
         return {"action": "not_found", "id": flag_id_}
+    # 已有用戶裁決的旗標只剩「執行」一條路——defer 等於把裁決改回待決（2026-11-04 LITE：用戶回「不 defer」後
+    # 隔日 briefing 不得再以「未確認」為由 defer）
+    if f.get("ruling"):
+        return {"action": "refused_ruled", "id": flag_id_, "ruling": f["ruling"],
+                "rule": "用戶已裁決 → 執行後 resolve-flag；要改決定由用戶重新 rule-flag"}
     f["deferrals"] += 1
     old, f["deadline"] = f["deadline"], to
     f["history"].append({"date": asof, "event": "deferred",
@@ -1056,6 +1061,29 @@ def resolve_flag(data, *, flag_id_, action, note, realized_pnl=None, asof=None):
                          "note": note, "realized_pnl": realized_pnl})
     return {"action": "resolved", "id": flag_id_, "deferrals": f["deferrals"],
             "resolution": action}
+
+
+RULING_ACTIONS = ("exit", "trim", "hold")
+
+
+def rule_flag(data, *, flag_id_, action, note, asof=None):
+    """用戶裁決登錄：briefing 把判斷類待辦列「要照做請回一聲；沒回明天 defer 一次」，用戶回了之後
+    那句話必須變成資料，否則隔天的 briefing（新 context）只看得到 deadline，照樣 defer。
+    有裁決的旗標不得再 defer（defer_flag 拒絕）；`flags` 輸出帶 `ruling`，briefing 視同用戶已裁決的
+    平倉/減碼（T6.5 機械清理、無金額上限）直接執行，成交後 resolve-flag。首例 LITE 2026-11-04。"""
+    asof = asof or date.today().isoformat()
+    if action not in RULING_ACTIONS:
+        return {"action": "bad_action", "id": flag_id_, "allowed": list(RULING_ACTIONS)}
+    f = next((x for x in data["flags"] if x["id"] == flag_id_ and x["status"] in
+              ("open", "forced")), None)
+    if f is None:
+        return {"action": "not_found", "id": flag_id_}
+    f["ruling"] = {"date": asof, "action": action, "note": note}
+    f["history"].append({"date": asof, "event": "user_ruling", "action": action, "note": note})
+    return {"action": "ruled", "id": flag_id_, "ruling": f["ruling"],
+            "next": ("直接執行（用戶已裁決 = T6.5 機械清理，無金額上限），成交後 "
+                     "resolve-flag --action exited|trimmed" if action != "hold" else
+                     "hold = 明文留倉；到期仍須 resolve-flag --action withdrawn|held-with-reason")}
 
 
 def flag_report(data, positions, fills=None, *, asof=None):
@@ -1094,6 +1122,8 @@ def flag_report(data, positions, fills=None, *, asof=None):
         row["days_open"] = (today - date.fromisoformat(f["opened"])).days
         row["overdue_days"] = max(0, (today - date.fromisoformat(f["deadline"])).days)
         row["forced"] = f["deferrals"] >= FORCED_AFTER_DEFERRALS
+        if f.get("ruling"):                    # 用戶已裁決 → 不得 defer，直接執行
+            row["ruling"] = f["ruling"]
         p0 = f.get("price_at_flag") or _asof_close(series.get(tkr, {}), f["opened"])
         p1 = _asof_close(series.get(tkr, {}), today_s) or (pos or {}).get("last")
         if p0 and p1:
@@ -1689,6 +1719,15 @@ def cmd_defer(args):
     return EXIT_OK if res["action"] == "deferred" else EXIT_GENERIC
 
 
+def cmd_rule_flag(args):
+    data = load_flags(args.flags)
+    res = rule_flag(data, flag_id_=args.flag_id, action=args.action, note=args.note,
+                    asof=args.asof)
+    save_flags(data, args.flags)
+    _emit(res)
+    return EXIT_OK if res["action"] == "ruled" else EXIT_GENERIC
+
+
 REENTRY_LOW, REENTRY_HIGH, REENTRY_DUE_DAYS, REENTRY_ALERT_DAYS = 0.90, 1.10, 45, 60
 
 
@@ -1882,6 +1921,11 @@ def _build_parser():
     df.add_argument("--to", required=True, help="new deadline YYYY-MM-DD")
     df.add_argument("--reason", required=True)
 
+    ru = sub.add_parser("rule-flag", help="登錄用戶裁決：有裁決的旗標不得再 defer，briefing 直接執行")
+    ru.add_argument("--id", dest="flag_id", required=True)
+    ru.add_argument("--action", required=True, choices=list(RULING_ACTIONS), help="exit | trim | hold")
+    ru.add_argument("--note", required=True, help="用戶原話 + 日期 + 執行指示（股數／時點）")
+
     rf = sub.add_parser("resolve-flag", help="close a flag with the action taken")
     rf.add_argument("--id", dest="flag_id", required=True)
     rf.add_argument("--action", required=True,
@@ -1980,6 +2024,7 @@ def main(argv=None):
             "orders": cmd_orders,
             "flag": cmd_flag,
             "defer": cmd_defer,
+            "rule-flag": cmd_rule_flag,
             "resolve-flag": cmd_resolve_flag,
             "reentry": cmd_reentry,
             "flags": cmd_flags,

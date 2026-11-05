@@ -319,6 +319,9 @@ python3 tools/trade_ledger.py flags
   `🔴 強制決定：{id} 已延後 {n} 次｜自警示 {days} 天累積 −$X → 減碼 1/3 或明文撤旗（附理由）`
 - `overdue` 非空 → `⚠️ 旗標逾期：{id}（deadline {date}，逾 {n} 天）`
 - `post_flag_fills.buys > 0` → `⚠️ {ticker} 在警示後仍加碼 {n} 股（{dates}），損益 $X`
+- `ruling` 非空（用戶已裁決，`trade_ledger.py rule-flag` 登錄）→ **直接執行、不 defer、不再問**：視同用戶已裁決的平倉/減碼（T6.5 類別 1 機械清理、無金額上限），照 `ruling.note` 的股數/時點下單，成交後 `resolve-flag --action exited|trimmed`；輸出 `✅ 已自動執行：{id} 用戶 {date} 裁決 {action}（單號）`。`defer` 對有裁決的旗標會被拒。（2026-11-04 LITE 案：briefing 列「要照做請回一聲，沒回明天 defer」，用戶回了之後那句話必須變成資料，否則隔天的新 context 只看得到 deadline）
+- 判斷類待辦（要用戶決定 defer 與否）**不再寫「要照做請回一聲」**：`briefing_runner.sh` 在推送後自動跑 `tools/tg_flag_decisions.py ask`，對到期旗標送 Telegram 兩顆按鈕（執行／defer 一次），回答由 launchd 輪詢收回寫成 `ruling` 或 `defer`。telegram.txt 該條寫「🗳 已送決定按鈕（到期 MM/DD）」即可；手動 briefing 沒有 runner 時自己跑一次 `ask`（`docs/briefing-auto-send.md` 旗標決定按鈕節）
+- **一般待決事項的回答（旗標以外，2026-11-05）**：每次 briefing 先跑 `python3 tools/decision_ledger.py list`。`status=answered` = 用戶已在 Telegram 按鈕回答：把該答案當成用戶對那一條待辦的指示，**照既有 T6.5 五條件處理（硬線、財報窗、金額上限一律不變，按鈕不擴大任何自動執行權限）**，處理完 `python3 tools/decision_ledger.py done --id <id> --note "<做了什麼／單號，或為何被哪條硬線擋下>"`，並在訊息寫一行結果；`status=open` = 還沒按，在今日待辦列「🗳 等你按：{question}（{expires} 到期）」，不重複登記
 
 **開旗紀律（強制，這是修好漏口的關鍵）：**
 凡在 briefing / journal 寫下 ⚠️ / 降桶候選 / 勿再向下加碼 / thesis 蒙塵 / 待覆判 的部位，**同一次必須開旗**：
@@ -996,6 +999,7 @@ Agent(subagent_type="data-collector"):
 - **明日待辦**：即將到來的 catalyst（財報 next day、FOMC、plan.md 明天到期的條件）（最多 3 條）
 - 過濾純 HOLD-only、無 actionable 的項目
 - 每條格式：`• {action}（{trigger / catalyst}）`
+- **要用戶判斷的項目一律登記成按鈕（2026-11-05 用戶）**：凡待辦寫到「你的判斷」「要不要…」「我沒改／沒動，等你決定」，同一次 `python3 tools/decision_ledger.py add --id YYYYMMDD-<kebab> --ticker <T> --question "<一句話，不看上下文也懂>" --detail "<價位／理由>" --option key=按鈕文字=選了之後會怎樣、何時 ×2–4`（按鈕文字 ≤40 字；其中一個選項必須是「維持現狀」）。runner 推送後自動送 Telegram 按鈕，回答寫回 ledger；telegram.txt 該條結尾寫「🗳 已送決定按鈕」，**不寫「請回覆／回一聲／你的判斷」**。旗標的 defer 與否不用登記（`tg_flag_decisions.py ask` 自動涵蓋）；純提醒用戶去做的事（例：「今晚跑 evening_pass」）不是決定，不登記
 
 **T6.5 自動執行（今日待辦 → 直接下單，2026-09-08 用戶指定；2026-09-14 起機械單判定移到 code）**
 

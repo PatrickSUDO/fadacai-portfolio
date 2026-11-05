@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fadacai.tg-decisions</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/YOUR_USERNAME/path/to/portfolio &amp;&amp; python3 tools/tg_flag_decisions.py poll</string>
+  </array>
+
+  <!-- 旗標決定按鈕的收件端（2026-11-04 用戶）：每 60 秒跑一次 getUpdates long poll（timeout 50 秒），
+       等於常駐監聽，按鈕按下幾秒內就寫進旗標檔並把按鈕拿掉。launchd 同一 Label 不會重疊啟動。
+       一個 bot 只能有一個 getUpdates 消費者：手動跑 poll 前先 launchctl bootout gui/$(id -u)/com.fadacai.tg-decisions。
+       Mac mini 不睡；若換回會睡的機器，睡眠期間按鈕會等醒來才處理（按鈕上轉圈幾秒後停住，不會消失）。 -->
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/YOUR_USERNAME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key><string>/Users/YOUR_USERNAME</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/tg-decisions.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/tg-decisions.err</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>

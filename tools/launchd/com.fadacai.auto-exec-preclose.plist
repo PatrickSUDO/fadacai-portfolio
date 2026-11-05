@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fadacai.auto-exec-preclose</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/YOUR_USERNAME/path/to/portfolio/tools/evening_pass.sh</string>
+    <string>preclose</string>
+  </array>
+
+  <!-- 機械執行 pass（收盤前）：每 5 分鐘叫一次，evening_pass.sh 自己用美東時間判斷——
+       只在 15:40–15:58 ET、交易日、當天還沒跑過時才執行（guard → auto_exec --execute --preclose，day 限價貼盤）。
+       其餘時間立即退出。會下真單（AUTO_EXEC_LIVE=1 由腳本設定）。
+       2026-11-05 重建：原 plist 只存在舊機 ~/Library/LaunchAgents、沒進 repo，搬到 Mac mini 後 10/31–11/5 整週沒跑
+       （PWR 11/4 跌破 $606 收盤線未掛單）。範本進 repo，搬家時照 docs/briefing-auto-send.md 安裝。 -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/YOUR_USERNAME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key><string>/Users/YOUR_USERNAME</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/evening-pass-launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/evening-pass-launchd.err</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

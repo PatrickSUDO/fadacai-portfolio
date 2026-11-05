@@ -122,6 +122,49 @@ def send_telegram(text: str, dry_run: bool = False) -> None:
                 raise RuntimeError(f"Telegram API error: {result}")
 
 
+def _verified_ssl_context() -> ssl.SSLContext:
+    """憑證驗證的 TLS context：有 certifi 用 certifi（macOS 系統 python 常缺根憑證），否則系統預設。"""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001
+        return ssl.create_default_context()
+
+
+def tg_api(method: str, payload: dict, timeout: int = 15):
+    """Telegram Bot API 通用呼叫（tg_flag_decisions.py 的按鈕 / getUpdates / 編輯訊息共用）。
+    回 result 欄；ok=false 或 HTTP 4xx 都丟 RuntimeError（帶 Telegram 的 description，例如 'query is too old'）。"""
+    token = require("TELEGRAM_BOT_TOKEN")
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_verified_ssl_context()) as resp:
+            result = json.loads(resp.read())
+    except urllib.error.HTTPError as e:          # Telegram 把錯誤描述放在 body
+        try:
+            result = json.loads(e.read())
+        except Exception:  # noqa: BLE001
+            raise RuntimeError(f"Telegram {method} HTTP {e.code}") from e
+    if not result.get("ok"):
+        raise RuntimeError(f"Telegram {method} error: {result.get('description') or result}")
+    return result.get("result")
+
+
+def send_telegram_message(text: str, reply_markup: dict | None = None, dry_run: bool = False):
+    """單則純文字訊息（不切段，超過 4096 字截斷），可附 inline keyboard；回 message_id（dry-run 回 None）。
+    既有 briefing 推送仍走 send_telegram()（會切段、不帶鍵盤）。"""
+    chat_id = require("TELEGRAM_CHAT_ID")
+    if dry_run:
+        print(f"[DRY-RUN] Telegram → chat_id={chat_id}\n{text}")
+        print(f"[reply_markup] {json.dumps(reply_markup, ensure_ascii=False) if reply_markup else '-'}")
+        return None
+    payload = {"chat_id": chat_id, "text": text[:MAX_TG_CHARS]}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    return tg_api("sendMessage", payload)["message_id"]
+
+
 # ── Markdown → plain text ────────────────────────────────────────────────────
 def md_to_plain(text: str) -> str:
     """Strip markdown syntax so plain-text email clients (Gmail) read cleanly."""

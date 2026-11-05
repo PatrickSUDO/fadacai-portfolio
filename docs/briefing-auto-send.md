@@ -291,6 +291,57 @@ tools/briefing_runner.sh                  ← TCC-safe wrapper
 - **`com.fadacai.caffeinate` LaunchAgent**（`tools/launchd/com.fadacai.caffeinate.plist`）在 16:59 weekdays 跑 `caffeinate -u -t 5520`，把 Mac 從 16:59 撐到 18:31 — 涵蓋 runner 常態情況（Sonnet 單次 ~15-20 分 + 快取刷新）；極端多次重試會超出此窗，屆時依賴 AC `sleep 0` 保持清醒。
 - 安裝：`cp tools/launchd/com.fadacai.caffeinate.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.fadacai.caffeinate.plist`
 
+## 機械執行排程（auto-exec 收盤前／收盤後，2026-11-05 重建）
+
+`tools/evening_pass.sh <preclose|close>` 由兩個 launchd job 每 5 分鐘叫一次，腳本自己用美東時間判斷時窗（preclose 15:40–15:58、close 16:15–19:00）、交易日、當天跑過沒有（`briefing-out/cache/evening-pass-<pass>-<日期>.done`），其餘時間立即退出。**會下真單**（腳本內設 `AUTO_EXEC_LIVE=1`）。
+
+- 範本：`tools/launchd/com.fadacai.auto-exec-preclose.plist`、`tools/launchd/com.fadacai.auto-exec-evening.plist`
+- **2026-11-05 教訓**：這兩個 plist 原本只存在舊機的 `~/Library/LaunchAgents`、沒進 repo，搬到 Mac mini 後 10/31–11/5 整週沒跑（PWR 11/4 跌破 $606 收盤線未掛單）。**新增任何 launchd job，範本一律進 `tools/launchd/`**；搬家時逐一安裝，並用 `launchctl list | grep fadacai` 對照本節清單。
+
+安裝（三個一起：收盤前、收盤後、按鈕輪詢）：
+```bash
+for j in auto-exec-preclose auto-exec-evening tg-decisions; do sed "s#/Users/YOUR_USERNAME/path/to/portfolio#$PWD#g; s#YOUR_USERNAME#$(basename $HOME)#g" tools/launchd/com.fadacai.$j.plist > ~/Library/LaunchAgents/com.fadacai.$j.plist && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.fadacai.$j.plist; done
+```
+停用：`launchctl bootout gui/$(id -u)/com.fadacai.auto-exec-preclose`（evening 同理）。預覽今天會做什麼而不下單：`uv run --directory $PWD/tools python3 $PWD/tools/auto_exec.py --preclose`（無 `--execute` = 乾跑）。紀錄在 `briefing-out/evening-pass.log`。
+
+### 手機開關：「⏸ 今天不要跑」（2026-11-05，用戶「我不能在手機指導 mac 弄 launchctl」）
+
+不用碰 Mac 就能擋掉當天的自動執行：
+- **預告**：`tools/tg_flag_decisions.py` 的輪詢器在交易日美東 15:00–15:38 跑一次 `auto_exec.py --preclose` 乾跑（不下單），**有單才送**一則 Telegram「今天自動執行預告」，列出收盤前那輪會下的單，附一顆「⏸ 今天不要跑」。乾跑沒單就不送，每 10 分鐘再看一次，一天最多一則（`briefing-out/cache/auto-exec-notice-<日期>.json`）。隨時手動送：`python3 tools/tg_flag_decisions.py notice --force`。
+- **按下去**：寫 `briefing-out/cache/auto-exec-skip-<美東日期>`；`evening_pass.sh` 看到這個檔就當天收盤前、收盤後兩輪都不跑（`evening-pass.log` 記一行 `user skip`）。訊息改成「⏸ 已跳過」，按鈕換成「↩️ 恢復今天的自動執行」（刪檔，時窗內下一個 5 分鐘 tick 照跑）。
+- **不按 = 照跑**，預設行為不變。只擋當天，隔天自動恢復。已送出的單不會被撤（要撤到券商 App）。`EVENING_PASS_FORCE=1` 手動強跑不受跳過檔限制。
+- 檔名在 `evening_pass.sh` 與 `tg_flag_decisions.py`（`skip_path`）各寫一次，要改兩邊一起改。
+
+## 旗標決定按鈕（Telegram inline keyboard，2026-11-04）
+
+**問題：** briefing 的判斷類待辦寫「要照做請回一聲；沒回明天 defer 一次」，但沒有程式在收回覆，手機上也沒有一鍵回答的方式（LITE 11/4 案）。
+
+**做法：** `tools/tg_flag_decisions.py`
+- `ask`（`briefing_runner.sh` 在 briefing 送出後自動跑）：對 deadline ≤ 下一個交易日、`status=open`、尚無 `ruling` 的旗標，各送一則短訊息，附兩顆按鈕：「✅ 清倉／減碼（不 defer）」與「⏭ defer 一次 → MM/DD」（新到期日 = 原 deadline 後第一個交易日）。同一旗標同一天只送一次（`briefing-out/cache/tg-decisions-pending.json`）。forced 旗標不送。
+- `poll`（launchd `com.fadacai.tg-decisions` 每 60 秒一次，`getUpdates` long poll 50 秒 = 常駐監聽）：只收本人 chat 的按鈕回答 → 「執行」跑 `trade_ledger.py rule-flag --action exit|trim`、「defer」跑 `trade_ledger.py defer --to <日期>` → 手機跳一行提示 → 原訊息改成「✅ 已裁決 / ⏭ 已 defer」且**按鈕消失**。每筆記 `research/tg-decisions.jsonl`，offset 存 `briefing-out/cache/tg-offset.json`。
+- 有 `ruling` 的旗標：隔天 briefing 直接執行、不再 defer（`trade_ledger.py defer` 會拒絕）；沒按 = 隔天 briefing 照規則 defer 並記次。**按鈕只寫裁決，不下任何券商單**。
+- **一般待決事項（2026-11-05「所有要我決定的也都弄按鈕」）**：briefing 把判斷類待辦用 `tools/decision_ledger.py add --id … --question … --option key=按鈕文字=效果 ×2–4` 登記到 `research/decisions.json`；`ask` 每題送一則訊息、一個選項一顆按鈕（每題只問一次，預設 3 天後過期 = 維持現狀）；`poll` 把回答寫成 `answered`，訊息改成「✅ 已選：…」。下一次 briefing 讀 `decision_ledger.py list`，照答案執行後 `done`。
+- **連按只認第一次**：輪詢器沒在跑時按壓會排隊（11/5 AMD 連按 9 次）。已有裁決／已 defer／已回答的再按一律不寫帳，只把訊息改成現況。
+- **按了之後何時生效**：回答幾秒內寫進資料檔，但執行要等下一個有券商連線的時點（美東 11:00 的 briefing，或開 session）。按鈕不會觸發即時下單。
+
+**安裝：**
+```bash
+sed "s#/Users/YOUR_USERNAME/path/to/portfolio#$PWD#g; s#YOUR_USERNAME#$(whoami)#g" tools/launchd/com.fadacai.tg-decisions.plist > ~/Library/LaunchAgents/com.fadacai.tg-decisions.plist && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.fadacai.tg-decisions.plist
+```
+確認：`launchctl print gui/$(id -u)/com.fadacai.tg-decisions | grep -E "state|runs"`；log 在 `briefing-out/tg-decisions.log` / `.err`。
+
+**硬規則：**
+- 一個 bot 同時只能有一個 `getUpdates` 消費者，第二個會收到 409 Conflict。要手動跑 `poll` 先 `launchctl bootout gui/$(id -u)/com.fadacai.tg-decisions`，跑完再 bootstrap。
+- bot 若設過 webhook，`getUpdates` 不可用；`poll` 啟動先查 `getWebhookInfo`，有 url 就報錯退出，不自動 `deleteWebhook`。
+- 機器睡眠期間按鈕不會立刻消失（按鈕上轉圈幾秒後停住），醒來後下一輪 poll 才處理。目前跑在不睡的 Mac mini 上。
+- `callback_data` 上限 64 bytes，超過自動改用短 token 查 pending 檔。
+
+**測試（不碰真檔、不連 Telegram）：**
+```bash
+python3 tools/tg_flag_decisions.py --flags /tmp/flags.json --state-dir /tmp/tgtest ask --dry-run --no-cost
+python3 tools/tg_flag_decisions.py --flags /tmp/flags.json --state-dir /tmp/tgtest poll --fake-updates /tmp/updates.json
+```
+
 ## 故障排除：自動推送失敗 / 卡死
 
 - **`claude -p` 卡滿 timeout ×N**：headless 跑遇到 Claude 工具權限提示無法回答。runner 已加 `--dangerously-skip-permissions`（信任的自動化、跑自己的 repo）。注意此旗標**不**繞過 macOS TCC 檔案彈窗。

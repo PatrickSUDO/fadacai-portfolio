@@ -386,3 +386,8 @@ if [[ -f "$OUT_DIR/$TODAY-telegram.txt" ]]; then
     log "Cross-day consistency OK"
   fi
 fi
+# 旗標決定按鈕（2026-11-04 用戶「在手機上快速決定 defer 與否」）：到期（≤ 下一個交易日）且未裁決的旗標各送一則 Telegram，
+# 附「執行（不 defer）／defer 一次」兩顆按鈕；回答由 launchd com.fadacai.tg-decisions 每 60 秒 poll 收回寫進旗標檔（不經模型）
+log "Post-run: flag decision buttons (tg_flag_decisions.py ask)..."
+python3 "$SCRIPT_DIR/tg_flag_decisions.py" ask >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "tg_flag_decisions ask failed (non-fatal)"
