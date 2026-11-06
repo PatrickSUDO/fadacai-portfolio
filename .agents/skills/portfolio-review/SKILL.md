@@ -689,7 +689,15 @@ Use Traditional Chinese (繁體中文) for all text output to match the user's p
 
 launchd `com.fadacai.portfolio-review` 每 15 分鐘叫 `tools/portfolio_review_runner.sh`：`review_due.py` 判 portfolio-review 到期（>30 天）且美東平日 11:30–15:00 盤中才跑 `claude -p "/portfolio-review" --model opus`（3600s 上限、一天一次，失敗隔天重試）→ `generate_html portfolio-review` 推報告站 → Telegram 一則（抽報告的「## 0. 本期結論」段 + 網頁連結）。登入失效 / 逾時 / 無報告 → Telegram 警告。
 
-**因此報告第一段必須是 `## 0. 本期結論`**（Portfolio Summary 之前）：5–8 行白話——帳戶一句話狀態、本期最重要的 1–3 個動作（已執行的附單號、待用戶決定的寫清楚）、下次要看的日期。Telegram 只會收到這段。
+**因此報告第一段必須是 `## 0. 本期結論`**（Portfolio Summary 之前）。Telegram 只會收到這段。
+
+**開頭固定四行（2026-11-06 用戶：「看完一堆…有講跟沒講一樣，然後呢」）**，每行一句白話：
+- `🎯 要你決定：N 件`——逐條一句 + 期限（到期旗標、候補表要不要改、規則判讀要不要換）；沒有就寫「沒有，這份可以不看」
+- `🔁 跟上次比變了什麼`——對照上一份 portfolio-review：哪個結論翻了、哪檔進出、預期報酬怎麼動；沒有寫「沒有」
+- `🤖 系統已做掉`——已驗收的 thesis、已掛或已撤的單（附單號），一行
+- `📚 這次學到的一件事`——出自本期資料的一個現象，寫成「現象 → 數字 → 下次遇到怎麼看」（必填；系統自己估錯的優先寫，不重複上期）
+
+接著 ≤4 行：帳戶一句話狀態、本期最重要的 1–3 個結論、下次要看的日期。
 
 ## 存檔 + HTML 生成
 報告完成後：

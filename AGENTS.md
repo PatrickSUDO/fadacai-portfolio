@@ -8,6 +8,8 @@ This is an investment research and portfolio management workspace. The user acti
 - Thread/social media posts: plain text only, NO markdown, NO tables
 - Reports and analysis: markdown tables are fine
 - **不用 § 符號**（2026-10-19 用戶）：章節引用一律寫「第 N 節」或直接寫段名（本期結論、附錄）
+- **定期報告開頭固定四行（2026-11-06 用戶「看完一堆…有講跟沒講一樣，然後呢」）**：`/briefing`（全 tier，含 Telegram）、`/trade-review`、`/portfolio-review` 的第一屏依序是 `🎯 要你決定：N 件`（沒有就寫「沒有，這份可以不看」）→ `🔁 跟上次比變了什麼`（只列有變的）→ `🤖 系統已做掉`（一行）→ `📚 這次學到的一件事`（出自本次資料：一個現象＋數字＋下次遇到怎麼看；系統自己錯的也寫，用戶要的是「一起成長」不是只收結論；每日簡報沒新東西可省略，兩份定期檢討必填）。其餘內容照舊產出、放後面當紀錄；互動 session 轉述報告也照這個順序，不逐節重述。機械檢查 `tools/briefing_lint.py`／`tools/review_lint.py`
+- **舊報告收納（2026-11-06 用戶）**：`tools/prune_reports.py`（`briefing_runner.sh` 每週一 `--apply`）把超過 60 天的每日 briefing 本機檔搬到 `briefing-out/archive/YYYY-MM/`、報告站的每日報告頁移出（留在 reports repo 的 git 歷史）；交易檢討／組合審查／個股分析不動。`account_metrics.py scan` 會讀封存，淨值標記不受影響；預設乾跑
 
 ## Workflow
 1. `/briefing` — quick daily check (~1 min); `/briefing full` (~3 min); `/briefing deep` (~5 min)

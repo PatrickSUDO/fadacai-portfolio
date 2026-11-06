@@ -12,6 +12,10 @@ H10（新倉 starter ≤2%；priced_in_pct > +150% 者 ≤1.5%）：
   journal 檔：讀 position-state，找 open_since == 檔名日期 的現股新倉；權重超門檻而全文無「H10 bypass」→ 違規。
   是偏好不是硬線：標了 bypass 就過，只是要留痕給 /trade-review 分組計分。
 
+開頭四行（2026-11-06）：
+  DATE-telegram.txt / DATE-full.md / portfolio-review-DATE.md 的前 40 行必須有「要你決定」「跟上次比」「系統已做」；
+  portfolio-review 另須有「學到」。讀者只看開頭就要知道這份有沒有他的事。
+
 exit 2 = 有違規（hook 走 stderr 提示，不擋寫入）。
 """
 import json
@@ -83,13 +87,32 @@ def lint_stale_facts(text):
     return out
 
 
+OPENING_FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}-(telegram\.txt|full\.md)|portfolio-review-\d{4}-\d{2}-\d{2}\.md)$")
+OPENING_MARKS = [("要你決定", "🎯 要你決定：N 件（沒有就寫「沒有」）"),
+                 ("跟上次比", "🔁 跟上次比變了什麼"),
+                 ("系統已做", "🤖 系統已做掉")]
+
+
+def lint_opening(text, name):
+    """開頭固定四行（2026-11-06 用戶「看完一堆…有講跟沒講一樣，然後呢」）：
+    每日 briefing（telegram / full）與 portfolio-review 的前 40 行必須先講要用戶決定什麼、變了什麼、系統做了什麼。
+    📚 學到的一件事：每日可省略（沒新東西不硬湊），portfolio-review 必填。trade-review 由 review_lint.py 管。"""
+    if not OPENING_FILE_RE.match(name):
+        return []
+    head = "\n".join(text.splitlines()[:40])
+    probs = [f"開頭缺「{label}」（報告先講讀者要做什麼，其餘放後面）" for key, label in OPENING_MARKS if key not in head]
+    if name.startswith("portfolio-review-") and "學到" not in head:
+        probs.append("開頭缺「📚 這次學到的一件事」（定期檢討必填：現象 → 數字 → 下次遇到怎麼看）")
+    return probs
+
+
 def lint(path: Path):
     if not path.exists():
         return [f"not found: {path}"]
     text = path.read_text()
     roster = _load(ROSTER, {})
     harvest = list((roster.get("buckets") or {}).get("認列", []))
-    problems = lint_r27(text, harvest) + lint_stale_facts(text)
+    problems = lint_r27(text, harvest) + lint_stale_facts(text) + lint_opening(text, path.name)
     m = re.search(r"journal/(\d{4}-\d{2}-\d{2})\.md$", str(path))
     if m:
         problems += lint_h10(text, m.group(1))

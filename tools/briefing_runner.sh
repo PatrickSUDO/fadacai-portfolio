@@ -273,6 +273,16 @@ python3 "$SCRIPT_DIR/archive_cache.py" \
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "cache archive failed (non-fatal; today's inputs will not be reproducible)"
 
+# 舊的每日 briefing 每週一收一次（2026-11-06 用戶「報告越來越多…太老的 briefing 清掉」）：
+# 超過 60 天的本機檔搬到 briefing-out/archive/YYYY-MM/、報告站的每日報告頁移出（留在 reports repo 的 git 歷史）。
+# 交易檢討／組合審查／個股分析不動。保留天數 PRUNE_KEEP_DAYS；手動 python3 tools/prune_reports.py（預設乾跑）。
+if [[ "$(date +%u)" == "1" || "${PRUNE_FORCE:-0}" == "1" ]]; then
+  log "Pruning old daily briefings (prune_reports.py)..."
+  python3 "$SCRIPT_DIR/prune_reports.py" --apply \
+    >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    || log "prune_reports failed (non-fatal)"
+fi
+
 # ── Invoke Claude CLI ──────────────────────────────────────────────────────
 # Must cd to REPO_ROOT so Claude Code finds .claude/skills/ and project settings
 cd "$REPO_ROOT"

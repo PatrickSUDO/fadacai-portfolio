@@ -86,6 +86,11 @@ def cmd_scan():
     marks = {}
     sources = [(ROOT / "journal", r"(\d{4}-\d{2}-\d{2})\.md$", "journal"),
                (ROOT / "briefing-out", r"(\d{4}-\d{2}-\d{2})-full\.md$", "briefing")]
+    # 封存的舊 briefing（prune_reports.py 搬到 briefing-out/archive/YYYY-MM/，2026-11-06）也要掃，
+    # 否則 scan 每次從頭重建時，journal 沒寫淨值的舊日期會整筆消失
+    arch = ROOT / "briefing-out" / "archive"
+    if arch.exists():
+        sources += [(d, r"(\d{4}-\d{2}-\d{2})-full\.md$", "briefing") for d in sorted(arch.iterdir()) if d.is_dir()]
     for dirpath, pat, src in sources:
         if not dirpath.exists():
             continue

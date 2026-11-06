@@ -38,6 +38,17 @@ def lint(path: Path) -> list[str]:
     text = path.read_text()
     problems = [f"缺：{label}（pattern `{pat}`）" for pat, label in REQUIRED if not re.search(pat, text)]
 
+    # 第 0 節 開頭固定四行（2026-11-06 用戶「看完一堆…有講跟沒講一樣，然後呢」）
+    m = re.search(r"## 0\..*?(?=\n## |\Z)", text, re.S)
+    if m:
+        sec0 = m.group(0)
+        for key, label in (("要你決定", "🎯 要你決定：N 件（沒有就寫「沒有」）"),
+                           ("跟上次比", "🔁 跟上次比變了什麼"),
+                           ("系統已做", "🤖 系統已做掉"),
+                           ("學到", "📚 這期學到的一件事（現象 → 數字 → 下次遇到怎麼看）")):
+            if key not in sec0:
+                problems.append(f"第 0 節 缺「{label}」")
+
     m = re.search(r"## 5\..*?(?=## 6\.|\Z)", text, re.S)
     if m:
         sec5 = m.group(0)
