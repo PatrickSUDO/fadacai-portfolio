@@ -87,6 +87,10 @@ R30_MAX_WEIGHT, R30_MAX_USD = 6.0, 3_000
 # 2026-10-20 用戶：信念桶 R30 上限 6% → 8.5%（硬線 10% 之下）。7–9 月 MU/CRWD/PLTR/NVDA 全在 7.4–8.1%，R30 結構性不可能加碼贏家，
 # 飛輪「第一順位投入信念桶領導者」在程式裡開不了火，錢流向新名字（9/23–10/9 五筆 −$1,999）。H2：加碼既有領導者全正。
 R30_MAX_WEIGHT_BY_BUCKET = {"信念": 8.5, "認列": 6.0}
+# 2026-11-06 /trade-review：R30 收窄成僅信念桶（RULES-LEDGER R30 預先寫定的條件「連兩期熟成批淨負 → 收窄成僅信念桶」成立）。
+# 10/29 期熟成批淨 −$440；11/6 期 DDOG 10/2（30 日超額 −13.6%）、BE 10/7（−34.4%）兩筆失效、CRM 10/5 中性，淨 −$733。
+# 影子 cf-r30-add 已計分 14 筆只有 2 筆對（獨立標的 1/8）。認列桶上限 6.0 保留在上表，要恢復只需把 "認列" 加回下面這個 tuple。
+R30_BUCKETS = ("信念",)
 # R32 信念桶退場（2026-10-20 用戶「信念桶真的不行還是要有退場機制」）
 R32_RS_SECTOR_PP = -10.0      # 90 日對板塊落後 ≥10pp
 R32_UNREAL_FLOOR = -20.0      # 信念桶自成本 −20% = 覆審線（不是停損，是強制裁決）
@@ -801,7 +805,7 @@ def build_state(*, sync_alerts=False):
         # EMA200 第二濾網（2026-09-17，30 檔×5 年回測）：>SMA50 且 >EMA200 20 日均 +3.73%/勝率 59.7%；
         # >SMA50 但 <EMA200 的那 8.4% 時間只有 +1.59%/50.4% —— 這層濾掉的就是那塊。EMA50 不如 SMA50，不採。
         above_e200 = bool(mf.get("ema200") and last and last > mf["ema200"]) if mf.get("ema200") else True  # 資料不足不擋
-        add_ok = (bucket in ("認列", "信念") and unreal is not None and unreal >= 3.0 and up is not None and up > down
+        add_ok = (bucket in R30_BUCKETS and unreal is not None and unreal >= 3.0 and up is not None and up > down
                   and mf.get("sma50") and last and last > mf["sma50"] and above_e200
                   and weight is not None and weight < R30_MAX_WEIGHT_BY_BUCKET.get(bucket, R30_MAX_WEIGHT)
                   and not buy_lock and not in_earn_window)
@@ -1181,7 +1185,7 @@ def render_table(state):
         lines += ["", "**R30 加碼候選（買強）：** " + "；".join(
             f"{c['symbol']}[{c.get('strength','')}斜率{c.get('ema50_slope5_pct') if c.get('ema50_slope5_pct') is not None else '—'}%{'·擠壓' if c.get('bb_squeeze') else ''}{'·SMA20 下不接刀' if c.get('below_sma20') else ''}] +{c['unrealized_pct']:.0f}% rev {c['rev_up_30d']:g}↑:{c['rev_down_30d']:g}↓ 現 {c['last']} / SMA20 {c['sma20']} / 20日高 {c['high20']}，額度 ${c['room_usd']:,.0f}" for c in state["add_candidates"])]
     else:
-        lines += ["", "R30 加碼候選：無（條件＝未實現>0、30d revision up>down、價>SMA50、權重<6%、非 R28a 鎖、非財報窗）"]
+        lines += ["", "R30 加碼候選：無（條件＝僅信念桶（2026-11-06 收窄）、未實現≥3%、30d revision up>down、價>SMA50、權重<8.5%、非 R28a 鎖、非財報窗）"]
     sl = state.get("sleeve") or {}
     if sl.get("since"):
         lines += [f"sleeve {sl['weight_pct']:.1f}%（帶 4–8%）｜帳戶自 {sl['since']} 峰 ${sl['acct_peak_since'] or 0:,.0f} 回撤 {sl['acct_dd_pct']:+.1f}%（−10% 賣半換子彈）"
