@@ -14,6 +14,8 @@ v1 覆蓋（A–E 降風險/零風險，無金額上限；F 為唯一新增曝�
      10 日收盤低 −3%）→ 收盤跌破才由 B 段先撤反彈單再貼盤賣（rule `R23-failsafe`）；反彈單成交/消失 → 自動撤警報。
      −30% 線仍即時貼盤賣（未成交反彈單撤掉、股數併入）。案例：10/23 AMD 8@516 / ANET 26@172 賣在線上三日內反彈 +3–4%
   B. 用戶裁決收盤線：price-alerts 內 note 含「收盤」且 id 含 trim/derating 的 price_below → 收盤 < level → 依 note 股數
+     washout 確認（2026-11-11 用戶「補上」，同 A 段 v2）：觸發收盤當日基準（SMH/SPY）≤ −2% → 不賣，等下一個非 washout 收盤仍破線才賣；
+     用戶收盤線 / R28b 殘倉線 / R23 失守線共用，選擇權管理線（C）不適用。案例：11/5 SMH −11.2%，AMD 收盤線賣在 413、四個交易日後 558
   C. 選擇權管理線：id 含 bcs-exit / option 的 price_below → 收盤 < level → 平倉指令（day，ET 7–16）
   D. R24 現金停泊：閒置 = 現金 − 在掛買單 − max(3% 總值, $8k) 緩衝 > $10k → 買基準 ETF VOO 至閒置 ≤ $5k（R33，2026-10-20；SGOV 只當緩衝）（$8k 是留給手動掛單的錢，2026-09-16）
   E. R8 梯級 GTC 缺口：position-state gaps 中 kind 含 R8 → 掛下一級賣單（限價=級距價）
@@ -227,7 +229,11 @@ def main(argv):
     syms = sorted(set(positions) | {a.get("symbol") for a in alerts if a.get("symbol")} | {"SGOV"} | set(roster.get("benchmark_parking") or ["VOO"]) | set(roster.get("benchmark_slots") or []))
     syms = [s for s in syms if s and not s.startswith("^")]
     r23_benches = {bench_for(s) for s, p in positions.items() if p.get("r23_armed")}
-    syms = sorted(set(syms) | r23_benches)
+    # B 段收盤線也做 washout 確認（2026-11-11）→ 有在倉收盤線的標的，其基準一併抓
+    closeline_benches = {bench_for(a["symbol"]) for a in alerts
+                         if a.get("type") == "price_below" and a.get("status") != "removed" and a.get("symbol") in positions}
+    wash_benches = r23_benches | closeline_benches
+    syms = sorted(set(syms) | wash_benches)
     # --preclose（2026-09-15 用戶採用）：15:45 ET 用即時價當「準收盤」，線要多破 BUF=0.5% 才算，賣單 day 貼盤當天成交；
     # 沒有 --preclose（22:20 evening 補網）：用真正收盤，gt90 隔日生效。
     preclose = "--preclose" in argv
@@ -239,7 +245,7 @@ def main(argv):
         for q in st.get("positions", []):
             if q.get("prev_close") and q["symbol"] in syms:
                 closes[q["symbol"]] = float(q["prev_close"])
-    bench_moves = bench_day_moves(closes, r23_benches, preclose) if r23_benches else {}
+    bench_moves = bench_day_moves(closes, wash_benches, preclose) if wash_benches else {}
     px_note = "" if closes and "error" not in closes else f"⚠️ yfinance 失敗（{closes.get('error','空')}），退回 position-state last（非收盤，僅 dry-run 參考）"
 
     def close_of(s):
@@ -249,8 +255,8 @@ def main(argv):
 
     plan, skipped = [], []
 
-    def skip(sym, rule, why):
-        skipped.append({"symbol": sym, "rule": rule, "why": why})
+    def skip(sym, rule, why, **extra):
+        skipped.append({"symbol": sym, "rule": rule, "why": why, **extra})
 
     # ── A. R23 ─────────────────────────────────────────────────────────────
     # v3 兩段式（2026-10-27 用戶「減少無謂的操作」，見檔頭）
@@ -383,6 +389,15 @@ def main(argv):
                 skip(sym, "close-line", "財報 ±48h"); continue
             if sym in reversed_tks:
                 skip(sym, "close-line", "T5.5 跨日反轉，延一日"); continue
+            # washout 確認（2026-11-11 用戶「補上」，同 A 段 R23 v2）：觸發收盤當日基準（SMH/SPY）≤ −2% → 指數殺盤不是個股弱勢，
+            # 不賣、在掛單不動；下一個基準 > −2% 的收盤仍破線才賣。抓不到基準價 → 照舊開火（fail-open，線的保護優先）。
+            b = bench_for(sym)
+            bm = bench_moves.get(b)
+            if bm is not None and bm <= WASHOUT_BENCH_DROP:
+                skip(sym, "close-line", f"washout 日（{b} {bm:+.1%} ≤ −2%）→ 等下一個非 washout 收盤確認（前收 {c:.2f} < 線 {lvl}，仍破線才賣）",
+                     washout=True, bench=b, bench_move=round(bm, 4), close=c, level=lvl, alert_id=aid)
+                continue
+            wash_note = (f"；{b} 當日 {bm:+.1%}（非 washout）" if bm is not None else "；基準價缺，未做 washout 判定")
             m = re.search(r"賣\s*[A-Z]*\s*(\d+)\s*股", note)
             p = positions.get(sym, {})
             qty = int(m.group(1)) if m else (math.floor(p.get("qty", 0) / 3) if "1/3" in note else None)
@@ -405,7 +420,7 @@ def main(argv):
                 skip(sym, "close-line", f"持有 {held} 股 ≤ 保留 {floor_keep} 股（反彈單已成交或已減完）→ 不賣，警報可撤"); continue
             plan.append({"rule": rule_name, "symbol": sym, "action": "SELL", "qty": qty, "alert_id": aid,
                          "order": {"type": "limit", "limit": round(c * 0.997, 2), "duration": DUR_SELL},
-                         "basis": f"前收 {c:.2f} < {'R23 失守線' if is_r23 else '裁決線'} {lvl}（{aid}）", "note": note[:160],
+                         "basis": f"前收 {c:.2f} < {'R23 失守線' if is_r23 else '裁決線'} {lvl}（{aid}）" + wash_note, "note": note[:160],
                          "after": ["snapshot-orders", f"register-order --rule {rule_name}", "resolve-flag trimmed", "remove/keep alert per note"]})
 
     # ── D. R24 現金停泊 ───────────────────────────────────────────────────

@@ -96,7 +96,9 @@ placed = [e for e in ex if e.get("status") == "placed"]
 cancelled = [e for e in ex if e.get("status") in ("cancelled", "alert_removed")]
 errors = [e for e in ex if e.get("status") == "error"]
 manual = [p for p in d.get("plan", []) if p.get("action") == "CLOSE_SPREAD"]
-if not (placed or cancelled or errors or manual):
+# 收盤線遇殺盤日順延（2026-11-11）：只在收盤後那一輪報（收盤前那輪用盤中價，基準跌幅還會變），一檔一行
+deferred = [s for s in d.get("skipped", []) if s.get("washout")] if pas != "preclose" else []
+if not (placed or cancelled or errors or manual or deferred):
     sys.exit(0)  # 無事不發
 # 口吻：講人話。一行一件事，寫「做了什麼、為什麼、你要不要動」，不寫規則代號和內部欄位（用戶 9/16：「很難懂，簡潔直白一點」）
 WHY = {"R23": "跌破自峰回撤線，減碼", "user": "跌破你定的收盤線，減碼", "R25": "Fed 升息，避險部位補到 8%",
@@ -105,7 +107,7 @@ def why(rule):
     return WHY.get((rule or "").split("-")[0], rule)
 act_zh = {"BUY": "買", "SELL": "賣"}
 when = "收盤前" if pas == "preclose" else "收盤後"
-lines = [f"{when}自動下單（{d.get('asof')}）"]
+lines = [f"{when}自動下單（{d.get('asof')}）" if (placed or cancelled or errors or manual) else f"{when}機械判定（{d.get('asof')}）"]
 for e in placed:
     if e.get("stage") == "bounce":
         # R23 v3 兩段式（2026-10-27）：這張是反彈限價單，不是貼盤賣；失守線由 close_confirm 警報看守
@@ -123,7 +125,9 @@ for e in errors:
     lines.append(f"失敗：{e['symbol']} {act_zh.get(e['action'], e['action'])} {e.get('qty')} 股（{why(e['rule'])}）沒送出。原因：{(e.get('error') or str(e.get('broker') or ''))[:80]}。我會修，修好補下。")
 for p in manual:
     lines.append(f"要你手動掛：{p['symbol']} 複式單，{p.get('basis','')[:60]}")
-if not (placed or cancelled or errors or manual):
+for s in deferred:
+    lines.append(f"沒賣 {s['symbol']}：收盤 {s.get('close')} 跌破收盤線 {s.get('level')}，但今天大盤殺盤（{s.get('bench')} {s.get('bench_move', 0):+.1%}），等下一個正常收盤還破才賣。")
+if not (placed or cancelled or errors or manual or deferred):
     sys.exit(0)
 lines.append("你不用做任何事。" if not (errors or manual) else "只有上面標「要你手動掛」的需要你。")
 print("\n".join(lines))
