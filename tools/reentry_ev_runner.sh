@@ -3,15 +3,17 @@
 #
 # 為什麼：撿回候選到價、修正方向也過了之後，還缺一個 365 日 EV 才能對 R35 門檻判定；原本要用戶手動叫 /stock-analysis
 # （11/9–11/12 四檔連卡三天）。這支由 evening_pass.sh 收盤後那一輪結尾同步呼叫：
-#   reentry_gate.py scan → 缺 EV 的（每天最多 2 檔）跑 /stock-analysis T --reentry
-#   → 再 scan 一次（EV 入帳後變 ready／ev-fail）→ tg_flag_decisions.py ask 把決定卡送成 Telegram 按鈕。
-# 過門檻才會有卡；不過門檻的安靜登影子。分析失敗只推一則 Telegram，隔 3 天再試。
+#   reentry_gate.py scan（順便把每檔的修正數字、財報日、併購申報存好）→ 缺 EV 的（每天最多 2 檔，已到價的優先，
+#   其次是離觸發線最近的——還沒到價也先算）跑 /stock-analysis T --reentry → 再 scan 一次
+#   → tg_flag_decisions.py ask 把決定卡（只剩併購類特殊情況）送成 Telegram 按鈕。
+# 2026-11-13 用戶「改」：過門檻的不再送卡，由隔天早上 briefing 拿即時價跑 reentry_gate.py live、直接掛起手倉。
+# 不過門檻的安靜登影子。分析失敗只推一則 Telegram，隔 3 天再試。
 #
 # 權限（不用 --dangerously-skip-permissions）：分析用的 claude 走一般權限模式。
 #   券商的下單／撤單／預覽工具不在任何允許清單，下面再明列禁止（禁止優先於允許）；
 #   會下單、發訊息、改警報或改決定帳的本 repo 腳本也明列禁止。
 #   注意：專案 .claude/settings.json 本來就允許所有 shell 指令，所以這裡擋的是「列名的危險動作」，不是整個 shell。
-#   買單只會在用戶按了按鈕之後，由下一次 briefing 照 T6.5 條件掛。
+#   買單只由早上的 briefing 照 reentry_gate.py live 的輸出掛（T6.5，≤ $3,000）；本腳本與它叫起來的分析都不下單。
 #
 # 一天一次（marker），時窗 ET 16:15–21:00；手動：bash tools/reentry_ev_runner.sh --force
 # REENTRY_EV_ANALYZE=0 → 只跑閘門與送卡，不跑分析。
