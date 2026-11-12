@@ -135,4 +135,12 @@ PY
 )
 # 無事不發：空訊息不呼叫 tg_send（原本每晚記一行 tg_send failed / empty text）
 if [[ -n "$MSG" ]]; then printf '%s\n' "$MSG" | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG" 2>&1 || log "tg_send failed"; fi
+
+# 撿回名單評估（2026-11-12 用戶「這環節能否自動化，我看數據決定即可」）：收盤後那一輪結尾同步跑——
+# 閘門判定 → 缺 EV 的跑 /stock-analysis（每天最多 2 檔，允許清單模式）→ 過門檻的送 Telegram 決定卡。
+# 同步而非背景：launchd 在本腳本結束時會收掉子行程。自己有當日 marker，失敗不影響上面的機械單。
+if [[ "$PASS" == "close" ]]; then
+  log "reentry_ev_runner"
+  bash "$SCRIPT_DIR/reentry_ev_runner.sh" >> "$LOG" 2>&1 || log "reentry_ev_runner rc=$? (non-fatal)"
+fi
 exit 0

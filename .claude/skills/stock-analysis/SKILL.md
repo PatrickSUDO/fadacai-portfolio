@@ -56,6 +56,7 @@ fundamentals cache 處理：
 - With portfolio context: `/stock-analysis MU --current` (activates plan.md + positions)
 - With Codex second opinion: `/stock-analysis MU --codex` or `/stock-analysis MU --2nd`
 - Combined: `/stock-analysis MU --current --codex`
+- Reentry gate (unattended): `/stock-analysis CRDO --reentry`（撿回名單評估，見文末「`--reentry` 模式」）
 
 ## Workflow
 
@@ -513,6 +514,23 @@ raw data 必須是 fact 數值，**不能** 是 derived label。技術面只給 
 > 若 Codex 失敗 → 輸出 `⚠️ Codex 不可用：[error]，跳過第二意見`，繼續正常輸出。
 
 ---
+
+## `--reentry` 模式（撿回名單評估，2026-11-12 用戶「我看數據決定即可」）
+
+由 `tools/reentry_ev_runner.sh` 收盤後無人值守呼叫（也可手動）。目的只有一個：替 `tools/reentry_gate.py` 產出一筆可機械判定的 365 日 EV。照預設模式（純獨立分析）跑完整報告，另加以下硬性要求：
+
+1. **先查特殊情況**：近 180 天有沒有併購類申報或公告（Form 425／DEFM14A／S-4、8-K Item 1.01 合併協議）。有 → 不套三錨點，改用併購套利框架（換股比例或現金對價 × 成交機率 ＋ 破局時的獨立價值），報告第一段寫明「這檔已是併購標的」。LITE 2026-11 案：被 Marvell 以 4.5 股換股收購後，價格由換股比例錨定，原撿回理由不適用。
+2. **機率分布照常交給 `probability-honesty-checker`**，prompt 必帶：`python3 tools/ev_ledger.py stats` 的校準段（實際 − EV 平均誤差、三情境預測機率 vs 實際發生率）；以及「三錨點照規則列出，另用『一年後市場會看的財年 EPS × 屆時前瞻本益比』交叉檢查，兩套差距大時說明採用哪一套」。2026-11-12 四檔實測：三錨點把公認會計原則的落後本益比套在非公認會計原則的前瞻 EPS 上，四檔都高估（公式本身待 /trade-review 裁決，本模式不改規則，只要求兩套並列）。
+3. **收尾必做（閘門只讀這一筆）**：
+   ```
+   python3 tools/ev_ledger.py add --ticker TICKER --slug reentry-365d-ev --horizon-days 365 --spot <收盤> \
+     --p-bull XX --p-base XX --p-bear XX --fv-bull XXX --fv-base XXX --fv-bear XXX --ev-price XXX \
+     --source stock-analysis --model <本次模型> --thesis-ref TICKER:<本次登錄的 thesis slug> --p-up-given-thesis XX \
+     --priced-in-pct=<cache 值> --note "method=<fwdPE-cross|three-anchor|merger-arb>；<一句最大的不確定來源>"
+   ```
+   同 slug 會覆寫舊的 pending 預測。沒登這一筆 = 這次評估失敗，runner 會當失敗處理。
+4. **不做的事**：不下單、不撤單、不掛警報、不登 `decision_ledger`、不發 Telegram。過不過 R35、要不要問用戶，由 `reentry_gate.py` 用收盤價機械判定並送決定卡；本模式的 Verdict 第一行仍照「R35 基準門檻」節寫 PASS／FAIL。
+5. 報告照常存 `briefing-out/stock-analysis-<TICKER>-YYYY-MM-DD.md` 並 `generate_html.py … --push`。
 
 ## Output Language
 Use Traditional Chinese (繁體中文) for all text output.

@@ -210,7 +210,7 @@ flowchart TB
 <tr><td class="id">R24</td><td>閒置現金 → SGOV</td><td>散文計算 + 模型掛單</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：guard 算閒置額並輸出建議單；auto_exec 掛</td></tr>
 <tr><td class="id">R27</td><td>認列桶只寫機械線距離</td><td>SKILL 格式規則</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：telegram.txt lint（認列桶 ticker 行須含「線/梯級/旗標」）</td></tr>
 <tr><td class="id">H10</td><td>新倉起手 ≤2%</td><td>CLAUDE.md 偏好</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：trade_ledger 對新倉首筆檢查 size，超過自動標 bypass</td></tr>
-<tr><td class="id">R20</td><td>撿回條款雙分支</td><td>散文</td><td><span class="chip c-prose">prose</span></td><td><b>可</b>：thesis_ledger add 對 reentry-* slug 要求兩個 trigger</td></tr>
+<tr><td class="id">R20</td><td>撿回條款雙分支</td><td><code>reentry_gate.py</code> 每日判定 + <code>reentry_ev_runner.sh</code> 自動跑 EV + Telegram 決定卡（2026-11-12）</td><td><span class="chip c-code">code</span></td><td>已機械化；買單仍由用戶按鈕後 briefing 掛</td></tr>
 <tr><td class="id">R10</td><td>清倉必登錄撿回或永久淘汰</td><td>thesis orphans（部分）</td><td><span class="chip c-code">code</span>（部分）</td><td>guard 對已出場標的檢查 reentry thesis 存在</td></tr>
 <tr><td class="id">R1 / R2 / R5 / R6 / R12 / R13</td><td>根因分類、對稱性、VOI</td><td>判斷</td><td><span class="chip c-judge">judge</span></td><td>不該程式化；給強制模板 + cf-r1-hold 影子計分</td></tr>
 <tr><td class="id">R7</td><td>journal 標 ⚠️ 偏離 plan</td><td>散文</td><td><span class="chip c-judge">judge</span></td><td>backfill-origin 已客觀判 user，R7 可退役</td></tr>

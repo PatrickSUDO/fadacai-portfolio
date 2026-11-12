@@ -170,6 +170,7 @@
     <li><i class="chip mech">機械</i><div><b>R23 自峰回撤線</b>（認列桶）：曾經 +20% 以上的部位，從高點回落 20% 先掛反彈限價單加一條失守警報，收盤跌破才撤反彈單改賣；回落 30% 立即減。防守線一律收盤確認，盤中不發。遇到大盤殺盤日（半導體 ETF 或大盤當天跌 2% 以上）不賣，等下一個正常收盤還破線才賣；你定的收盤線和跌破成本的殘倉線也一樣（2026-11-11）。</div></li>
     <li><i class="chip you">你</i><div><b>R11 旗標紀律</b>：任何在簡報或日誌寫下「⚠️」的部位，必須登記一個 15 個交易日內的期限或一條價格線。延後要計次，第 3 次自動強制減 1/3。原因：TSLA 與 ON 的虧損都是「警告寫了、但沒有東西在數日子」造成的。</div></li>
     <li><i class="chip mech">機械</i><div><b>R36 弱倉換指數</b>：90 天落後板塊 ETF 10 個百分點以上、分析師沒有上修、又跌破 50 日線 → 標為候選，期望報酬輸給基準太多就賣掉換等額的指數 ETF。</div></li>
+    <li><i class="chip mech">機械</i><div><b>R20 賣掉之後的撿回</b>（2026-11-12 起全自動，你只看數據按按鈕）：賣掉的股票留在撿回名單。收盤比出場價低 10%（回檔）或高 10%（走強），而且分析師 30 天修正方向過關 → 當晚自動跑個股分析算 12 個月預期報酬 → 贏對應指數 ETF 再多 10 個百分點才會送一張 Telegram 卡片，按鈕是「買起手倉／等財報後再看／不撿回」。不過門檻的不會吵你；之後股價跌到門檻價會自動再問。有併購申報的另外問你要不要撤。卡片同時列「扣掉系統歷史偏樂觀之後」的數字。</div></li>
   </ul>
 </section>
 
@@ -181,6 +182,7 @@
     <li><span class="when">11:00</span><span class="what">早晨簡報 <code>/briefing telegram</code></span><p>讀券商即時持倉、跑守門員 <code>position_guard</code>（10% 硬線、檔數、財報窗、旗標逾期、R23 線、現金閘），產出「今日待辦」。符合「量化條件已達成、不犯任何硬線、新增曝險 ≤ $3,000」的機械單<b>直接下</b>（<span class="id">T6.5</span>），並在訊息標 ✅；其餘列 🎯 等你。</p></li>
     <li><span class="when">15:40–15:58</span><span class="what">收盤前 pass</span><p>判定收盤確認型的防守線。</p></li>
     <li><span class="when">16:20</span><span class="what">晚間 pass <code>auto_exec --execute</code></span><p>執行 R23 線、SGOV 停泊、R30 回檔單、撤陳舊單；推一則 Telegram。早上的簡報只回報，不重下。</p></li>
+    <li><span class="when">16:20 之後</span><span class="what">撿回名單評估 <code>reentry_gate</code></span><p>晚間 pass 結尾接著跑：判定每檔撿回候選，缺預期報酬的自動跑個股分析（一天最多 2 檔），過門檻的送決定卡。不下單——你按「買」之後由隔天早上的簡報掛。</p></li>
     <li><span class="when">每兩週 16:45</span><span class="what">交易檢討 <code>/trade-review</code></span><p>每筆成交歸因「系統決定／你自己決定」，算基準校正後的 α，更新命中率帳本，輸出「本期該改哪一條規則」。</p></li>
     <li><span class="when">每月</span><span class="what">組合深報告 <code>/portfolio-review</code></span><p>跨組合綜合、板塊配置、選擇權、風險，推到報告站。</p></li>
   </ul>
