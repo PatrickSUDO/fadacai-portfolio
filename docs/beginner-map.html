@@ -182,7 +182,7 @@
     <li><span class="when">11:00</span><span class="what">早晨簡報 <code>/briefing telegram</code></span><p>讀券商即時持倉、跑守門員 <code>position_guard</code>（10% 硬線、檔數、財報窗、旗標逾期、R23 線、現金閘），產出「今日待辦」。符合「量化條件已達成、不犯任何硬線、新增曝險 ≤ $3,000」的機械單<b>直接下</b>（<span class="id">T6.5</span>），並在訊息標 ✅；其餘列 🎯 等你。</p></li>
     <li><span class="when">15:40–15:58</span><span class="what">收盤前 pass</span><p>判定收盤確認型的防守線。</p></li>
     <li><span class="when">16:20</span><span class="what">晚間 pass <code>auto_exec --execute</code></span><p>執行 R23 線、SGOV 停泊、R30 回檔單、撤陳舊單；推一則 Telegram。早上的簡報只回報，不重下。</p></li>
-    <li><span class="when">16:20 之後</span><span class="what">撿回名單評估 <code>reentry_gate</code></span><p>晚間 pass 結尾接著跑：把每檔撿回候選的資料備好，缺預期報酬的自動跑個股分析（一天最多 2 檔，還沒到價的也先算）。這一步不下單——買單由隔天早上的簡報用即時價判定後掛。</p></li>
+    <li><span class="when">16:20 之後</span><span class="what">撿回名單評估 <code>reentry_gate</code></span><p>晚間 pass 結尾接著跑：把每檔撿回候選的資料備好，缺預期報酬的自動跑個股分析（一天最多 2 檔，還沒到價的也先算）。你沒持有、只掛了觀察警報的新名字也走同一條路：到價當晚自動算，過門檻送按鈕問你要不要買，新名字不會自動買（FSLY 的警報響了 16 次都沒人跑分析，之後不會再卡）。這一步不下單——買單由隔天早上的簡報用即時價判定後掛。</p></li>
     <li><span class="when">每兩週 16:45</span><span class="what">交易檢討 <code>/trade-review</code></span><p>每筆成交歸因「系統決定／你自己決定」，算基準校正後的 α，更新命中率帳本，輸出「本期該改哪一條規則」。</p></li>
     <li><span class="when">每月</span><span class="what">組合深報告 <code>/portfolio-review</code></span><p>跨組合綜合、板塊配置、選擇權、風險，推到報告站。</p></li>
   </ul>

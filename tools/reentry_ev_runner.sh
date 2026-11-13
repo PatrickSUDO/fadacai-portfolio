@@ -8,6 +8,8 @@
 #   → tg_flag_decisions.py ask 把決定卡（只剩併購類特殊情況）送成 Telegram 按鈕。
 # 2026-11-13 用戶「改」：過門檻的不再送卡，由隔天早上 briefing 拿即時價跑 reentry_gate.py live、直接掛起手倉。
 # 不過門檻的安靜登影子。分析失敗只推一則 Telegram，隔 3 天再試。
+# 2026-11-13 用戶「所有要跑 stock analysis 的警報都自動」：佇列也含觀察警報的名字（未持有個股的到價警報，
+#   reentry_gate.py candidates 的 source=watch）；這類過門檻一律送決定卡，不自動買。
 #
 # 權限（不用 --dangerously-skip-permissions）：分析用的 claude 走一般權限模式。
 #   券商的下單／撤單／預覽工具不在任何允許清單，下面再明列禁止（禁止優先於允許）；

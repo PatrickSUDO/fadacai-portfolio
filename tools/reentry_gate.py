@@ -28,6 +28,12 @@ EV 不重跑也每天更新：EV% = 預測帳的 ev_price ÷ 今日收盤 − 1�
   仍送卡的只有併購類特殊情況；已有未結決定卡的名字（例：CRDO 11/12）以按鈕為準，不自動買。AUTO_BUY = False 可改回送卡。
 「等」「不撿回」「撤條目」由本腳本 apply 機械處理。
 
+2026-11-13 三改（FSLY 案，用戶「所有要跑 stock analysis 的警報都自動」）：候選多一類「觀察警報」（source=watch）——
+  未持有個股、mode=briefing_only 的到價警報（不含 *-reentry-*、指數、標了 "analysis": false 的）。原本每天由 briefing 寫一句
+  「要先跑個股分析」就停住（FSLY-ev-entry 響了 16 次沒人跑）。現在跟撿回同一條鏈：到價（單邊）→ 修正方向 → 併購申報 →
+  名額／財報窗／R31 → 缺 EV 的當晚自動跑 → 對 R35 門檻判定。差別：新名字不自動買，過門檻一律送決定卡（id 前綴 entry-），
+  按「買」之後由 live 出單；還沒到價的只在離觀察線 10% 內才先算 EV。
+
 2026-11-13 再改（CRDO 退單案，用戶「你改下單邏輯」）：卡片上按「買」的單原本由 briefing 照抄卡片文字的價格（前一日收盤
   $139.81）去掛；當天跳空跌到 $128，限價高出市價 9%，送出一秒後被市場端以 ref 1500（excessive price）退件。現在：
   ① 限價一律由 `order_limit()` 決定 = min(即時價, 卡片價)，永遠不高於市價；
@@ -92,9 +98,12 @@ CALIB_MIN_N, CALIB_SHRINK = 5, 0.5
 #   併購類特殊情況仍送卡；已有未結決定卡的名字不自動買。改回送卡：AUTO_BUY = False。
 AUTO_BUY = True
 PRECOMPUTE_EV = True
+PRECOMPUTE_WATCH_MAX_DIST = 0.10         # 觀察警報還沒到價時，離觀察線 10% 以內才先算 EV（太遠的算了也會過期）
 AUTO_BUYS_PER_DAY = 2
 AUTO_MIN_USD = 500.0                     # 現金只夠買不到這個金額就不掛
 AUTO_ORDER_LIVE_DAYS = 7                 # 起手單掛出後幾個日曆天內視為「等成交」，超過請撤
+CARD_PREFIXES = ("reentry-", "entry-")     # 本閘門開的決定卡：撿回＝reentry-，觀察警報的新名字＝entry-
+TICKER_RE = re.compile(r"^[A-Z.]{1,6}$")   # 排除 ^VIX 這類指數
 EV_SPOT_DROP_STALE = 0.15                # 股價比 EV 預測當時低超過 15% → EV 視為過期、當晚重算（跌這麼多通常有新消息；
                                          # 不擋的話「跌越多、EV% 越漂亮」會讓舊 EV 自動去接刀）。往上漲不用擋——漲了 EV% 自然變小。
 
@@ -143,7 +152,8 @@ def exit_price_of(thesis: dict) -> float | None:
 
 
 def candidates(today: date) -> dict:
-    """ticker → {exit, thesis_id, source, expires}。thesis 優先；thesis 已結但警報未過期者也算（CRDO 11/12 案）。"""
+    """ticker → {exit, thesis_id, source, expires}。thesis 優先；thesis 已結但警報未過期者也算（CRDO 11/12 案）。
+    source=watch 的是觀察警報（多帶 level／dir／alert_id／note），只有單邊觸發線，沒有出場價。"""
     out: dict[str, dict] = {}
     for t in jload(THESIS, {"theses": []}).get("theses", []):
         if t.get("status") != "pending" or "reentry" not in (t.get("slug") or ""):
@@ -160,7 +170,26 @@ def candidates(today: date) -> dict:
             continue
         px = a["level"] / (BAND_LOW if m.group(2) == "low" else BAND_HIGH)
         out[tk] = {"exit": round(px, 2), "thesis_id": None, "source": "alert", "exit_date": a.get("created"), "expires": a.get("expires")}
+    # 觀察警報（2026-11-13 用戶「所有要跑 stock analysis 的警報都自動」，FSLY 案）：未持有個股、mode=briefing_only 的到價警報，
+    # 原本每天由 briefing 寫一句「要先跑個股分析」就停住（FSLY-ev-entry 響了 16 次）。現在跟撿回走同一條鏈，只是單邊觸發、
+    # 過門檻一律送決定卡（新名字不自動買）。警報加 "analysis": false 可排除。
+    held = held_of(jload(POS_STATE, {}))
+    for a in jload(ALERTS, {"alerts": []}).get("alerts", []):
+        aid, tk = a.get("id", ""), (a.get("symbol") or "").upper()
+        if (re.search(r"-reentry-(low|high)$", aid) or a.get("mode") != "briefing_only" or a.get("status") == "disabled"
+                or a.get("analysis") is False or a.get("type") not in ("price_below", "price_above") or not a.get("level")
+                or not TICKER_RE.match(tk) or tk in out or tk in held
+                or (a.get("expires") and a["expires"] < today.isoformat())):
+            continue
+        out[tk] = {"exit": a["level"], "level": a["level"], "dir": "below" if a["type"] == "price_below" else "above",
+                   "thesis_id": None, "source": "watch", "alert_id": aid, "note": a.get("note"),
+                   "exit_date": a.get("created"), "expires": a.get("expires")}
     return out
+
+
+def held_of(pos: dict) -> set:
+    ps = pos.get("positions", [])
+    return {p.get("symbol") for p in ps} if isinstance(ps, list) else set(ps)
 
 
 # ── 資料 ──────────────────────────────────────────────────────────────────
@@ -314,16 +343,21 @@ def classify(tk: str, c: dict, close: float | None, *, pos: dict, st: dict, toda
     """純判定：只讀快取（prewarm 存的）與傳進來的價格，不連網。`close` 可以是收盤價，也可以是早上的即時價。
     `inputs`（測試用）可直接給 rev／ev／req，不讀檔。`network` 參數保留相容、不再使用。"""
     inputs = inputs or {}
-    row = {"ticker": tk, "exit": c["exit"], "exit_date": c.get("exit_date"), "close": close, "source": c["source"],
-           "thesis_id": c.get("thesis_id"), "low": round(c["exit"] * BAND_LOW, 2), "high": round(c["exit"] * BAND_HIGH, 2),
-           "decision_id": live_decision}
+    watch = bool(c.get("dir"))
+    if watch:                                   # 觀察警報：單邊觸發線
+        lo, hi = (c["level"], None) if c["dir"] == "below" else (None, c["level"])
+    else:
+        lo, hi = round(c["exit"] * BAND_LOW, 2), round(c["exit"] * BAND_HIGH, 2)
+    row = {"ticker": tk, "kind": "watch" if watch else "reentry", "exit": c["exit"], "exit_date": c.get("exit_date"), "close": close,
+           "source": c["source"], "thesis_id": c.get("thesis_id"), "low": lo, "high": hi, "decision_id": live_decision}
+    if watch:
+        row.update(alert_id=c.get("alert_id"), alert_note=c.get("note"))
 
     def done(state: str, why: str) -> dict:
         row.update(state=state, why=why)
         return row
 
-    held = {p.get("symbol") for p in pos.get("positions", [])} if isinstance(pos.get("positions"), list) else set(pos.get("positions", {}))
-    if tk in held:
+    if tk in held_of(pos):
         return done("held", "已在倉，不是撿回條目")
     if st.get("retired"):
         return done("retired", f"{st['retired']} 已裁決不撿回")
@@ -360,10 +394,12 @@ def classify(tk: str, c: dict, close: float | None, *, pos: dict, st: dict, toda
         row["ev_stale_why"] = ev["_stale"] if ev else "沒有 365 日 EV"
     ev_note = f"；EV 已備妥（{row['threshold_price']} 以下才過門檻）" if ev_ok else f"；EV 未備（{row['ev_stale_why']}）"
 
-    branch = "low" if close <= row["low"] else "high" if close >= row["high"] else None
+    branch = "low" if lo is not None and close <= lo else "high" if hi is not None and close >= hi else None
     row["branch"] = branch
     if branch is None:
-        return done("no-trigger", f"價格 {close} 在 {row['low']}–{row['high']} 之內" + ev_note)
+        where = (f"價格 {close} 還沒到觀察線（要 {'≤' if c['dir'] == 'below' else '≥'} {c['level']}）" if watch
+                 else f"價格 {close} 在 {lo}–{hi} 之內")
+        return done("no-trigger", where + ev_note)
     if st.get("snooze_until") and st["snooze_until"] > today.isoformat():
         return done("snoozed", f"等到 {st['snooze_until']}（{st.get('snooze_why', '用戶裁決')}）")
 
@@ -437,9 +473,10 @@ def md(d: str | None) -> str:
 
 
 def card(row: dict, pos: dict, cal: dict | None, today: date) -> dict:
-    tk, s = row["ticker"], starter(row, pos)
+    tk, s, watch = row["ticker"], starter(row, pos), row.get("kind") == "watch"
     br = "回檔分支" if row["branch"] == "low" else "走強分支"
-    lines = [f"收盤 ${row['close']}｜出場價 ${row['exit']}（{row['vs_exit_pct']:+.1f}%）｜{br}",
+    ref = f"觀察線 ${row['exit']}" if watch else f"出場價 ${row['exit']}（{row['vs_exit_pct']:+.1f}%）"
+    lines = [f"收盤 ${row['close']}｜{ref}｜{br}",
              f"12 個月預期報酬 {row['ev_pct']:+.1f}%（門檻 {row['required_ev_pct']:.0f}%）"]
     if row.get("ev_cal_pct") is not None:
         warn = "，低於門檻" if row["ev_cal_pct"] < row["required_ev_pct"] else ""
@@ -454,6 +491,8 @@ def card(row: dict, pos: dict, cal: dict | None, today: date) -> dict:
     if row.get("next_earnings"):
         lines.append(f"下次財報 {md(row['next_earnings'])}（{(date.fromisoformat(row['next_earnings']) - today).days} 天後）")
     lines.append(f"名額 {pos.get('n_positions')}/{pos.get('max_positions')}｜EV 預測日 {md(row.get('ev_forecast_date'))}")
+    if watch and row.get("alert_note"):
+        lines.append("警報備註（工具沒驗這段，請自己看）：" + " ".join(row["alert_note"].split())[:220])
     if s["cash_short"] > 0:
         lines.append(f"可動用現金 ${s['cash_headroom']:,.0f}，不夠 ${s['cash_short']:,.0f}，要先賣停泊的 VOO")
     wait_to = (date.fromisoformat(row["next_earnings"]) + timedelta(days=1)) if row.get("next_earnings") and \
@@ -462,20 +501,24 @@ def card(row: dict, pos: dict, cal: dict | None, today: date) -> dict:
     opts = [
         f"buy=買起手倉 {s['shares']} 股 @{s['limit']}=下一次簡報用當時即時價掛長效限價買單 {s['shares']} 股，限價不高於 ${s['limit']}，約 ${s['cost']:,.0f}（帳戶 {s['weight_pct']}%）",
         f"wait={wait_label}=到 {wait_to.strftime('%m/%d')} 前不再問，之後用新數字重算",
-        "skip=不撿回，撤條目=撤掉撿回條目與警報，之後不再追蹤這檔",
+        ("skip=不買，撤警報=撤掉這支觀察警報，之後不再追蹤這檔" if watch else
+         "skip=不撿回，撤條目=撤掉撿回條目與警報，之後不再追蹤這檔"),
     ]
-    return {"id": f"reentry-{tk}-{today.strftime('%Y%m%d')}", "ticker": tk, "question": f"{tk} 過了新倉門檻，要撿回嗎？",
+    return {"id": f"{'entry' if watch else 'reentry'}-{tk}-{today.strftime('%Y%m%d')}", "ticker": tk,
+            "question": f"{tk} 過了新倉門檻，要{'開起手倉' if watch else '撿回'}嗎？",
             "detail": "\n".join(lines), "options": opts, "expires": (today + timedelta(days=ASK_EXPIRE_DAYS)).isoformat(),
             "wait_to": wait_to.isoformat(), "starter": s}
 
 
 def special_card(row: dict, today: date) -> dict:
-    tk, sp = row["ticker"], row["special"]
-    return {"id": f"reentry-{tk}-special", "ticker": tk,
-            "question": f"{tk} 有併購類申報，撿回條目要撤嗎？",
-            "detail": f"{md(sp['first_filed'])} 起有 {sp['n']} 份併購類申報（{sp['form']}）。被收購後股價由收購條件決定，原本的撿回理由可能不適用。\n"
-                      f"收盤 ${row['close']}｜出場價 ${row['exit']}（{row['vs_exit_pct']:+.1f}%）",
-            "options": ["retire=撤掉撿回條目=撤掉條目與警報，之後不再追蹤這檔",
+    tk, sp, watch = row["ticker"], row["special"], row.get("kind") == "watch"
+    what = "觀察警報" if watch else "撿回條目"
+    ref = f"觀察線 ${row['exit']}" if watch else f"出場價 ${row['exit']}（{row['vs_exit_pct']:+.1f}%）"
+    return {"id": f"{'entry' if watch else 'reentry'}-{tk}-special", "ticker": tk,
+            "question": f"{tk} 有併購類申報，{what}要撤嗎？",
+            "detail": f"{md(sp['first_filed'])} 起有 {sp['n']} 份併購類申報（{sp['form']}）。被收購後股價由收購條件決定，原本的{'進場' if watch else '撿回'}理由可能不適用。\n"
+                      f"收盤 ${row['close']}｜{ref}",
+            "options": [f"retire=撤掉{what}=撤掉條目與警報，之後不再追蹤這檔",
                         "keep=保留，照一般流程評估=當成一般個股繼續跑預期報酬與門檻"],
             "expires": (today + timedelta(days=ASK_EXPIRE_DAYS)).isoformat()}
 
@@ -512,6 +555,15 @@ def disable_reentry_alerts(dry: bool) -> list[str]:
 def retire(tk: str, c: dict | None, st: dict, today: date, why: str) -> list[str]:
     done = []
     data = jload(ALERTS, {"alerts": []})
+    if (c or {}).get("source") == "watch":       # 觀察警報：只撤那一支警報，沒有撿回條目要結
+        keep = [a for a in data.get("alerts", []) if a.get("id") != c.get("alert_id")]
+        if len(keep) != len(data.get("alerts", [])):
+            data["alerts"] = keep
+            jsave(ALERTS, data)
+            done.append("觀察警報已撤")
+        st["retired"] = today.isoformat()
+        st["retired_why"] = why
+        return done
     keep = [a for a in data.get("alerts", []) if not re.match(rf"^{re.escape(tk)}-reentry-(low|high)$", a.get("id", ""))]
     if len(keep) != len(data.get("alerts", [])):
         data["alerts"] = keep
@@ -526,8 +578,8 @@ def retire(tk: str, c: dict | None, st: dict, today: date, why: str) -> list[str
     return done
 
 
-def shadow(tk: str, px: float, note: str) -> None:
-    run([sys.executable, str(TOOLS / "shadow_signals.py"), "record", "--kind", "cf-reentry", "--ticker", tk,
+def shadow(tk: str, px: float, note: str, kind: str = "cf-reentry") -> None:
+    run([sys.executable, str(TOOLS / "shadow_signals.py"), "record", "--kind", kind, "--ticker", tk,
          "--price", str(px), "--correct-if", "under", "--note", note], timeout=60)
 
 
@@ -536,9 +588,10 @@ def apply_answers(state: dict, cands: dict, today: date, dry: bool) -> list[dict
     out = []
     data = jload(DECISIONS, {"decisions": []})
     for d in data.get("decisions", []):
-        if not d.get("id", "").startswith("reentry-") or not d.get("ticker"):
+        if not d.get("id", "").startswith(CARD_PREFIXES) or not d.get("ticker"):
             continue
         tk, st = d["ticker"], tstate(state, d["ticker"])
+        sk = "cf-watch-entry" if (cands.get(tk) or {}).get("source") == "watch" else "cf-reentry"
         if d["status"] == "expired" and st.get("handled") != d["id"]:
             st.update(snooze_until=(today + timedelta(days=SNOOZE_DEFAULT_DAYS)).isoformat(), snooze_why="卡片過期未按", handled=d["id"])
             out.append({"id": d["id"], "result": "過期未按 → 14 天內不再問"})
@@ -553,7 +606,7 @@ def apply_answers(state: dict, cands: dict, today: date, dry: bool) -> list[dict
             note = "；".join(retire(tk, cands.get(tk), st, today, f"用戶 Telegram 按鈕裁決不撿回（{d['id']}）"))
             px = st.get("last_close")
             if px:
-                shadow(tk, px, f"reentry_gate：用戶裁決不撿回（{d['id']}）；30d 跑輸 = 不撿對")
+                shadow(tk, px, f"reentry_gate：用戶裁決不買（{d['id']}）；30d 跑輸 = 不買對", sk)
         elif key == "wait":
             to = st.get("wait_to") or (today + timedelta(days=SNOOZE_DEFAULT_DAYS)).isoformat()
             st.update(snooze_until=to, snooze_why="用戶按「等」")
@@ -594,8 +647,8 @@ def scan(a) -> int:
             print(f"warn: 抓收盤價失敗：{e}", file=sys.stderr)
     cal = calibration()
     live = {d["ticker"]: d["id"] for d in jload(DECISIONS, {"decisions": []}).get("decisions", [])
-            if d.get("id", "").startswith("reentry-") and d.get("status") in ("open", "answered") and d.get("ticker")}
-    held = {p.get("symbol") for p in pos.get("positions", [])} if isinstance(pos.get("positions"), list) else set(pos.get("positions", {}))
+            if d.get("id", "").startswith(CARD_PREFIXES) and d.get("status") in ("open", "answered") and d.get("ticker")}
+    held = held_of(pos)
     rows, queue, pre, asked = [], [], [], []
 
     def may_run(st: dict) -> bool:
@@ -612,7 +665,8 @@ def scan(a) -> int:
             except Exception as e:  # noqa: BLE001
                 st["prewarm_error"] = str(e)[:120]
         row = classify(tk, cands[tk], closes.get(tk), pos=pos, st=st, today=today, cal=cal, live_decision=live.get(tk))
-        s = row["state"]
+        s, watch = row["state"], row.get("kind") == "watch"
+        auto = AUTO_BUY and not watch                # 觀察警報的新名字不自動買，過門檻一律送卡
         if s == "needs-ev":
             if may_run(st):
                 queue.append(tk)
@@ -620,16 +674,18 @@ def scan(a) -> int:
                 row["why"] += f"；{st.get('last_ev_run')} 已跑過（{st.get('last_ev_result')}），{EV_RETRY_DAYS} 天後再試"
         elif PRECOMPUTE_EV and s in ("no-trigger", "revision-fail", "blocked") and not row.get("ev_ready") and row.get("close") and may_run(st):
             # 還沒到價也先把 EV 算好：到價那天早上就能直接判定（AMD 11/9 案）。離觸發線近的先跑。
-            dist = min(abs(row["close"] - row["low"]), abs(row["close"] - row["high"])) / row["close"]
-            pre.append((dist, tk))
-        elif s == "ready" and AUTO_BUY and not live.get(tk):
+            dist = min(abs(row["close"] - x) for x in (row["low"], row["high"]) if x is not None) / row["close"]
+            if not (watch and s == "no-trigger" and dist > PRECOMPUTE_WATCH_MAX_DIST):
+                pre.append((dist, tk))
+        elif s == "ready" and auto and not live.get(tk):
             row["auto"] = "明早簡報用即時價再判一次，過門檻直接掛起手倉"
         elif s == "ev-fail":
             key = f"{row['ev_id']}@{row['ev_forecast_date']}"
             if st.get("shadow_logged") != key and not dry:
-                shadow(tk, row["close"], f"reentry_gate：R35 不過（EV {row['ev_pct']:+.1f}% < {row['required_ev_pct']:.0f}%），不撿回；30d 跑輸 = 不撿對")
+                shadow(tk, row["close"], f"reentry_gate：R35 不過（EV {row['ev_pct']:+.1f}% < {row['required_ev_pct']:.0f}%），不買；30d 跑輸 = 不買對",
+                       "cf-watch-entry" if watch else "cf-reentry")
                 st["shadow_logged"] = key
-        if s in ("ready", "special") and not live.get(tk) and not (s == "ready" and AUTO_BUY):
+        if s in ("ready", "special") and not live.get(tk) and not (s == "ready" and auto):
             c = card(row, pos, cal, today) if s == "ready" else special_card(row, today)
             ask_key = f"{s}:{row.get('ev_id')}@{row.get('ev_forecast_date')}"
             if st.get("asked_key") != ask_key or st.get("last_state") not in ("ready", "special"):
@@ -669,7 +725,7 @@ def cmd_live(a) -> int:
             k, v = kv.split("=", 1)
             prices[k.strip().upper()] = float(v)
     decs = [d for d in jload(DECISIONS, {"decisions": []}).get("decisions", [])
-            if d.get("id", "").startswith("reentry-") and d.get("ticker")]
+            if d.get("id", "").startswith(CARD_PREFIXES) and d.get("ticker")]
     live = {d["ticker"]: d["id"] for d in decs if d.get("status") in ("open", "answered")}
     is_buy = lambda d: (d.get("answer") or {}).get("key") == "buy"  # noqa: E731
     # 卡片上按了「買」、還沒掛出去（answered）：跟自動單走同一條路——股數照卡片，限價 = min(即時價, 卡片價)
@@ -699,6 +755,10 @@ def cmd_live(a) -> int:
         if cd:                                      # 用戶按過「買」→ 不看 AUTO_BUY 開關
             row["card"] = cd
             ready.append(row)
+        elif live.get(tk) and row.get("kind") == "watch":
+            skipped.append({"ticker": tk, "state": "ready", "why": f"決定卡 {live[tk]} 還沒按，新名字不自動買"})
+        elif row.get("kind") == "watch":
+            skipped.append({"ticker": tk, "state": "ready", "why": "觀察警報的新名字：即時價過門檻，今晚收盤後送決定卡，不自動買"})
         elif not AUTO_BUY:
             skipped.append({"ticker": tk, "state": "ready", "why": "AUTO_BUY 關閉，走決定卡"})
         elif live.get(tk):
@@ -724,18 +784,21 @@ def cmd_live(a) -> int:
             skipped.append({"ticker": tk, "state": "ready", "why": f"可動用現金 ${max(head, 0):,.0f} 不夠掛起手倉（不自動賣 VOO）"})
             continue
         head -= cost
-        br = "回檔" if row["branch"] == "low" else "走強"
+        br, watch = ("回檔" if row["branch"] == "low" else "走強"), row.get("kind") == "watch"
+        rule = "R35" if watch else "R20"
+        head_txt = (f"觀察警報 {row.get('alert_id')}（{'≤' if row['branch'] == 'low' else '≥'} {row['exit']}）到價：即時價 {row['close']}" if watch
+                    else f"撿回{br}分支：即時價 {row['close']} vs 出場價 {row['exit']}（{row['vs_exit_pct']:+.1f}%）")
         how = ""
         if cd:
             how = f"卡片 {cd['id']} 已按「買」，限價取即時價 {row['close']} 與卡片價 {cap} 較低者 = {px}；"
-        after = ["trade_ledger.py register-order --id <單號> --rule R20",
+        after = [f"trade_ledger.py register-order --id <單號> --rule {rule}",
                  f"reentry_gate.py mark-bought {tk} --order-id <單號> --qty {qty} --limit {px} --state <get_orders 回的 state>"]
         if cd:
             after.append(f"decision_ledger.py done --id {cd['id']} --note \"掛 {qty} 股 @{px}（單號 <單號>）\"")
         orders.append({
             "symbol": tk, "action": "BUY", "qty": qty, "order": {"type": "limit", "limit": px, "duration": "gt90"},
-            "cost": cost, "rule": "R20", "source": "card" if cd else "auto", "card_id": cd["id"] if cd else None,
-            "basis": how + f"撿回{br}分支：即時價 {row['close']} vs 出場價 {row['exit']}（{row['vs_exit_pct']:+.1f}%）；30 日修正 {row['rev_up']}↑:{row['rev_down']}↓（{row['rev_n']} 位）；"
+            "cost": cost, "rule": rule, "source": "card" if cd else "auto", "card_id": cd["id"] if cd else None,
+            "basis": how + head_txt + f"；30 日修正 {row['rev_up']}↑:{row['rev_down']}↓（{row['rev_n']} 位）；"
                      f"12 個月預期報酬 {row['ev_pct']:+.1f}% ≥ 門檻 {row['required_ev_pct']:.0f}%（EV {row['ev_price']}，{row['ev_forecast_date']} 算）"
                      + (f"；扣歷史偏差後 {row['ev_cal_pct']:+.1f}%" if row.get("ev_cal_pct") is not None else ""),
             "thesis_ref": row.get("ev_id"),
@@ -797,7 +860,8 @@ def cmd_status(_a) -> int:
     for r in d["rows"]:
         ev = f"｜EV {r['ev_pct']:+.1f}%／門檻 {r['required_ev_pct']:.0f}%" if r.get("ev_pct") is not None else ""
         auto = f"｜{r['auto']}" if r.get("auto") else ""
-        print(f"  {r['ticker']:5s} {r['state']:13s} 收 {r.get('close')}｜出場 {r['exit']}{ev}｜{r['why']}{auto}")
+        ref = f"觀察線 {r['exit']}" if r.get("kind") == "watch" else f"出場 {r['exit']}"
+        print(f"  {r['ticker']:5s} {r['state']:13s} 收 {r.get('close')}｜{ref}{ev}｜{r['why']}{auto}")
     if d.get("queue"):
         print("待跑 EV：" + "、".join(d["queue"]))
     return 0
@@ -883,6 +947,21 @@ def selftest(_a) -> int:
     assert order_limit(127.91, 139.81) == 127.91 and order_limit(150.0, 139.81) == 139.81 and order_limit(127.914) == 127.91
     assert card_terms({"answer": {"label": "買起手倉 21 股 @139.81"}}) == (21, 139.81)
     assert card_terms({"answer": {"label": "等 12/02（財報後）再看"}}) is None and card_terms(None) is None
+    # 觀察警報（FSLY 2026-11-13）：單邊觸發；跌破觀察線 + 修正過 + EV 過門檻 → ready；沒到線 → no-trigger；另一邊不會誤觸發
+    w = {"exit": 13.96, "level": 13.96, "dir": "below", "source": "watch", "alert_id": "FSLY-ev-recheck", "note": "→ 動作：不下單"}
+    winp = {"rev": {"up": 11, "down": 0, "n": 12, "have": True, "priced_in_pct": 46.5}, "req": ("VOO", 19.0),
+            "ev": {"id": "FSLY:e", "forecast_date": "2026-11-13", "ev_price": 16.61, "spot": 16.14, "_stale": None}}
+    for px, want in ((16.14, "no-trigger"), (30.0, "no-trigger"), (13.9, "ready"), (13.0, "needs-ev")):
+        r = classify("FSLY", w, px, pos=pos, st={}, today=t, cal=None, live_decision=None, inputs=winp)
+        assert r["state"] == want and r["kind"] == "watch", (px, r["state"], r["why"])
+    up = {"exit": 1900.0, "level": 1900.0, "dir": "above", "source": "watch", "alert_id": "ASML-L1-strength"}
+    uinp = {"rev": {"up": 28, "down": 0, "n": 30, "have": True}, "req": ("SMH", 25.0),
+            "ev": {"id": "ASML:e", "forecast_date": "2026-11-10", "ev_price": 2500.0, "_stale": None}}
+    for px, want in ((1850.0, "no-trigger"), (1905.0, "ready"), (2100.0, "ev-fail")):
+        r = classify("ASML", up, px, pos=pos, st={}, today=t, cal=None, live_decision=None, inputs=uinp)
+        assert r["state"] == want and r["branch"] == (None if want == "no-trigger" else "high"), (px, r["state"], r["why"])
+    c = card(classify("FSLY", w, 13.9, pos=pos, st={}, today=t, cal=None, live_decision=None, inputs=winp), pos, None, t)
+    assert c["id"].startswith("entry-FSLY-") and "開起手倉" in c["question"] and "觀察線" in c["detail"], c
     print("selftest ok")
     return 0
 
