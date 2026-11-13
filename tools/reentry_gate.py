@@ -28,6 +28,13 @@ EV 不重跑也每天更新：EV% = 預測帳的 ev_price ÷ 今日收盤 − 1�
   仍送卡的只有併購類特殊情況；已有未結決定卡的名字（例：CRDO 11/12）以按鈕為準，不自動買。AUTO_BUY = False 可改回送卡。
 「等」「不撿回」「撤條目」由本腳本 apply 機械處理。
 
+2026-11-13 再改（CRDO 退單案，用戶「你改下單邏輯」）：卡片上按「買」的單原本由 briefing 照抄卡片文字的價格（前一日收盤
+  $139.81）去掛；當天跳空跌到 $128，限價高出市價 9%，送出一秒後被市場端以 ref 1500（excessive price）退件。現在：
+  ① 限價一律由 `order_limit()` 決定 = min(即時價, 卡片價)，永遠不高於市價；
+  ② 卡片單也從 `live` 的 orders 出來（source=card，股數照卡片），briefing 不再讀卡片文字自己定價；
+  ③ `mark-bought` 必須帶 `--state`（get_orders 回的該單狀態）；被退／已撤的單拒絕登記。卡片單掛失敗時卡片維持 answered，
+     隔天用新的即時價再判，不必另開一張決定卡。
+
 Usage:
   python3 tools/reentry_gate.py scan [--dry-run] [--prices AMD=585.3,LRCX=233.78] [--no-network]
   python3 tools/reentry_gate.py apply            # 只處理已回答的按鈕（不抓價）
@@ -36,7 +43,7 @@ Usage:
   python3 tools/reentry_gate.py mark-run TICKER ok|fail
   python3 tools/reentry_gate.py watch            # 早上要報即時價的代號
   python3 tools/reentry_gate.py live --prices AMD=477.2,LRCX=171.5     # 即時價重判 → 可掛的起手倉買單（不下單）
-  python3 tools/reentry_gate.py mark-bought TICKER --order-id G… --qty N --limit P
+  python3 tools/reentry_gate.py mark-bought TICKER --order-id G… --qty N --limit P --state ORDER-SUBMITTED
   python3 tools/reentry_gate.py clear-order TICKER                     # 起手單撤掉之後
   python3 tools/reentry_gate.py selftest
 """
@@ -408,6 +415,23 @@ def starter(row: dict, pos: dict) -> dict:
             "cash_headroom": round(head, 2), "cash_short": round(max(0.0, cost - head), 2)}
 
 
+CARD_BUY_RE = re.compile(r"(\d+)\s*股\s*@\s*\$?([\d.]+)")
+BAD_ORDER_STATES = ("REJECT", "CANCEL", "EXPIRE")
+
+
+def order_limit(live_px: float, cap: float | None = None) -> float:
+    """買單限價 = 即時價，且不高於 cap（卡片上用戶同意過的價格）。永遠不高於市價。
+    CRDO 2026-11-13：照抄卡片上的前一日收盤 $139.81，當天跳空到 $128，高出市價 9% → 市場端 ref 1500 退件。
+    券商的試算（preview）不擋這種單，只能在定價這一步防。"""
+    return round(min(live_px, cap) if cap else live_px, 2)
+
+
+def card_terms(d: dict | None) -> tuple[int, float] | None:
+    """從卡片答案的按鈕文字（「買起手倉 21 股 @139.81」）讀回股數與價格上限。"""
+    m = CARD_BUY_RE.search(((d or {}).get("answer") or {}).get("label") or "")
+    return (int(m.group(1)), float(m.group(2))) if m else None
+
+
 def md(d: str | None) -> str:
     return date.fromisoformat(d).strftime("%m/%d") if d else "—"
 
@@ -436,7 +460,7 @@ def card(row: dict, pos: dict, cal: dict | None, today: date) -> dict:
         (date.fromisoformat(row["next_earnings"]) - today).days <= 45 else today + timedelta(days=SNOOZE_DEFAULT_DAYS)
     wait_label = f"等 {wait_to.strftime('%m/%d')}" + ("（財報後）再看" if row.get("next_earnings") and wait_to.isoformat() > row["next_earnings"] else " 再看")
     opts = [
-        f"buy=買起手倉 {s['shares']} 股 @{s['limit']}=下一次簡報掛長效限價買單 {s['shares']} 股 @${s['limit']}，約 ${s['cost']:,.0f}（帳戶 {s['weight_pct']}%）",
+        f"buy=買起手倉 {s['shares']} 股 @{s['limit']}=下一次簡報用當時即時價掛長效限價買單 {s['shares']} 股，限價不高於 ${s['limit']}，約 ${s['cost']:,.0f}（帳戶 {s['weight_pct']}%）",
         f"wait={wait_label}=到 {wait_to.strftime('%m/%d')} 前不再問，之後用新數字重算",
         "skip=不撿回，撤條目=撤掉撿回條目與警報，之後不再追蹤這檔",
     ]
@@ -644,13 +668,16 @@ def cmd_live(a) -> int:
         if "=" in kv:
             k, v = kv.split("=", 1)
             prices[k.strip().upper()] = float(v)
-    live = {d["ticker"]: d["id"] for d in jload(DECISIONS, {"decisions": []}).get("decisions", [])
-            if d.get("id", "").startswith("reentry-") and d.get("status") in ("open", "answered") and d.get("ticker")}
-    # 卡片上按過「買」的（briefing 照卡片掛單）：7 天內不再自動買同一檔，避免卡片單還在掛、這裡又掛一張
+    decs = [d for d in jload(DECISIONS, {"decisions": []}).get("decisions", [])
+            if d.get("id", "").startswith("reentry-") and d.get("ticker")]
+    live = {d["ticker"]: d["id"] for d in decs if d.get("status") in ("open", "answered")}
+    is_buy = lambda d: (d.get("answer") or {}).get("key") == "buy"  # noqa: E731
+    # 卡片上按了「買」、還沒掛出去（answered）：跟自動單走同一條路——股數照卡片，限價 = min(即時價, 卡片價)
+    card_todo = {d["ticker"]: d for d in decs if d.get("status") == "answered" and is_buy(d) and card_terms(d)}
+    # 卡片單已處理（done）：7 天內不再自動買同一檔，避免卡片單還在掛、這裡又掛一張
     cut = (today - timedelta(days=AUTO_ORDER_LIVE_DAYS)).isoformat()
-    card_buys = {d["ticker"]: d["id"] for d in jload(DECISIONS, {"decisions": []}).get("decisions", [])
-                 if d.get("id", "").startswith("reentry-") and d.get("ticker") and (d.get("answer") or {}).get("key") == "buy"
-                 and ((d.get("answer") or {}).get("at") or "")[:10] >= cut}
+    card_done = {d["ticker"]: d["id"] for d in decs
+                 if d.get("status") == "done" and is_buy(d) and ((d.get("answer") or {}).get("at") or "")[:10] >= cut}
     bought_today = sum(1 for st in state.get("tickers", {}).values() if (st.get("auto_order") or {}).get("date") == today.isoformat())
     head = (pos.get("cash") or 0) - (pos.get("pending_buy_notional") or 0) - CASH_BUFFER
     ready, skipped, watch = [], [], []
@@ -661,27 +688,35 @@ def cmd_live(a) -> int:
                 watch.append(tk)
             continue
         row = classify(tk, cands[tk], prices[tk], pos=pos, st=st, today=today, cal=cal, live_decision=live.get(tk))
+        cd = card_todo.get(tk)
         if row["state"] != "ready":
-            if row["state"] not in ("held", "retired", "no-trigger"):
+            if cd:
+                skipped.append({"ticker": tk, "state": row["state"],
+                                "why": f"卡片 {cd['id']} 已按「買」，但用即時價重判不過：{row['why']} → 今天不掛，卡片保留、明天再判"})
+            elif row["state"] not in ("held", "retired", "no-trigger"):
                 skipped.append({"ticker": tk, "state": row["state"], "why": row["why"]})
             continue
-        if not AUTO_BUY:
+        if cd:                                      # 用戶按過「買」→ 不看 AUTO_BUY 開關
+            row["card"] = cd
+            ready.append(row)
+        elif not AUTO_BUY:
             skipped.append({"ticker": tk, "state": "ready", "why": "AUTO_BUY 關閉，走決定卡"})
         elif live.get(tk):
             skipped.append({"ticker": tk, "state": "ready", "why": f"已有未結決定卡 {live[tk]}，以你的按鈕為準，不自動買"})
-        elif card_buys.get(tk):
-            skipped.append({"ticker": tk, "state": "ready", "why": f"卡片 {card_buys[tk]} 已按「買」，照卡片掛單（7 天內不重複自動買）"})
+        elif card_done.get(tk):
+            skipped.append({"ticker": tk, "state": "ready", "why": f"卡片 {card_done[tk]} 已按「買」並處理過（7 天內不重複自動買）"})
         else:
             ready.append(row)
-    ready.sort(key=lambda r: r["ev_pct"] - r["required_ev_pct"], reverse=True)
+    ready.sort(key=lambda r: (0 if r.get("card") else 1, -(r["ev_pct"] - r["required_ev_pct"])))   # 卡片單先
     orders = []
     for row in ready:
-        tk = row["ticker"]
+        tk, cd = row["ticker"], row.get("card")
         if bought_today + len(orders) >= AUTO_BUYS_PER_DAY:
             skipped.append({"ticker": tk, "state": "ready", "why": f"今天已達自動撿回上限 {AUTO_BUYS_PER_DAY} 檔，明天再判"})
             continue
-        s = starter(row, pos)
-        qty, px = s["shares"], row["close"]
+        s, terms = starter(row, pos), card_terms(cd)
+        cap = terms[1] if terms else None
+        qty, px = (terms[0] if terms else s["shares"]), order_limit(row["close"], cap)
         if qty * px > head:
             qty = int(max(head, 0) // px)
         cost = round(qty * px, 2)
@@ -690,18 +725,27 @@ def cmd_live(a) -> int:
             continue
         head -= cost
         br = "回檔" if row["branch"] == "low" else "走強"
+        how = ""
+        if cd:
+            how = f"卡片 {cd['id']} 已按「買」，限價取即時價 {row['close']} 與卡片價 {cap} 較低者 = {px}；"
+        after = ["trade_ledger.py register-order --id <單號> --rule R20",
+                 f"reentry_gate.py mark-bought {tk} --order-id <單號> --qty {qty} --limit {px} --state <get_orders 回的 state>"]
+        if cd:
+            after.append(f"decision_ledger.py done --id {cd['id']} --note \"掛 {qty} 股 @{px}（單號 <單號>）\"")
         orders.append({
             "symbol": tk, "action": "BUY", "qty": qty, "order": {"type": "limit", "limit": px, "duration": "gt90"},
-            "cost": cost, "rule": "R20",
-            "basis": f"撿回{br}分支：即時價 {px} vs 出場價 {row['exit']}（{row['vs_exit_pct']:+.1f}%）；30 日修正 {row['rev_up']}↑:{row['rev_down']}↓（{row['rev_n']} 位）；"
+            "cost": cost, "rule": "R20", "source": "card" if cd else "auto", "card_id": cd["id"] if cd else None,
+            "basis": how + f"撿回{br}分支：即時價 {row['close']} vs 出場價 {row['exit']}（{row['vs_exit_pct']:+.1f}%）；30 日修正 {row['rev_up']}↑:{row['rev_down']}↓（{row['rev_n']} 位）；"
                      f"12 個月預期報酬 {row['ev_pct']:+.1f}% ≥ 門檻 {row['required_ev_pct']:.0f}%（EV {row['ev_price']}，{row['ev_forecast_date']} 算）"
                      + (f"；扣歷史偏差後 {row['ev_cal_pct']:+.1f}%" if row.get("ev_cal_pct") is not None else ""),
             "thesis_ref": row.get("ev_id"),
-            "after": [f"trade_ledger.py register-order --id <單號> --rule R20",
-                      f"reentry_gate.py mark-bought {tk} --order-id <單號> --qty {qty} --limit {px}"],
+            "after": after,
         })
     print(json.dumps({"asof": today.isoformat(), "orders": orders, "skipped": skipped, "no_price": watch,
-                      "cash_headroom_after": round(head, 2)}, ensure_ascii=False, indent=2))
+                      "cash_headroom_after": round(head, 2),
+                      "verify": "下單後先用 get_orders 查該單 state。ORDER-REJECTED／已取消 = 下單失敗：抄 reject_msg、標「⚠️ 自動下單失敗」、"
+                                "不跑 after。卡片單失敗時卡片保留 answered，明天用新的即時價再判，不另開決定卡。"},
+                     ensure_ascii=False, indent=2))
     return 0
 
 
@@ -713,6 +757,10 @@ def cmd_watch(_a) -> int:
 
 
 def cmd_mark_bought(a) -> int:
+    if any(b in a.state.upper() for b in BAD_ORDER_STATES):
+        print(json.dumps({"action": "refused", "ticker": a.ticker.upper(), "order_id": a.order_id, "state": a.state,
+                          "why": "這張單沒掛上（被退或已撤）→ 不登記。照下單失敗處理，明天用新的即時價再判"}, ensure_ascii=False))
+        return 2
     state = jload(STATE, {"tickers": {}})
     st = tstate(state, a.ticker.upper())
     st["auto_order"] = {"date": today_et().isoformat(), "order_id": a.order_id, "qty": a.qty, "limit": a.limit}
@@ -831,6 +879,10 @@ def selftest(_a) -> int:
     assert s["shares"] == 21 and s["cash_short"] == 0, s  # $3,000 上限 → 21 股，現金夠
     s = starter({"close": 139.81, "priced_in_pct": -61.6}, {**pos, "cash": 9000})
     assert s["cash_short"] > 0, s
+    # CRDO 2026-11-13 退單案：卡片價 139.81、即時價 127.91 → 限價取低者；即時價高於卡片價 → 守卡片價
+    assert order_limit(127.91, 139.81) == 127.91 and order_limit(150.0, 139.81) == 139.81 and order_limit(127.914) == 127.91
+    assert card_terms({"answer": {"label": "買起手倉 21 股 @139.81"}}) == (21, 139.81)
+    assert card_terms({"answer": {"label": "等 12/02（財報後）再看"}}) is None and card_terms(None) is None
     print("selftest ok")
     return 0
 
@@ -863,6 +915,7 @@ def main() -> int:
     mb.add_argument("--order-id", required=True)
     mb.add_argument("--qty", type=float, required=True)
     mb.add_argument("--limit", type=float, required=True)
+    mb.add_argument("--state", required=True, help="get_orders 回的該單狀態，例 ORDER-SUBMITTED；REJECTED／CANCELLED 會被拒絕登記")
     co = sub.add_parser("clear-order")
     co.add_argument("ticker")
     sub.add_parser("selftest")

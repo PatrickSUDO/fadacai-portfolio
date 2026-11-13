@@ -120,6 +120,18 @@ def done(data, *, id_, note) -> dict:
     return {"action": "done", "id": id_}
 
 
+def withdraw(data, *, id_, note) -> dict:
+    """還沒回答的卡片在別處已有決定（例：用戶在 session 裡說自己手動處理）→ 直接結案，不假裝選了哪個選項。"""
+    d = next((x for x in data["decisions"] if x["id"] == id_), None)
+    if d is None:
+        return {"action": "not_found", "id": id_}
+    if d["status"] != "open":
+        return {"action": "already_closed", "id": id_, "status": d["status"]}
+    d["status"] = "done"
+    d["history"].append({"at": _now(), "event": "withdrawn", "note": note})
+    return {"action": "withdrawn", "id": id_}
+
+
 def expire(data) -> dict:
     today = _today().isoformat()
     hit = []
@@ -156,6 +168,9 @@ def main() -> int:
     dn.add_argument("--id", dest="id_", required=True)
     dn.add_argument("--note", required=True)
 
+    wd = sub.add_parser("withdraw", help="未回答的卡片已在別處決定 → 結案（不記成任何選項）")
+    wd.add_argument("--id", dest="id_", required=True)
+    wd.add_argument("--note", required=True)
     sub.add_parser("expire", help="過期未答 → expired")
 
     args = p.parse_args()
@@ -177,6 +192,9 @@ def main() -> int:
         elif args.cmd == "done":
             res = done(data, id_=args.id_, note=args.note)
             ok = res["action"] == "done"
+        elif args.cmd == "withdraw":
+            res = withdraw(data, id_=args.id_, note=args.note)
+            ok = res["action"] == "withdrawn"
         else:
             res = expire(data)
             ok = True
