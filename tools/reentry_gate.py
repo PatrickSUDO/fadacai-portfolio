@@ -13,7 +13,7 @@
   revision-fail 到價但 30 日修正條件不過（回檔：下修 ≤ 上修；走強：上修 > 下修；分析師 <8 位不單獨成立）
   special       近 180 天有併購類申報（Form 425／DEFM14A／S-4…）→ 原撿回理由可能不適用，問要不要撤
   blocked       名額滿／財報 ±48 小時／走強分支遇板塊延伸（R31）
-  needs-ev      以上都過但沒有新鮮的 365 日 EV → 排進無人值守 /stock-analysis（reentry_ev_runner.sh，每天最多 2 檔）
+  needs-ev      以上都過但沒有新鮮的 365 日 EV → 排進無人值守 /stock-analysis（reentry_ev_runner.sh，每天最多 6 檔）
   ev-fail       EV（用今天收盤重算）< R35 門檻 → 安靜、登 cf-reentry 影子；股價跌到門檻價會自動轉 ready
   ready         過門檻 → 隔天早上 briefing 用即時價再判、直接掛起手倉（2026-11-13 起；AUTO_BUY=False 時才送決定卡）
   auto-pending  起手單已掛、等成交；auto-stale = 掛太久沒成交，要撤
@@ -82,7 +82,8 @@ MIN_ANALYSTS = 8                         # H13：分析師 <8 位的修正不單
 REV_STALE_DAYS = 45                      # 距上次財報超過此天數的修正數字標過期（只標示，不擋）
 EV_FRESH_DAYS = 30
 EV_MIN_HORIZON = 300
-EV_RUNS_PER_DAY = 2
+EV_RUNS_PER_DAY = 6                      # 2026-11-14 用戶「多檔一點」：實測無人值守一檔 5–7 分鐘（11/13 BE 5 分 22 秒、DDOG 7 分 05 秒），
+                                         # 慢的不是分析，上限原本只是保守值 → 2 改 6（一晚約 40 分鐘），不另做低配版
 EV_RETRY_DAYS = 3                        # 無人值守分析失敗後隔幾天再試
 STARTER_PCT, STARTER_CAP_USD = 0.02, 3000.0   # H10 起手 ≤2%；$3,000 = T6.5 無人值守新增曝險上限
 STARTER_PCT_RICH = 0.015                 # priced_in_pct > +150% 的名字
