@@ -236,8 +236,16 @@ def revisions(tk: str, st: dict, today: date, network: bool) -> dict:
     fe = (x.get("snapshot") or {}).get("forward_estimates") or x.get("forward_estimates") or {}
     cur = fe.get("curr_fy") or fe.get("next_fy") or {}
     up, dn, n = cur.get("revisions_up_30d"), cur.get("revisions_down_30d"), cur.get("eps_num_analysts")
-    return {"up": int(up or 0), "down": int(dn or 0), "n": int(n or 0), "have": bool(cur),
-            "priced_in_pct": (x.get("self_valuation") or {}).get("priced_in_pct")}
+    if cur:
+        rv = {"up": int(up or 0), "down": int(dn or 0), "n": int(n or 0), "have": True,
+              "priced_in_pct": (x.get("self_valuation") or {}).get("priced_in_pct")}
+        st["rev"] = {**rv, "asof": today.isoformat()}
+        return rv
+    # 早上 runner 的 fetch_fundamentals 只抓持倉，會把昨晚 prewarm 補進共用快取的候選蓋掉
+    # （2026-11-16 AMD 盤中低 502.22 穿過門檻價 503.68，live 卻回 no-data）→ 用 state 裡昨晚存的那份
+    if st.get("rev"):
+        return {k: v for k, v in st["rev"].items() if k != "asof"}
+    return {"up": 0, "down": 0, "n": 0, "have": False, "priced_in_pct": None}
 
 
 def merger_filing(tk: str, st: dict, today: date, network: bool) -> dict | None:
