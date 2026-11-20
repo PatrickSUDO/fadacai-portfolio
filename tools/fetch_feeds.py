@@ -224,7 +224,7 @@ def fetch(force: bool) -> int:
     universe, today = watch_universe(), now_et().date().isoformat()
     cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     seen = jload(SEEN, {})
-    first_run = not seen                        # 第一次跑：既有文章不算「新」，只有今天發的才算
+    known = {k.split("|", 1)[0] for k in seen}  # 第一次看到的來源：既有文章不算「新」，只有今天發的才算
     items, errors, ok = [], [], 0
     for s in sources:
         try:
@@ -240,7 +240,7 @@ def fetch(force: bool) -> int:
             key = f"{s['id']}|{it['guid'] or it['url']}"
             pub = it["published"].astimezone(ET_TZ).date().isoformat() if it["published"] else None
             if key not in seen:
-                seen[key] = pub if (first_run and pub and pub < today) else today
+                seen[key] = pub if (s["id"] not in known and pub and pub < today) else today
             tks = tickers_of(it["title"], it["symbols"], universe)
             items.append({"source_id": s["id"], "handle": s.get("handle"), "tier": s.get("tier"), "kind": s.get("kind"),
                           "title": it["title"], "url": it["url"], "published": pub, "first_seen": seen[key],
