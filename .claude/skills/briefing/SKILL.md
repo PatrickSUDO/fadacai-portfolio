@@ -189,7 +189,11 @@ Read briefing-out/cache/twitter-signals.json
 
 單則貼文 `date` 距今 > 14 天 → 標 🕒 stale，降為背景不作 prior（同 Step 0.55 質性訊號 theta 規則）。
 
-**追蹤作者閱讀清單（2026-11-20 用戶「幫我定期追蹤這個作者，還有其他類似的分析師作者」；`tools/fetch_feeds.py`，runner 每日預抓，RSS 免費）**：另讀 `briefing-out/cache/source-feeds.json`（缺或 mtime > 24h → 跑一次 `python3 tools/fetch_feeds.py`，仍沒有就略過；X cache unavailable 不影響本段）。只取 `first_seen` ≥ 上一個交易日且 `mine == true`（提到持倉／撿回與觀察名單代號）的項目，寫成一小段 `📚 追蹤作者新文章`，每行 `{作者}《{標題}》（{代號}）{連結}`：一般 tier 最多 3 行、Telegram 最多 2 行（T3.6），沒有就整段省略；Deep tier 第 9.6 節另列全部新文章（不限 mine）。**有全文的要讀完再寫**（`has_body == true`：Seeking Alpha 文章，全文在 `briefing-out/cache/source-articles.json`、以網址為 key，用用戶的付費帳號登入取得——2026-11-20 用戶「我有付費帳號」）：該行改成 `{作者}《{標題}》（{代號}）：{作者的主張，一句}；{跟我們帳上的數字比有沒有新資訊，一句}` 加連結，並把**作者自己的**一個可計分主張 `source_credit.py add-claim`（view：方向＋30 或 60 天；轉述的管理層指引不算作者的主張；每篇最多一筆）。沒有全文的只列標題與連結，不得從標題推論主張。**不論有沒有全文都是閱讀清單，不是依據**：不得因此改任何 Verdict、加減碼或機率分布，不進 Key Alerts，不當 prior（下面的 Probation 紀律不變；T3.6 是用戶 11/20 要求的陳列例外）。**不得貼原文段落**：全文只供摘要，引句最多一句、15 個英文字以內。同一篇只列一次（以 `first_seen` 判）。互動 session 用戶給 Seeking Alpha 連結說「幫我看這篇」→ `python3 tools/fetch_feeds.py read <網址>` 取全文再評論，不必請用戶貼全文。
+**追蹤作者（2026-11-20 用戶「幫我定期追蹤這個作者，還有其他類似的分析師作者」→ 同日「我沒那麼多時間天天看」：每天默默收、每週只講一次、只講例外）**：`tools/fetch_feeds.py`（runner 每日預抓，RSS 免費；提到持倉／候補的 Seeking Alpha 新文章另用用戶付費帳號登入存全文）。**平日不陳列、不提這些文章。** 每次 briefing 跑 `python3 tools/fetch_feeds.py digest`：`due == false` → 什麼都不寫。`due == true`（每週第一個交易日）→ 依序做完後跑 `python3 tools/fetch_feeds.py digest --done`：
+  1. 讀 `by_ticker` 裡 `has_body` 的文章全文（`briefing-out/cache/source-articles.json`，以網址為 key），每篇把**作者自己的**一個可計分主張 `source_credit.py add-claim`（view：方向＋30 或 60 天；轉述的管理層指引不算作者的主張；每篇最多一筆）。
+  2. **只有兩種情況要告訴用戶**，各一行、全段最多 3 行：①同一檔本週有 ≥2 位作者同方向（`multi_author`，讀完全文確認方向才算）；②作者方向與我們對**持倉**的現行處置相反。格式 `{代號}：{誰、什麼方向，一句}；我們的數字：{現行判定，一句}`。
+  3. 兩種都沒有 → 只寫一行 `📚 追蹤作者：本週讀了 N 篇，沒有要你看的`。
+  這段放在「其餘紀錄」區，不進 🎯 要你決定、不進 Key Alerts；Telegram 同規則（T3.6）。Deep tier 第 9.6 節可列當週全部文章。**這是閱讀清單，不是依據**：不得因此改任何 Verdict、加減碼或機率分布，不當 prior（下面的 Probation 紀律不變；週報是用戶要求的陳列例外）。沒有全文的文章不得從標題推論主張。**不得貼原文段落**：全文只供摘要，引句最多一句、15 個英文字以內。互動 session 用戶給 Seeking Alpha 連結說「幫我看這篇」→ `python3 tools/fetch_feeds.py read <網址>` 取全文再評論，不必請用戶貼全文。
 
 **紀律（display-only，同 A4 影子 / R18 / 先行指標）：**
 - Tier（`probation`/`trusted`/`core`）完全由 `tools/source_credit.py tiers` 機械算出，**Claude 不得手動升降**
@@ -982,9 +986,9 @@ Agent(subagent_type="data-collector"):
 
 無符合門檻的貼文，或 cache `status ∈ {"skipped"}` / stale → **整段省略**（比照 T2.5 慣例）。
 
-**T3.6. 📚 追蹤作者新文章（閱讀清單）**
+**T3.6. 📚 追蹤作者週報（每週一次）**
 
-資料：Step 0.68 `source-feeds.json`，規則同該步：`first_seen` ≥ 上一個交易日且 `mine == true`，最多 2 行，沒有就整段省略；有全文的照 Step 0.68 寫「一句主張＋一句對照」，沒有全文的只列標題與連結。
+只在 Step 0.68 的 `fetch_feeds.py digest` 回 `due == true` 那天出現：照該步寫最多 3 行例外，或一行「本週讀了 N 篇，沒有要你看的」。其他日子整段省略。
 
 **T4. Sector Rotation**
 `mcp__technical-mcp__get_sector_rotation()` → 取全 sector ETF 相對 SPY 的 leading / improving / weakening / lagging 分類。只顯示各分類各 1-2 個代表 sector。

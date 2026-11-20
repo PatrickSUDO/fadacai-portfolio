@@ -24,6 +24,10 @@ Usage:
   python3 tools/fetch_feeds.py --force
   python3 tools/fetch_feeds.py list [--days 3] [--mine]
   python3 tools/fetch_feeds.py read <Seeking Alpha 文章網址或編號>   # 單篇全文存進 source-articles.json（互動時「幫我看這篇」）
+  python3 tools/fetch_feeds.py digest [--done]   # 週報：每週第一個交易日 due=true，給本週與持倉／候補有關的文章（依代號分組）
+
+陳列節奏（2026-11-20 用戶「我沒那麼多時間天天看」）：每天默默收，平日 briefing 不提；每週只講一次，而且只講例外
+  （同一檔 ≥2 位作者同方向、或作者方向與我們對持倉的處置相反），沒有就一行帶過。判斷在 briefing 技能，這裡只給 due 與分組。
   python3 tools/fetch_feeds.py selftest
 """
 import argparse
@@ -298,6 +302,39 @@ def cmd_list(days: int, mine: bool) -> int:
     return 0
 
 
+def cmd_digest(done: bool) -> int:
+    seen, today = jload(SEEN, {}), now_et().date()
+    if done:
+        seen["__last_digest__"] = today.isoformat()
+        SEEN.write_text(json.dumps(seen, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
+        print(json.dumps({"action": "marked", "last_digest": today.isoformat()}, ensure_ascii=False))
+        return 0
+    last = seen.get("__last_digest__")
+    monday = (today - timedelta(days=today.weekday())).isoformat()
+    if today.weekday() >= 5 or (last and last >= monday):       # 週末不出；本週出過就不再出
+        print(json.dumps({"due": False, "last_digest": last}, ensure_ascii=False))
+        return 0
+    since = max(last or "", (today - timedelta(days=LOOKBACK_DAYS)).isoformat())
+    pos = jload(POS_STATE, {}).get("positions", [])
+    held = {p.get("symbol") for p in pos} if isinstance(pos, list) else set(pos)
+    universe = watch_universe()
+    rows = [i for i in (jload(OUT, {}) or {}).get("items", []) if i.get("mine") and (i.get("first_seen") or "") >= since]
+    by: dict[str, list] = {}
+    for i in rows:
+        for t in i["tickers"]:
+            if t in universe:
+                by.setdefault(t, []).append({"author": i["handle"], "source_id": i["source_id"], "title": i["title"], "url": i["url"],
+                                             "date": i["first_seen"], "has_body": bool(i.get("has_body")),
+                                             "summary_points": i.get("summary_points") or []})
+    order = sorted(by, key=lambda t: (t not in held, -len({a["source_id"] for a in by[t]}), t))
+    print(json.dumps({"due": True, "since": since, "n_articles": len(rows), "n_with_body": sum(1 for i in rows if i.get("has_body")),
+                      "held": sorted(t for t in by if t in held),
+                      "multi_author": [t for t in order if len({a["source_id"] for a in by[t]}) >= 2],
+                      "by_ticker": {t: by[t] for t in order},
+                      "after": "寫完週報後跑 python3 tools/fetch_feeds.py digest --done"}, ensure_ascii=False, indent=1))
+    return 0
+
+
 def selftest() -> int:
     rss = """<rss><channel><item><title>AMD Stock: Two-Catalyst Punch</title>
       <link>https://seekingalpha.com/article/1-amd?source=feed_author_x</link><guid isPermaLink="false">1</guid>
@@ -321,7 +358,8 @@ def selftest() -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="追蹤作者的新文章（RSS）")
-    p.add_argument("cmd", nargs="?", default="fetch", choices=["fetch", "list", "read", "selftest"])
+    p.add_argument("cmd", nargs="?", default="fetch", choices=["fetch", "list", "read", "digest", "selftest"])
+    p.add_argument("--done", action="store_true", help="digest 用：標記本週週報已出")
     p.add_argument("ref", nargs="?", default=None, help="read 用：Seeking Alpha 文章網址或編號")
     p.add_argument("--force", action="store_true")
     p.add_argument("--days", type=int, default=3)
@@ -333,6 +371,8 @@ def main() -> int:
         return cmd_list(a.days, a.mine)
     if a.cmd == "read":
         return cmd_read(a.ref or "")
+    if a.cmd == "digest":
+        return cmd_digest(a.done)
     return fetch(a.force)
 
 
