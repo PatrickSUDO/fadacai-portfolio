@@ -265,10 +265,34 @@ def pending_buy_notional(registry):
                and str(o.get("state", "")).startswith(("ORDER-SUBMITTED", "ORDER-REQUESTED")))
 
 
+def _curr_q_reported(rec, today=None):
+    """curr_q 那一季是否已公布財報。已公布的季別，修正筆數沒有意義（2026-11-20 NVDA 案：
+    11/17 財報後快取的 curr_q 仍是 10/31 那季，讀成 0↑:1↓，同時誤餵 R32 ② 與 R36；年度其實 2↑:0↓／7↑:0↓）。
+    判法：期末已過，且（快取的下次財報日已過，或無財報日而期末已過 45 天）。財報日還在未來的不動——
+    AVGO／SNPS 的 curr_q 期末標籤落後一季但筆數是活的，不能當已公布。"""
+    today = today or dt.date.today()
+    q = (((rec or {}).get("snapshot") or {}).get("forward_estimates") or {}).get("curr_q") or {}
+    try:
+        qend = dt.date.fromisoformat(str(q.get("date"))[:10])
+    except (TypeError, ValueError):
+        return False
+    if qend >= today:
+        return False
+    rd = (((rec or {}).get("base_rate") or {}).get("next_earnings") or {}).get("report_date")
+    try:
+        rd = dt.date.fromisoformat(str(rd)[:10])
+    except (TypeError, ValueError):
+        return (today - qend).days > 45
+    return rd <= today
+
+
 def rev_30d(fund, sym):
-    """(up, down) 30 日 revision 筆數；curr_q 優先，缺則 curr_fy。抓不到 → (None, None)。"""
-    fe = ((fund.get(sym) or {}).get("snapshot") or {}).get("forward_estimates") or {}
-    for k in ("curr_q", "curr_fy", "next_fy"):
+    """(up, down) 30 日 revision 筆數；curr_q 優先，缺則 curr_fy——但 curr_q 已公布財報時跳過改讀年度。
+    抓不到 → (None, None)。"""
+    rec = fund.get(sym) or {}
+    fe = (rec.get("snapshot") or {}).get("forward_estimates") or {}
+    order = ("curr_fy", "next_fy") if _curr_q_reported(rec) else ("curr_q", "curr_fy", "next_fy")
+    for k in order:
         b = fe.get(k) or {}
         if b.get("revisions_up_30d") is not None or b.get("revisions_down_30d") is not None:
             return float(b.get("revisions_up_30d") or 0), float(b.get("revisions_down_30d") or 0)
