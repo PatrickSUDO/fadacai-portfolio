@@ -11,13 +11,19 @@
 要計分的主張仍走 `source_credit.py add-claim`（讀完文章的人或 briefing 登）。
 
 輸出 briefing-out/cache/source-feeds.json：
-  items[] = {source_id, handle, tier, kind, title, url, published, first_seen, tickers[], mine, summary}
+  items[] = {source_id, handle, tier, kind, title, url, published, first_seen, tickers[], mine, summary, summary_points[], has_body}
   mine = 文章提到持倉／撿回與觀察名單裡的代號。first_seen = 本工具第一次看到這篇的日期（美東），briefing 用它判「新」。
+
+Seeking Alpha 全文（2026-11-20 用戶「我不是讓你能登入 seeking alpha…我有付費帳號」）：用戶的付費帳號登入（.env SA_COOKIE，
+  與 fetch_sa_quant.py 同一套）可從文章 API 取全文。只替「今天第一次看到、且 mine」的 SA 文章抓，一次最多 5 篇，
+  全文存 briefing-out/cache/source-articles.json（私有、不進 repo、不上報告站，留 30 天），item 標 has_body 並附作者自寫摘要。
+  沒有 cookie 就略過；被回 403 就停、不重試、不繞過機器人防護。全文只供自己讀與摘要，任何輸出不得貼原文段落。
 
 Usage:
   python3 tools/fetch_feeds.py                 # 抓（6 小時內抓過就跳過）
   python3 tools/fetch_feeds.py --force
   python3 tools/fetch_feeds.py list [--days 3] [--mine]
+  python3 tools/fetch_feeds.py read <Seeking Alpha 文章網址或編號>   # 單篇全文存進 source-articles.json（互動時「幫我看這篇」）
   python3 tools/fetch_feeds.py selftest
 """
 import argparse
@@ -34,11 +40,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
 CONFIG = ROOT / "research" / "source-config.json"
 SEEN = ROOT / "research" / "source-feeds-seen.json"
 POS_STATE = ROOT / "research" / "position-state.json"
 ALERTS = ROOT / "research" / "price-alerts.json"
 OUT = ROOT / "briefing-out" / "cache" / "source-feeds.json"
+ARTICLES = ROOT / "briefing-out" / "cache" / "source-articles.json"
 ET_TZ = ZoneInfo("America/New_York")
 
 TTL_HOURS = 6
@@ -46,6 +54,10 @@ LOOKBACK_DAYS = 10
 MAX_PER_SOURCE = 8
 SEEN_KEEP_DAYS = 120
 TIMEOUT = 20
+MAX_SA_ARTICLES = 5
+ARTICLE_KEEP_DAYS = 30
+ARTICLE_MAX_CHARS = 24000
+SA_ARTICLE_RE = re.compile(r"seekingalpha\.com/article/(\d+)")
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/126.0 Safari/537.36")
 # 標題裡常用公司名而不是代號；只收持倉／候補常見的名字，其餘靠 feed 自帶的代號標籤
@@ -147,6 +159,59 @@ def http_get(url: str) -> str:
         return r.read().decode("utf-8", errors="replace")
 
 
+class SABlocked(Exception):
+    pass
+
+
+def sa_article(article_id: str) -> dict | None:
+    """用戶付費帳號登入取 Seeking Alpha 單篇全文。沒有 cookie → None；403 → SABlocked（呼叫端停止，不重試）。"""
+    import os
+    import urllib.error
+    import fetch_sa_quant as sa
+    sa.load_env()
+    cookie = os.environ.get("SA_COOKIE", "").strip()
+    if not cookie:
+        return None
+    try:
+        a = sa.sa_get(f"articles/{article_id}", cookie)["data"]["attributes"]
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise SABlocked(f"Seeking Alpha 回 403（文章 {article_id}）") from e
+        return None
+    text = clean(a.get("content"), ARTICLE_MAX_CHARS)
+    return {"id": article_id, "title": clean(a.get("title"), 200), "summary_points": [clean(x, 220) for x in (a.get("summary") or []) if x][:5],
+            "text": text, "locked": bool(a.get("isMpwLocked") or a.get("isPaywalled")) or len(text) < 1500}
+
+
+def save_article(url: str, art: dict, source_id: str | None, published: str | None) -> None:
+    store = jload(ARTICLES, {})
+    store[url] = {**art, "source_id": source_id, "published": published, "fetched": now_et().date().isoformat()}
+    old = (now_et().date() - timedelta(days=ARTICLE_KEEP_DAYS)).isoformat()
+    store = {k: v for k, v in store.items() if (v.get("fetched") or "") >= old}
+    ARTICLES.parent.mkdir(parents=True, exist_ok=True)
+    ARTICLES.write_text(json.dumps(store, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+def cmd_read(ref: str) -> int:
+    m = SA_ARTICLE_RE.search(ref) or re.fullmatch(r"(\d{5,9})", ref.strip())
+    if not m:
+        print("只支援 Seeking Alpha 文章網址或編號")
+        return 1
+    try:
+        art = sa_article(m.group(1))
+    except SABlocked as e:
+        print(f"⚠️ {e}——不重試。請改用瀏覽器登入狀態讀，或把全文貼上來")
+        return 2
+    if not art:
+        print("沒有 SA_COOKIE 或讀不到這篇")
+        return 1
+    url = ref.split("?")[0] if ref.startswith("http") else f"https://seekingalpha.com/article/{m.group(1)}"
+    save_article(url, art, None, None)
+    print(json.dumps({"saved": str(ARTICLES.relative_to(ROOT)), "key": url, "title": art["title"], "chars": len(art["text"]),
+                      "locked": art["locked"], "summary_points": art["summary_points"]}, ensure_ascii=False, indent=1))
+    return 0
+
+
 def fetch(force: bool) -> int:
     if not force and OUT.exists() and time.time() - OUT.stat().st_mtime < TTL_HOURS * 3600:
         print(json.dumps({"action": "skipped", "why": f"cache 在 {TTL_HOURS} 小時內"}, ensure_ascii=False))
@@ -177,6 +242,27 @@ def fetch(force: bool) -> int:
                           "title": it["title"], "url": it["url"], "published": pub, "first_seen": seen[key],
                           "tickers": tks, "mine": bool(set(tks) & universe), "summary": it["summary"]})
             kept += 1
+    have = jload(ARTICLES, {})
+    n_sa = 0
+    for it in items:
+        m = SA_ARTICLE_RE.search(it["url"])
+        if not m:
+            continue
+        if it["url"] in have:
+            it.update(has_body=not have[it["url"]].get("locked"), summary_points=have[it["url"]].get("summary_points") or [])
+            continue
+        if not (it["mine"] and it["first_seen"] == today and n_sa < MAX_SA_ARTICLES):
+            continue
+        try:
+            art = sa_article(m.group(1))
+        except SABlocked as e:
+            errors.append({"id": "seekingalpha-fulltext", "error": f"{e}；本輪停止抓全文，不重試"})
+            break
+        n_sa += 1
+        if art:
+            save_article(it["url"], art, it["source_id"], it["published"])
+            it.update(has_body=not art["locked"], summary_points=art["summary_points"])
+        time.sleep(2)
     old = (now_et().date() - timedelta(days=SEEN_KEEP_DAYS)).isoformat()
     seen = {k: v for k, v in seen.items() if (v or today) >= old}
     items.sort(key=lambda x: (x["first_seen"] or "", x["published"] or ""), reverse=True)
@@ -184,11 +270,13 @@ def fetch(force: bool) -> int:
            "lookback_days": LOOKBACK_DAYS, "sources_total": len(sources), "sources_ok": ok, "errors": errors,
            "new_today": sum(1 for i in items if i["first_seen"] == today),
            "new_today_mine": sum(1 for i in items if i["first_seen"] == today and i["mine"]),
-           "note": "display-only 閱讀清單：只有標題／連結／代號，不是訊號；要引用主張先讀原文並 source_credit.py add-claim", "items": items}
+           "bodies_today": sum(1 for i in items if i["first_seen"] == today and i.get("has_body")),
+           "note": "display-only 閱讀清單，不是訊號。has_body 的全文在 source-articles.json（私有）；引用主張要 source_credit.py add-claim；輸出不得貼原文段落",
+           "items": items}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     SEEN.write_text(json.dumps(seen, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
-    print(json.dumps({k: out[k] for k in ("status", "sources_total", "sources_ok", "new_today", "new_today_mine", "errors")}, ensure_ascii=False))
+    print(json.dumps({k: out[k] for k in ("status", "sources_total", "sources_ok", "new_today", "new_today_mine", "bodies_today", "errors")}, ensure_ascii=False))
     return 0
 
 
@@ -202,7 +290,9 @@ def cmd_list(days: int, mine: bool) -> int:
     print(f"追蹤作者新文章（{d['generated_at']}；近 {days} 天；{d['sources_ok']}/{d['sources_total']} 個來源讀到）")
     for i in rows:
         tk = "、".join(i["tickers"]) or "—"
-        print(f"  {i['first_seen']} {'★' if i['mine'] else ' '} [{i['handle']}] {i['title']}（{tk}）\n      {i['url']}")
+        print(f"  {i['first_seen']} {'★' if i['mine'] else ' '}{'📄' if i.get('has_body') else '  '} [{i['handle']}] {i['title']}（{tk}）\n      {i['url']}")
+        for pt in i.get("summary_points") or []:
+            print(f"        · {pt}")
     for e in d.get("errors", []):
         print(f"  ⚠️ {e['id']} 讀取失敗：{e['error']}")
     return 0
@@ -231,7 +321,8 @@ def selftest() -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="追蹤作者的新文章（RSS）")
-    p.add_argument("cmd", nargs="?", default="fetch", choices=["fetch", "list", "selftest"])
+    p.add_argument("cmd", nargs="?", default="fetch", choices=["fetch", "list", "read", "selftest"])
+    p.add_argument("ref", nargs="?", default=None, help="read 用：Seeking Alpha 文章網址或編號")
     p.add_argument("--force", action="store_true")
     p.add_argument("--days", type=int, default=3)
     p.add_argument("--mine", action="store_true", help="只列提到持倉／候補代號的")
@@ -240,6 +331,8 @@ def main() -> int:
         return selftest()
     if a.cmd == "list":
         return cmd_list(a.days, a.mine)
+    if a.cmd == "read":
+        return cmd_read(a.ref or "")
     return fetch(a.force)
 
 
