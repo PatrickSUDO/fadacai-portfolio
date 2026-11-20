@@ -147,6 +147,9 @@ fi
 log "Fetching tracked-author feeds (fetch_feeds.py, RSS)..."
 step python3 "$SCRIPT_DIR/fetch_feeds.py" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "fetch_feeds failed (non-fatal)"
+# 把新存下來的全文各讀成三句中文摘要（claude haiku），並把 Seeking Alpha 的看多／看空評等登進計分帳。週報只讀摘要。
+step python3 "$SCRIPT_DIR/fetch_feeds.py" summarize >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "fetch_feeds summarize failed (non-fatal)"
 
 # SA 自訂 screener 成員每週一自動刷新（2026-10-07：VICR 9/19–22 進榜時我們的成員還停在 9/4 手貼版）。需 .env SA_COOKIE，
 # 失效時腳本自己印 ⚠️ 並退回舊成員；非致命。產出 briefing-out/cache/sa-screener-delta.json（新進/掉榜）供 briefing Key Alerts 讀。

@@ -189,11 +189,11 @@ Read briefing-out/cache/twitter-signals.json
 
 單則貼文 `date` 距今 > 14 天 → 標 🕒 stale，降為背景不作 prior（同 Step 0.55 質性訊號 theta 規則）。
 
-**追蹤作者（2026-11-20 用戶「幫我定期追蹤這個作者，還有其他類似的分析師作者」→ 同日「我沒那麼多時間天天看」：每天默默收、每週只講一次、只講例外）**：`tools/fetch_feeds.py`（runner 每日預抓，RSS 免費；提到持倉／候補的 Seeking Alpha 新文章另用用戶付費帳號登入存全文）。**平日不陳列、不提這些文章。** 每次 briefing 跑 `python3 tools/fetch_feeds.py digest`：`due == false` → 什麼都不寫。`due == true`（每週第一個交易日）→ 依序做完後跑 `python3 tools/fetch_feeds.py digest --done`：
-  1. 讀 `by_ticker` 裡 `has_body` 的文章全文（`briefing-out/cache/source-articles.json`，以網址為 key），每篇把**作者自己的**一個可計分主張 `source_credit.py add-claim`（view：方向＋30 或 60 天；轉述的管理層指引不算作者的主張；每篇最多一筆）。
-  2. **只有兩種情況要告訴用戶**，各一行、全段最多 3 行：①同一檔本週有 ≥2 位作者同方向（`multi_author`，讀完全文確認方向才算）；②作者方向與我們對**持倉**的現行處置相反。格式 `{代號}：{誰、什麼方向，一句}；我們的數字：{現行判定，一句}`。
-  3. 兩種都沒有 → 只寫一行 `📚 追蹤作者：本週讀了 N 篇，沒有要你看的`。
-  這段放在「其餘紀錄」區，不進 🎯 要你決定、不進 Key Alerts；Telegram 同規則（T3.6）。Deep tier 第 9.6 節可列當週全部文章。**這是閱讀清單，不是依據**：不得因此改任何 Verdict、加減碼或機率分布，不當 prior（下面的 Probation 紀律不變；週報是用戶要求的陳列例外）。沒有全文的文章不得從標題推論主張。**不得貼原文段落**：全文只供摘要，引句最多一句、15 個英文字以內。互動 session 用戶給 Seeking Alpha 連結說「幫我看這篇」→ `python3 tools/fetch_feeds.py read <網址>` 取全文再評論，不必請用戶貼全文。
+**追蹤作者（2026-11-20 用戶：「幫我定期追蹤」→「我沒那麼多時間天天看」→「盡可能幫我都要讀有追蹤推送的」：系統全部讀、每週只講一次、只講重點）**：`tools/fetch_feeds.py`（runner 每日預跑）自動同步用戶 Seeking Alpha 帳號追蹤的作者，把他們與其他追蹤來源的新文章收進 cache；Seeking Alpha 文章存全文，再由小模型各讀成三句中文摘要（`brief`：主張／關鍵數字／風險），並把文章的看多／看空評等機械登進計分帳。**briefing 不必讀全文、不必自己 add-claim。平日不陳列、不提這些文章。** 每次 briefing 跑 `python3 tools/fetch_feeds.py digest`：`due == false` → 什麼都不寫。`due == true`（每週第一個交易日）→ 寫一段 `📚 追蹤作者週報`，全段最多 6 行，寫完跑 `python3 tools/fetch_feeds.py digest --done`：
+  1. **跟持倉／候補有關的（`by_ticker`），最多 3 行**，只寫兩種情況：①同一檔本週有 ≥2 位作者同方向（看 `ratings` 與 `brief.thesis`，方向一致才算）；②作者方向與我們對**持倉**的現行處置相反。格式 `{代號}：{誰、什麼方向，一句}；我們的數字：{現行判定，一句}`。
+  2. **其他你追蹤的作者在講什麼（`followed_others`），最多 3 行**：優先 ≥2 位作者講同一檔或同一主題，其次評等是強烈看多／強烈看空的。格式 `{作者}：{brief.thesis}（{代號} {評等}）`。沒有 `brief` 的不寫。
+  3. 兩類都沒有 → 只寫一行 `📚 追蹤作者：本週讀了 N 篇，沒有要你看的`。`n_unsummarized > 0` 時補一句「另有 N 篇還沒讀完」。
+  這段放在「其餘紀錄」區，不進 🎯 要你決定、不進 Key Alerts；Telegram 同規則（T3.6）。**這是閱讀清單，不是依據**：不得因此改任何 Verdict、加減碼或機率分布，不當 prior（下面的 Probation 紀律不變；週報是用戶要求的陳列例外）。只能轉述 `brief` 與評等，不得從標題推論主張。**不得貼原文段落**。互動 session 用戶給 Seeking Alpha 連結說「幫我看這篇」→ `python3 tools/fetch_feeds.py read <網址>` 取全文再評論，不必請用戶貼全文。
 
 **紀律（display-only，同 A4 影子 / R18 / 先行指標）：**
 - Tier（`probation`/`trusted`/`core`）完全由 `tools/source_credit.py tiers` 機械算出，**Claude 不得手動升降**
@@ -988,7 +988,7 @@ Agent(subagent_type="data-collector"):
 
 **T3.6. 📚 追蹤作者週報（每週一次）**
 
-只在 Step 0.68 的 `fetch_feeds.py digest` 回 `due == true` 那天出現：照該步寫最多 3 行例外，或一行「本週讀了 N 篇，沒有要你看的」。其他日子整段省略。
+只在 Step 0.68 的 `fetch_feeds.py digest` 回 `due == true` 那天出現：照該步寫（持倉相關最多 3 行＋其他追蹤作者最多 3 行），或一行「本週讀了 N 篇，沒有要你看的」。其他日子整段省略。
 
 **T4. Sector Rotation**
 `mcp__technical-mcp__get_sector_rotation()` → 取全 sector ETF 相對 SPY 的 leading / improving / weakening / lagging 分類。只顯示各分類各 1-2 個代表 sector。
