@@ -7,6 +7,7 @@
       "platform": "x",
       "handle": "example_handle",
       "url": "https://x.com/example_handle",
+      "feed": null,
       "kind": "fact",
       "domains": ["semis", "memory"],
       "tier": "probation",

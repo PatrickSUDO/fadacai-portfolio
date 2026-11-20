@@ -189,6 +189,8 @@ Read briefing-out/cache/twitter-signals.json
 
 單則貼文 `date` 距今 > 14 天 → 標 🕒 stale，降為背景不作 prior（同 Step 0.55 質性訊號 theta 規則）。
 
+**追蹤作者閱讀清單（2026-11-20 用戶「幫我定期追蹤這個作者，還有其他類似的分析師作者」；`tools/fetch_feeds.py`，runner 每日預抓，RSS 免費）**：另讀 `briefing-out/cache/source-feeds.json`（缺或 mtime > 24h → 跑一次 `python3 tools/fetch_feeds.py`，仍沒有就略過；X cache unavailable 不影響本段）。只取 `first_seen` ≥ 上一個交易日且 `mine == true`（提到持倉／撿回與觀察名單代號）的項目，寫成一小段 `📚 追蹤作者新文章`，每行 `{作者}《{標題}》（{代號}）{連結}`：一般 tier 最多 3 行、Telegram 最多 2 行（T3.6），沒有就整段省略；Deep tier 第 9.6 節另列全部新文章（不限 mine）。**這是閱讀清單，不是引用**：cache 只有標題、連結、代號，沒有內文——不得從標題推論作者的主張、不得寫進任何判斷或 Key Alerts、不得當 prior（下面的 Probation 紀律不變）。同一篇只列一次（以 `first_seen` 判）。用戶把全文貼進互動 session 時才評論；評論後把**作者自己的**可計分主張 `source_credit.py add-claim`（轉述的管理層指引不算作者的主張）。
+
 **紀律（display-only，同 A4 影子 / R18 / 先行指標）：**
 - Tier（`probation`/`trusted`/`core`）完全由 `tools/source_credit.py tiers` 機械算出，**Claude 不得手動升降**
 - **Probation** 來源只能出現在 第 9.6 節（Deep tier 陳列），不得作 Key Alerts / Telegram 引用來源，不得作任何 prior
@@ -979,6 +981,10 @@ Agent(subagent_type="data-collector"):
 資料：Step 0.68 `twitter-signals.json`。從 tier ∈ {trusted, core} 且 `has_number == true` 且貼文 48h 內者挑選，每檔最多 1 則，**全訊息最多 3 則**。**引用即代表 add-claim**——選入本節的貼文，同一次執行 `python3 tools/source_credit.py add-claim ...` 登錄（同 第 9.5 節 3c 紀律）。
 
 無符合門檻的貼文，或 cache `status ∈ {"skipped"}` / stale → **整段省略**（比照 T2.5 慣例）。
+
+**T3.6. 📚 追蹤作者新文章（閱讀清單）**
+
+資料：Step 0.68 `source-feeds.json`，規則同該步：`first_seen` ≥ 上一個交易日且 `mine == true`，最多 2 行，沒有就整段省略；只列標題與連結，不下判斷。
 
 **T4. Sector Rotation**
 `mcp__technical-mcp__get_sector_rotation()` → 取全 sector ETF 相對 SPY 的 leading / improving / weakening / lagging 分類。只顯示各分類各 1-2 個代表 sector。

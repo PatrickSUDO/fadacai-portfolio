@@ -143,6 +143,11 @@ else
   log "X source fetch skipped (disabled 2026-10-30; X_FETCH_ENABLED=1 to run)"
 fi
 
+# 追蹤作者的新文章（RSS，免費；2026-11-20 用戶「幫我定期追蹤這個作者」）。只抓標題／連結／代號當閱讀清單，display-only。
+log "Fetching tracked-author feeds (fetch_feeds.py, RSS)..."
+step python3 "$SCRIPT_DIR/fetch_feeds.py" >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "fetch_feeds failed (non-fatal)"
+
 # SA 自訂 screener 成員每週一自動刷新（2026-10-07：VICR 9/19–22 進榜時我們的成員還停在 9/4 手貼版）。需 .env SA_COOKIE，
 # 失效時腳本自己印 ⚠️ 並退回舊成員；非致命。產出 briefing-out/cache/sa-screener-delta.json（新進/掉榜）供 briefing Key Alerts 讀。
 if [[ "$(date +%u)" == "1" || "${SA_REFRESH_FORCE:-0}" == "1" ]]; then
