@@ -180,6 +180,32 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/spx_dip_shadow.py" sc
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "spx_dip_shadow scan failed (non-fatal)"
 
+# 2026-11-20：配置政策影子帳（display-only，只記錄不下單）——波動目標 20/25/30%、停泊 VOO 改 SGOV、波動目標保留 R33／R15 的版本，
+# 跟實際配置共用同一個個股格報酬，每天補到最後一個收盤已定的日子。放在 guard 之前：此時 position-state 是前一晚收盤後的快照，
+# 與成交帳一致。到裁決點（status exit 2）直推 Telegram，一週最多一次；裁決條件寫死在工具 SPEC，
+# 2026-11-21 用戶確認後以指紋鎖定——條件被改或紀錄斷更（exit 3）也直推。
+log "Policy shadow update (vol-target / parking / R15 variants, display-only)..."
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/policy_shadow.py" update \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "policy_shadow update failed (non-fatal)"
+PS_RC=0; PS_STATUS=$(step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/policy_shadow.py" status 2>> "$LOG_DIR/launchd.err") || PS_RC=$?
+PS_MARK="$LOG_DIR/cache/policy-shadow-due-$(date +%G-W%V)"
+PS_FAULT_MARK="$LOG_DIR/cache/policy-shadow-fault-$(date +%G-W%V)"
+if [[ $PS_RC -ne 0 && $PS_RC -ne 2 && ! -f "$PS_FAULT_MARK" ]]; then
+  # 這本帳要連續記一年以上：條件被改（exit 3）、紀錄斷更（exit 3）、或 status 自己跑不起來，都不准靜默
+  log "Policy shadow fault (status rc=$PS_RC) — pushing to Telegram"
+  printf '⚠️ 政策影子帳異常（briefing_runner，機械提醒，rc=%s）\n%s\n→ 動作：開互動 session 說「政策影子帳壞了」；修好後缺的日子會自動補回\n' \
+    "$PS_RC" "${PS_STATUS:-（沒有輸出，錯誤在 briefing-out/launchd.err）}" \
+    | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    && touch "$PS_FAULT_MARK" || log "tg_send failed (non-fatal)"
+fi
+if [[ $PS_RC -eq 2 && ! -f "$PS_MARK" ]]; then
+  log "Policy shadow reached its ruling point — pushing to Telegram"
+  printf '⚖️ 政策影子帳到裁決點（briefing_runner，機械提醒）\n%s\n→ 動作：開互動 session 跑 /trade-review，照 tools/policy_shadow.py 的事前條件裁決波動目標、R33、R15；系統不會自己改規則\n' "$PS_STATUS" \
+    | python3 "$SCRIPT_DIR/tg_send.py" - >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+    && touch "$PS_MARK" || log "tg_send failed (non-fatal)"
+fi
+
 # R34（2026-10-20）：發現層跨板塊新鮮訊號（display-only，63 日計分）；宇宙每週刷新
 # 2026-10-30 ranker F8 驗證後只供 L2 名單、不觸發進場；每筆同日 enrich 30 日 revision 方向 + priced_in_pct（前瞻翻案門的資料層）
 log "Discovery scan (R34, display-only)..."

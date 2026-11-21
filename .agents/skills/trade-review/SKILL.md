@@ -187,6 +187,17 @@ python3 tools/ev_ledger.py resolve-due && python3 tools/ev_ledger.py stats
 
 `shadow_signals.py score` 的 `by_signal` 會列 `cf-bench-loser / cf-r1-hold / cf-r17-blocked / cf-t65-capped / cf-r23-skip`。每類按**獨立標的**報 n / hit_rate / mean α；**這些是規則的免費驗證樣本**：`cf-r1-hold` 命中率直接餵 R1、`cf-r23-skip` 餵 R23、`cf-bench-loser` 餵 L1 比選（落選者若跑贏入選者 → 比選邏輯覆審）、`cf-t65-capped` 餵 T6.5 上限是否該再放。n<5 只記方向。本期若 cf-\* 為 0 筆 → 寫「影子帳未使用」並列為執行力缺口（該登錄沒登錄）。
 
+**4a-4. 政策影子帳（2026-11-20，`tools/policy_shadow.py`）**
+
+```bash
+python3 tools/policy_shadow.py status
+```
+
+- 七條淨值線共用同一個個股格報酬（實際選股與進出），只差「抱多少」與「沒抱的放哪」：實際配置（對照）、停泊 VOO 改 SGOV、波動目標 20／25／30%、波動目標其餘放 VOO、波動目標但熔斷期信念桶不減。
+- 報告只放一張表（登記後報酬／最大回撤／今日曝險），加一句距裁決點多遠。**未到裁決點（exit 0）不下結論、不建議改 R15／R33**；到了（exit 2）才照工具 `SPEC` 逐條判，把結果寫進 RULES-LEDGER H16，交用戶裁決。
+- 「登記前」那一欄是 2026-06-02→11-20 的回填，屬樣本內，只當背景，不得當證據引用。裁決條件登記後不得改；要改只能另登一條新影子。
+- 門檻 2026-11-21 經用戶確認後以指紋鎖定。`status` exit 3 = 條件與登記不符，或紀錄落後超過 5 個工作日：這一期不引用任何影子數字，先修工具（缺的日子修好後會自動補回），並在「系統已做掉」那一行寫明。
+
 **4b. thesis 中途證偽（不是等觸發日才看）**
 
 ```bash
@@ -306,6 +317,7 @@ python3 tools/generate_html.py trade-review briefing-out/trade-review-YYYY-MM-DD
 [  EV 校準：指標表（獨立 n / EV 誤差 / Brier / Brier skill score / in_range，含上期欄）+ 情境校準表 + 2×2 表 + 期間表；R26 走向一句]
 [  A4 旗標：本期熟成表（首旗日 / 標的 / 30 天超額 / 命中）+ 獨立標的累計 k/n]
 [  影子帳 cf-*：| 類別 | 它在驗什麼 | 本期結果 | 命中 | 對規則的意義 |]
+[  政策影子帳：| 線 | 登記後報酬 | 最大回撤 | 今日曝險 |（七列）+ 一句「登記後第 N 個交易日，距最早裁決點還有 M 日」；未到裁決點不寫結論]
 [  thesis 中途證偽：| thesis | 到期 | 現況 | 判定 |；thesis 兩比率表；orphan 處理 bullet]
 [  來源信用：摘要表（≤4 列）+ 是否達 R21 門檻；逐來源全表放附錄]
 [  其他（H7 / H8 / SA / 發現層 / 事件帳 / H4）：各一張小表]
