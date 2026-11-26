@@ -171,8 +171,12 @@ def _eodhd_get(endpoint: str, params: dict | None = None, token: str = "") -> di
     p = params or {}
     p["api_token"] = token
     p["fmt"] = "json"
-    resp = requests.get(f"{EODHD_BASE}/{endpoint}", params=p, timeout=30)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(f"{EODHD_BASE}/{endpoint}", params=p, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as exc:   # 例外訊息含完整網址：把金鑰遮掉再往上丟（型別不變）
+        exc.args = (re.sub(r"(api_token=)[^&\s'\")]+", r"\1***", str(exc)),)
+        raise
     return resp.json()
 
 

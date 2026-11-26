@@ -341,6 +341,31 @@ INDEX_TEMPLATE = """\
 .report-list .date {{ font-size:.8rem; color:var(--text-muted); white-space:nowrap; }}
 .report-list a {{ flex:1; }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-bottom:24px; }}
+.card > h2 {{ margin:0; padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:baseline; }}
+.card > h2 .n {{ font-size:.8rem; font-weight:400; color:var(--text-muted); }}
+.latest-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:24px; }}
+.latest-grid a {{ display:block; padding:14px 16px; background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); text-decoration:none; }}
+.latest-grid a:hover {{ background:var(--surface2); }}
+.latest-grid .k {{ font-size:.75rem; color:var(--text-muted); letter-spacing:.06em; }}
+.latest-grid .v {{ font-size:1.05rem; margin-top:4px; color:var(--heading); font-variant-numeric:tabular-nums; }}
+details.older {{ border-top:1px solid var(--border); }}
+details.older > summary {{ padding:10px 14px; cursor:pointer; color:var(--text-muted); font-size:.85rem; list-style:none; }}
+details.older > summary::-webkit-details-marker {{ display:none; }}
+details.older > summary::before {{ content:"▸ "; }}
+details.older[open] > summary::before {{ content:"▾ "; }}
+details.older > summary:hover {{ background:var(--surface2); }}
+details.older > .report-list {{ border-top:1px solid var(--border); }}
+.tk-label {{ padding:10px 14px 0; font-size:.8rem; color:var(--text-muted); border-top:1px solid var(--border); }}
+.tk-grid {{ display:flex; flex-wrap:wrap; gap:8px; padding:10px 14px 14px; }}
+.tk-grid > a, .tk-grid > details > summary {{ display:inline-block; padding:6px 12px; border:1px solid var(--border);
+  border-radius:999px; font-size:.9rem; text-decoration:none; cursor:pointer; list-style:none; }}
+.tk-grid > details > summary::-webkit-details-marker {{ display:none; }}
+.tk-grid > a:hover, .tk-grid > details > summary:hover {{ background:var(--surface2); }}
+.tk-grid .n {{ color:var(--text-muted); font-size:.75rem; margin-left:5px; }}
+.tk-grid > details[open] {{ flex:1 0 100%; }}
+.tk-grid > details[open] > summary {{ background:var(--surface2); }}
+.tk-grid > details > .report-list {{ margin-top:8px; border:1px solid var(--border); border-radius:var(--radius); }}
 </style>
 </head>
 <body>
@@ -609,6 +634,13 @@ def infer_type_and_name(report_type: str, src_path: Path, date_str: str = "") ->
     return report_type, src_path.stem
 
 
+# 列表頁每類攤開幾份（其餘摺疊）
+INDEX_SHOW_RECENT = {"briefing": 7, "trade-review": 3, "portfolio-review": 3,
+                     "stock-analysis": 5, "options-strategy": 3}
+# 列表頁各類的順序：先定期報告，再單次研究
+INDEX_ORDER = ("briefing", "trade-review", "portfolio-review", "stock-analysis", "options-strategy")
+
+
 # ── Index builder ─────────────────────────────────────────────────────────────
 def build_index(token_dir: Path) -> None:
     sections: dict[str, list[tuple[str, str, str]]] = {
@@ -618,31 +650,85 @@ def build_index(token_dir: Path) -> None:
         "options-strategy": [],
         "trade-review": [],
     }
+    # 版面（2026-11-06 用戶「分類讓版面乾淨」）：最上面三張「最新」卡；每類只攤開最近幾份，其餘摺疊。
+    # 每日報告的舊份按月摺疊；個股分析依股票代碼摺疊（方便找某一檔）。不刪任何頁面。
     total = 0
     for sub in sections:
         sub_dir = token_dir / sub
         if not sub_dir.exists():
             continue
-        for f in sorted(sub_dir.glob("*.html"), reverse=True):
-            label = f.stem
-            sections[sub].append((label, f"{sub}/{f.name}", f.stat().st_mtime))
+        for f in sub_dir.glob("*.html"):
+            ds = re.findall(r"\d{4}-\d{2}-\d{2}", f.stem)
+            d = ds[-1] if ds else ""
+            subject = f.stem
+            for junk in (d, sub, "analysis"):
+                if junk:
+                    subject = subject.replace(junk, "")
+            parts = [p for p in subject.split("-") if p]
+            # 全是代號（NET-FSLY）用斜線隔開；一般名稱（wfe-equipment-scan）用空白
+            subject = (" / " if all(re.fullmatch(r"[A-Z0-9.]{1,6}", p) for p in parts) else " ").join(parts)
+            sections[sub].append((d, subject, f"{sub}/{f.name}"))
             total += 1
+        sections[sub].sort(key=lambda x: (x[0], x[1]), reverse=True)  # 新的在前；沒日期的排最後
+
+    def _lis(items, key):
+        return "\n".join(
+            f'<li><span class="date">{d or "—"}</span><a href="{path}">{subject or TYPE_LABELS[key]}</a></li>'
+            for d, subject, path in items
+        )
+
+    def _older(summary, items, key):
+        return (f'<details class="older"><summary>{summary}</summary>'
+                f'<ul class="report-list">{_lis(items, key)}</ul></details>')
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    html_sections = ""
-    for key, label in TYPE_LABELS.items():
+    latest = ""
+    for key in ("briefing", "trade-review", "portfolio-review"):
+        dated = [x for x in sections[key] if x[0]]
+        if dated:
+            latest += (f'<a href="{dated[0][2]}"><div class="k">最新{TYPE_LABELS[key]}</div>'
+                       f'<div class="v">{dated[0][0]}</div></a>')
+    html_sections = f'<div class="latest-grid">{latest}</div>' if latest else ""
+    for key in INDEX_ORDER:
+        label = TYPE_LABELS[key]
         items = sections[key]
         if not items:
             continue
-        lis = "\n".join(
-            f'<li><span class="date">{name}</span>'
-            f'<a href="{path}">{TYPE_LABELS[key]} {name}</a></li>'
-            for name, path, _ in items
-        )
+        keep = INDEX_SHOW_RECENT.get(key, 5)
+        recent, rest = items[:keep], items[keep:]
+        older = ""
+        if key == "stock-analysis":
+            # 依股票代碼摺疊（2026-11-06 用戶）：每檔一顆按鈕，涵蓋全部分析（含上面最近幾份）；
+            # 只有一份 → 直接連過去，多份 → 點開列出；多檔比較（NET / FSLY）兩檔底下都放。
+            other = "其他主題"
+            groups: dict[str, list] = {}
+            for it in items:
+                names = it[1].split(" / ") if it[1] else []
+                if not names or not all(re.fullmatch(r"[A-Z0-9.]{1,6}", n) for n in names):
+                    names = [other]
+                for n in names:
+                    groups.setdefault(n, []).append(it)
+            chips = ""
+            for n in sorted(groups, key=lambda x: (x == other, x)):
+                v = groups[n]
+                if len(v) == 1:
+                    chips += f'<a href="{v[0][2]}" title="{v[0][0]}">{n if n != other else (v[0][1] or n)}</a>'
+                else:
+                    chips += (f'<details><summary>{n}<span class="n">{len(v)}</span></summary>'
+                              f'<ul class="report-list">{_lis(v, key)}</ul></details>')
+            older = (f'<div class="tk-label">依股票代碼・{len(groups) - (other in groups)} 檔（有數字的點開看該檔全部分析）</div>'
+                     f'<div class="tk-grid">{chips}</div>')
+        elif rest and key == "briefing":
+            months: dict[str, list] = {}
+            for it in rest:
+                months.setdefault(it[0][:7] or "其他", []).append(it)
+            older = "".join(_older(f"{m}・{len(v)} 份", v, key) for m, v in months.items())
+        elif rest:
+            older = _older(f"更早的 {len(rest)} 份", rest, key)
         html_sections += f"""
 <div class="card">
-  <h2 style="margin:0;padding:12px 16px;border-bottom:1px solid var(--border)">{label}</h2>
-  <ul class="report-list">{lis}</ul>
+  <h2>{label}<span class="n">{len(items)} 份</span></h2>
+  <ul class="report-list">{_lis(recent, key)}</ul>{older}
 </div>"""
 
     (token_dir / "index.html").write_text(

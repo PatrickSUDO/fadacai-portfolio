@@ -592,12 +592,16 @@ def eod_series(eodhd_symbol, start, end, cache=None, token=None):
     token = token or os.environ.get("EODHD_API_TOKEN", "").strip()
     if not token:
         raise RuntimeError("EODHD_API_TOKEN not set — cannot score alpha")
-    resp = requests.get(
-        f"{EODHD_BASE}/eod/{eodhd_symbol}",
-        params={"api_token": token, "from": start, "to": end, "fmt": "json", "period": "d"},
-        timeout=30,
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.get(
+            f"{EODHD_BASE}/eod/{eodhd_symbol}",
+            params={"api_token": token, "from": start, "to": end, "fmt": "json", "period": "d"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:   # 例外訊息含完整網址：把金鑰遮掉再往上丟（型別不變）
+        exc.args = (re.sub(r"(api_token=)[^&\s'\")]+", r"\1***", str(exc)),)
+        raise
     series = {row["date"]: float(row["adjusted_close"] or row["close"])
               for row in resp.json() if row.get("date")}
     cache[key] = series
@@ -1517,7 +1521,7 @@ def cmd_backfill_origin(args):
             return {"fills": 0}
         by_origin, by_source, by_exec = defaultdict(int), defaultdict(int), defaultdict(int)
         for f in rows:
-            by_origin[f"{f['origin']}/{f['origin_confidence']}"] += 1
+            by_origin[f"{f.get('origin', 'unknown')}/{f.get('origin_confidence', 'low')}"] += 1
             by_source[f["origin_source"]] += 1
             by_exec[f.get("exec_via", "unknown")] += 1
         known = sum(1 for f in rows if f["origin"] != "unknown")
@@ -1526,7 +1530,7 @@ def cmd_backfill_origin(args):
             "origin_attributed": known,
             "origin_coverage_pct": round(100 * known / len(rows), 1),
             "origin_high_confidence": sum(1 for f in rows if f["origin"] != "unknown"
-                                          and f["origin_confidence"] == "high"),
+                                          and f.get("origin_confidence") == "high"),
             "by_origin": dict(by_origin),
             "by_evidence_source": dict(by_source),
             "by_exec_via": dict(by_exec),
@@ -1559,6 +1563,9 @@ def cmd_score(args):
     # Neither is a decision; scoring them would credit or debit α that nobody chose.
     fills = [f for f in load_fills(args.ledger)
              if not (f.get("origin_evidence") or "").startswith("VOID")]
+    for f in fills:   # 剛 ingest、還沒跑 backfill-origin 的成交沒有歸因欄位：當 unknown/low，不讓整支當掉
+        f.setdefault("origin", "unknown")
+        f.setdefault("origin_confidence", "low")
     scored = score(fills, since=args.since, asof=args.asof,
                    skip_options=not args.include_options)
     keys = {
@@ -1567,10 +1574,10 @@ def cmd_score(args):
         "origin-side": lambda f: f"{f['origin']} {'買' if f['side'] == 'BOUGHT' else '賣'}",
         "symbol": lambda f: f["symbol"],
         "bucket": lambda f: f.get("bucket") or "unassigned",
-        "confidence": lambda f: f"{f['origin']}/{f['origin_confidence']}",
+        "confidence": lambda f: f"{f.get('origin', 'unknown')}/{f.get('origin_confidence', 'low')}",
         "model": lambda f: f.get("model") or "unrecorded",
     }
-    hi = [f for f in scored if f["origin_confidence"] == "high"]
+    hi = [f for f in scored if f.get("origin_confidence") == "high"]
     in_window = [f for f in fills
                  if (not args.since or f["date"] >= args.since)
                  and (args.include_options or not f["is_option"])]

@@ -324,7 +324,7 @@ def _build_parser():
     b.add_argument("--note", default="", help="why the add was wanted / which window blocked it")
 
     rc = sub.add_parser("record", help="generic counterfactual: a decision NOT taken, scored at +30d")
-    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-smalln-block（smalln_shadow.py 自動登，H13）| cf-r31-blocked（auto_exec 自動登，R31）| cf-spx-dip（spx_dip_shadow.py 自動登，絕對報酬計分）| cf-manual")
+    rc.add_argument("--kind", required=True, help="cf-bench-loser | cf-r1-hold | cf-r17-blocked | cf-t65-capped | cf-r23-skip | cf-reentry（出場，砍對=跑輸）| cf-r28-buylock | cf-smalln-block（smalln_shadow.py 自動登，H13）| cf-r31-blocked（auto_exec 自動登，R31）| cf-spx-dip（spx_dip_shadow.py 自動登，絕對報酬計分）| cf-vix-spike（vix_spike_shadow.py 自動登：VIX 首次站上 30/40 → 影子買 SPY+SMH，主驗收 60/250 日）| cf-volsize-high / cf-volsize-low / cf-preearn-sell（fill_shadow.py 依成交自動登：波動倒數部位、財報前賣出；另有 fill_shadow.py score）| cf-manual")
     rc.add_argument("--ticker", required=True)
     rc.add_argument("--price", type=float, required=True, help="price when the decision was (not) made")
     rc.add_argument("--size", type=float, default=None, help="USD the action would have been")

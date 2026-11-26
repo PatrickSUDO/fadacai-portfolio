@@ -180,6 +180,23 @@ step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/spx_dip_shadow.py" sc
   >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
   || log "spx_dip_shadow scan failed (non-fatal)"
 
+# 2026-11-07：VIX 飆升買指數影子 cf-vix-spike（VIX 收盤首次站上 30 / 40，前 20 日未見 → 影子買 SPY+SMH；display-only，主驗收 60/250 日）
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/vix_spike_shadow.py" scan \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "vix_spike_shadow scan failed (non-fatal)"
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/vix_spike_shadow.py" score \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "vix_spike_shadow score failed (non-fatal)"
+
+# 2026-11-10：成交當下的兩個影子（display-only）——cf-volsize-high/low（個股買進的波動倍數，驗「部位按波動倒數」）、
+# cf-preearn-sell（財報前 10 個交易日內的個股賣出，驗「財報前停利賣早」）。看最近 7 天成交，去重靠 (日期, 標的, kind)
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fill_shadow.py" scan \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "fill_shadow scan failed (non-fatal)"
+step uv run --directory "$SCRIPT_DIR" python3 "$SCRIPT_DIR/fill_shadow.py" score \
+  >> "$LOG_DIR/launchd.log" 2>> "$LOG_DIR/launchd.err" \
+  || log "fill_shadow score failed (non-fatal)"
+
 # 2026-11-20：配置政策影子帳（display-only，只記錄不下單）——波動目標 20/25/30%、停泊 VOO 改 SGOV、波動目標保留 R33／R15 的版本，
 # 跟實際配置共用同一個個股格報酬，每天補到最後一個收盤已定的日子。放在 guard 之前：此時 position-state 是前一晚收盤後的快照，
 # 與成交帳一致。到裁決點（status exit 2）直推 Telegram，一週最多一次；裁決條件寫死在工具 SPEC，

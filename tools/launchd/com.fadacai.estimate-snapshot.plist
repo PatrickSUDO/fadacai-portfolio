@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fadacai.estimate-snapshot</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/YOUR_USERNAME/path/to/portfolio &amp;&amp; python3 -W ignore tools/estimate_snapshot.py</string>
+  </array>
+
+  <!-- 每小時叫一次；腳本自己判斷：美東 06:00 以後、當天還沒存夠才動，否則立刻退出。
+       每天存一份分析師預估（約 600 檔、3~5 分鐘），失敗的檔下個小時補，一天最多 4 輪。
+       限制：Mac 整天睡眠或關機的日子存不到，那一天補不回來
+       （連續兩天沒有完整快照會推 Telegram）。 -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/YOUR_USERNAME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key><string>/Users/YOUR_USERNAME</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/estimate-snapshot.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/portfolio/briefing-out/estimate-snapshot.err</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
