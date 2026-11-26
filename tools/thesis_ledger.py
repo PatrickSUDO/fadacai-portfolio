@@ -311,18 +311,34 @@ def resolve_thesis(data, *, entry_id, verdict, actual, note, next_action,
 # ── orphan detection ────────────────────────────────────────────────────────
 def traded_symbols():
     """Tickers with at least one fill in the trade ledger (i.e. we owned them)."""
+    lf = last_fill_dates()
+    return set(lf) if lf else None
+
+
+def last_fill_dates():
+    """ticker → date of its most recent fill (any side). None if the trade ledger is unavailable.
+
+    Used by orphans(): a thesis *created after* the last fill is a post-exit entry
+    (reentry-gate 365d EV, R19 pair tracking) — the author already knew the position
+    was gone, so it is not an orphan (2026-11-26: 13 of 13 "orphans" were this kind).
+    """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
         from trade_ledger import load_fills   # noqa: PLC0415  (optional dependency)
     except ImportError:
         return None
-    out = set()
+    out = {}
     for f in load_fills():
-        out.add((f.get("underlying") if f.get("is_option") else f.get("symbol") or "").upper())
-    return {s for s in out if s} or None
+        sym = (f.get("underlying") if f.get("is_option") else f.get("symbol") or "").upper()
+        if not sym:
+            continue
+        d = f.get("date") or ""
+        if d > out.get(sym, ""):
+            out[sym] = d
+    return out or None
 
 
-def orphans(data, held_symbols, ever_traded=None):
+def orphans(data, held_symbols, ever_traded=None, last_fill=None):
     """Pending theses for positions we held and have since exited.
 
     Why this matters: ARM:agentic-ai-cpu-royalty triggers on the 2026-07-29 earnings
@@ -333,6 +349,10 @@ def orphans(data, held_symbols, ever_traded=None):
     Two categories are deliberately NOT orphans:
       · `reentry-*` slugs — meant to outlive the position per
         feedback/exit-reentry-discipline.md
+      · theses created on/after the ticker's last fill (`last_fill`) — written
+        knowing the position was gone (reentry-gate 365d EV, pair tracking);
+        the ARM failure mode is a thesis written *while holding* that outlived
+        the exit, so only pre-exit theses can be orphans
       · theses on names never owned (L1/L2 bench candidates such as WELL, ALAB,
         KTOS) — pending is their correct state; they are waiting on a trigger to
         decide entry. `ever_traded` (from the trade ledger) is what separates
@@ -349,6 +369,8 @@ def orphans(data, held_symbols, ever_traded=None):
             continue
         if e["slug"].startswith("reentry-"):
             continue
+        if last_fill and ticker in last_fill and (e.get("created") or "") >= last_fill[ticker]:
+            continue  # post-exit thesis (author knew the position was gone)
         row = {
             "id": e["id"],
             "ticker": ticker,
@@ -746,8 +768,9 @@ def main(argv=None):
     elif args.cmd == "orphans":
         mutated = False
         held = args.held.split(",") if args.held else live_held_symbols()
-        ever = None if args.include_never_held else traded_symbols()
-        found, candidates = orphans(data, held, ever_traded=ever)
+        lf = last_fill_dates()
+        ever = None if args.include_never_held else (set(lf) if lf else None)
+        found, candidates = orphans(data, held, ever_traded=ever, last_fill=lf)
         _emit({
             "orphan_count": len(found),
             "held_symbols": sorted({s.strip().upper() for s in held if s and s.strip()}),

@@ -1015,8 +1015,11 @@ def build_state(*, sync_alerts=False):
             gaps.append(f"R25 修訂 帳戶自 sleeve 建立（{sleeve_since}）後峰值 ${acct_peak:,.0f} 回撤 {acct_dd:+.1f}% ≤ −10% → sleeve 賣一半換子彈（進 SGOV，redeploy 走飛輪）")
             sleeve_actions.append({"symbol": "SLEEVE", "action": "SELL_HALF", "why": f"帳戶自 sleeve 建立後峰值回撤 {acct_dd:+.1f}%"})
     # R20 撿回條目雙分支驗證（2026-09-14 程式化）：pending reentry-* 必含回檔與走強兩分支
+    # 只查 resolve-flag 自動建的 `reentry-*` 條目；`/stock-analysis --reentry` 產的 365d EV thesis
+    # （slug 含 reentry 但分支由 reentry_gate.py 管）不在此列（2026-11-26：LRCX/LITE/AMD/ANET 連報 14 天誤報）
     for t in theses.get("theses", []):
-        if t.get("status") != "pending" or "reentry" not in (t.get("slug") or "") or t.get("ticker") in held:
+        if (t.get("status") != "pending" or not (t.get("slug") or "").startswith("reentry-")
+                or t.get("source") == "stock-analysis" or t.get("ticker") in held):
             continue  # 已撿回/在倉者不是撿回條目（LITE 8/14 案）
         txt = (t.get("thesis") or "") + " ".join(t.get("falsification") or [])
         has_low = any(k in txt for k in ("回檔", "①", "跌回", "接回"))
@@ -1086,6 +1089,13 @@ def build_state(*, sync_alerts=False):
                     f"→ 不新增曝險；先減槓桿 ETF / 選擇權名目至 ≤ {emb['cap']:.2f}")
     if cash is not None and cash < 0:
         gaps.append(f"C7 現金為負 ${cash:,.0f} = 已在融資 → 立即補回（賣停泊 VOO/SGOV 或減碼）")
+
+    # ── R37 選擇權只留長天期買權（2026-11-22 用戶「加警示」）：生效日後新開的選擇權逐筆對四條件；失敗只回一行略過
+    try:
+        import r37_guard  # noqa: WPS433
+        gaps.extend(r37_guard.gaps_for_guard(live, roster, total, today))
+    except Exception as e:  # noqa: BLE001
+        gaps.append(f"R37 檢查略過（{type(e).__name__}）")
 
     state = {"asof": today.isoformat(), "source": source, "total_account_value": total, "cash": cash,
              "embedded_leverage": emb,

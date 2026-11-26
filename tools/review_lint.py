@@ -49,6 +49,15 @@ def lint(path: Path) -> list[str]:
             if key not in sec0:
                 problems.append(f"第 0 節 缺「{label}」")
 
+    # 成熟度門檻（2026-11-26 檢討：11/11 用 4 個交易日的「賣出 vs 抱著」宣告「上期結論翻了」，
+    # 15 天後 −$6,243 變 +$11,121）：第 0 節 若說結論「翻了／反轉」，同節必須寫明樣本已滿 30 天
+    if m:
+        sec0 = m.group(0)
+        chg = re.search(r"🔁[^\n]*(?:\n(?!🎯|🤖|📚|\n)[^\n]*)*", sec0)
+        line = chg.group(0) if chg else ""
+        if re.search(r"翻了|反轉|翻盤", line) and not re.search(r"滿 30 天|30 天後|30 日|30 個交易日", line):
+            problems.append("第 0 節 🔁 宣告結論翻了，但沒寫樣本是否滿 30 天（未滿只能寫方向，不得當結論）")
+
     m = re.search(r"## 5\..*?(?=## 6\.|\Z)", text, re.S)
     if m:
         sec5 = m.group(0)
